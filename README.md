@@ -1,6 +1,6 @@
 # goyohaeng_app
 
-A new Flutter project.
+A watercolor-styled travel app for discovering quiet, less-crowded tourist spots.
 
 ## Getting Started
 
