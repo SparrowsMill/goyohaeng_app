@@ -2,16 +2,7 @@
 
 A watercolor-styled travel app for discovering quiet, less-crowded tourist spots.
 
-## Getting Started
+## Issues
 
-This project is a starting point for a Flutter application.
-
-A few resources to get you started if this is your first Flutter project:
-
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+- [유저 플로우 화면 구현 체크리스트](https://github.com/SparrowsMill/goyohaeng_app/issues/1)
+- [로그인/회원가입 페이지 구현 완료 — 백엔드 연동 필요 항목](https://github.com/SparrowsMill/goyohaeng_app/issues/2)
