@@ -13,8 +13,8 @@ class LeafSectionHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     const leaf = Image(
       image: AssetImage('assets/branding/leaf_ornament.png'),
-      width: 22,
-      height: 22,
+      width: 35,
+      height: 35,
     );
 
     return Row(

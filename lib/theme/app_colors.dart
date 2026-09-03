@@ -11,7 +11,7 @@ abstract final class AppColors {
   static const secondaryAccentPressed = Color(0xFFCF8136);
 
   // Surfaces
-  static const appBackground = Color(0xFFF8F2E8);
+  static const appBackground = Color(0xFFFAE7C0);
   static const surface = Color(0xFFFFFDF8);
   static const surfaceSelected = Color(0xFFEEF0DE);
   static const surfaceDisabled = Color(0xFFE9E3D9);

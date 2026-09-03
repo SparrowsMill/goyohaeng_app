@@ -69,7 +69,11 @@ flutter:
     - assets/illustrations/sparrow/
     - assets/illustrations/rewards/
     - assets/illustrations/map/
+    - assets/illustrations/map/mill_list/
+    - assets/illustrations/map/full_map/
     - assets/illustrations/scenes/
+    - assets/illustrations/icon/
+    - assets/illustrations/ranking/
 
   # To add assets to your application, add an assets section, like this:
   # assets:

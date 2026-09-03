@@ -180,9 +180,11 @@ abstract final class AppDecorations {
         boxShadow: AppShadows.card,
       );
 
+  // Slightly translucent (not fully opaque `AppColors.surface`) so it reads
+  // as a soft overlay on the auth watercolor scene rather than a flat block.
   static BoxDecoration elevatedCard({double radius = AppRadius.largeCard}) =>
       BoxDecoration(
-        color: AppColors.surface,
+        color: AppColors.surface.withValues(alpha: 0.50),
         borderRadius: BorderRadius.circular(radius),
         boxShadow: AppShadows.elevatedCard,
       );

@@ -8,6 +8,7 @@ import '../../theme/app_theme.dart';
 import '../../widgets/app_password_field.dart';
 import '../../widgets/app_text_field.dart';
 import '../../widgets/leaf_section_header.dart';
+import '../mill/mill_home_screen.dart';
 import 'auth_page_background.dart';
 import 'signup_screen.dart';
 
@@ -25,10 +26,12 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget build(BuildContext context) {
     return AuthPageBackground(
       showBackButton: false,
+      showSceneImage: false,
+      logoWidth: 400,
       child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(
           AppSpacing.xl,
-          AppSpacing.xl,
+          AppSpacing.xs,
           AppSpacing.xl,
           AppSpacing.xxl,
         ),
@@ -81,8 +84,16 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   const SizedBox(height: AppSpacing.xl),
                   ElevatedButton(
-                    // * TODO(backend): 로그인 API 연동 및 로그인 후 이동할 홈 화면 구현 필요
-                    onPressed: () {},
+                    // * TODO(backend): 로그인 API 연동 필요 — 현재는 입력값 검증 없이 목업
+                    // 사용자로 바로 메인 화면(방앗간)으로 이동.
+                    onPressed: () {
+                      Navigator.of(context).pushAndRemoveUntil(
+                        MaterialPageRoute(
+                          builder: (_) => const MillHomeScreen(),
+                        ),
+                        (route) => false,
+                      );
+                    },
                     child: const Text('로그인'),
                   ),
                 ],

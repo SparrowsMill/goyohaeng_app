@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'screens/auth/login_screen.dart';
 import 'theme/app_theme.dart';
+import 'widgets/paper_texture_overlay.dart';
 
 void main() {
   runApp(const GoyohaengApp());
@@ -17,6 +18,7 @@ class GoyohaengApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
       home: const LoginScreen(),
+      builder: (context, child) => PaperTextureOverlay(child: child),
     );
   }
 }
