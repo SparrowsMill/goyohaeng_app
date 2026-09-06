@@ -86,11 +86,11 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
         title: Text('${widget.regionName} 관광스팟'),
       ),
       body: hasMap
-          // Side-by-side: map on the left, ranked list on the right.
-          ? Row(
+          // Top: the tile map; bottom: the ranked list.
+          ? Column(
               children: [
                 SizedBox(
-                  width: MediaQuery.sizeOf(context).width * 0.4,
+                  height: MediaQuery.sizeOf(context).height * 0.42,
                   child: RegionSpotMap(
                     key: ValueKey('spotmap_${widget.regionKey}'),
                     regionCode: widget.regionKey,
@@ -99,7 +99,7 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
                     onMarkerTap: _select,
                   ),
                 ),
-                const VerticalDivider(width: 1, color: AppColors.border),
+                const Divider(height: 1, color: AppColors.border),
                 Expanded(child: list),
               ],
             )
@@ -120,10 +120,10 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
 
   Widget _buildList(List<MockTouristSpot> spots, {required bool hasMap}) {
     return ListView(
-      padding: EdgeInsets.fromLTRB(
-        hasMap ? AppSpacing.md : AppSpacing.xl,
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.xl,
         AppSpacing.lg,
-        hasMap ? AppSpacing.md : AppSpacing.xl,
+        AppSpacing.xl,
         AppSpacing.xxl,
       ),
       children: [
@@ -237,21 +237,20 @@ class _CategoryFilter extends StatelessWidget {
         (label: category.label, value: category),
     ];
 
-    // Horizontally scrollable so it survives a narrow (side-by-side) layout.
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: [
-          for (var i = 0; i < items.length; i++) ...[
-            if (i != 0) const SizedBox(width: AppSpacing.sm),
-            _FilterChip(
+    // Always one row — the four chips split the width evenly.
+    return Row(
+      children: [
+        for (var i = 0; i < items.length; i++) ...[
+          if (i != 0) const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: _FilterChip(
               label: items[i].label,
               selected: selected == items[i].value,
               onTap: () => onChanged(items[i].value),
             ),
-          ],
+          ),
         ],
-      ),
+      ],
     );
   }
 }
