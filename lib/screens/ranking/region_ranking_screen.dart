@@ -59,14 +59,10 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
     );
   }
 
-  /// Card or pin tap: select it (map flies there), or — if already selected /
-  /// has no coordinates — open its detail page.
+  /// Card or pin tap: highlight it (the map flies to a located spot). The
+  /// selected card then shows a "자세히 보기" button → [_openSpot].
   void _select(MockTouristSpot spot) {
-    if (spot == _selected || !spot.hasLocation) {
-      _openSpot(spot);
-    } else {
-      setState(() => _selected = spot);
-    }
+    setState(() => _selected = _selected == spot ? null : spot);
   }
 
   @override
@@ -143,7 +139,7 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
         const SizedBox(height: AppSpacing.xs),
         Text(
           hasPins
-              ? '장소를 누르면 지도에 표시돼요 · 한 번 더 누르면 상세'
+              ? "장소를 누르면 지도에 표시돼요 · '자세히 보기'로 상세"
               : '선택한 필터와 정렬은 다음에도 유지돼요',
           style: AppTextStyles.caption,
         ),
@@ -167,6 +163,7 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
               spot: spots[i],
               selected: spots[i] == _selected,
               onTap: () => _select(spots[i]),
+              onDetail: () => _openSpot(spots[i]),
             ),
           ],
       ],
@@ -290,12 +287,14 @@ class _RankingCard extends StatelessWidget {
     required this.rank,
     required this.spot,
     required this.onTap,
+    required this.onDetail,
     this.selected = false,
   });
 
   final int rank;
   final MockTouristSpot spot;
   final VoidCallback onTap;
+  final VoidCallback onDetail;
   final bool selected;
 
   @override
@@ -340,12 +339,17 @@ class _RankingCard extends StatelessWidget {
                     child: _GapValue(gapIndex: spot.gapIndex),
                   ),
                   const SizedBox(width: AppSpacing.xs),
-                  const Padding(
-                    padding: EdgeInsets.only(top: 1),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 1),
                     child: Icon(
-                      Symbols.chevron_right_rounded,
+                      selected
+                          ? Symbols.location_on_rounded
+                          : Symbols.chevron_right_rounded,
                       size: 20,
-                      color: AppColors.iconInactive,
+                      color: selected
+                          ? AppColors.primary
+                          : AppColors.iconInactive,
+                      fill: selected ? 1 : 0,
                     ),
                   ),
                 ],
@@ -383,7 +387,52 @@ class _RankingCard extends StatelessWidget {
                   ),
                 ),
               ),
+              if (selected) ...[
+                const SizedBox(height: AppSpacing.md),
+                _DetailButton(onTap: onDetail),
+              ],
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// "자세히 보기" — appears on the selected ranking card, opens `<장소 정보>`.
+class _DetailButton extends StatelessWidget {
+  const _DetailButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      child: Material(
+        color: AppColors.primary,
+        borderRadius: BorderRadius.circular(AppRadius.smallButton),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(AppRadius.smallButton),
+          onTap: onTap,
+          child: const Padding(
+            padding: EdgeInsets.symmetric(vertical: 10),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  '자세히 보기',
+                  style: TextStyle(
+                    color: AppColors.textOnPrimaryButton,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                  ),
+                ),
+                SizedBox(width: 4),
+                Icon(Symbols.arrow_forward_rounded,
+                    size: 18, color: AppColors.textOnPrimaryButton),
+              ],
+            ),
           ),
         ),
       ),

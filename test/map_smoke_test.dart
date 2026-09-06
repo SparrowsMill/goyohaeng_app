@@ -6,6 +6,7 @@ import 'package:goyohaeng_app/data/mock_map_regions.dart';
 import 'package:goyohaeng_app/data/mock_region_ranking.dart';
 import 'package:goyohaeng_app/screens/map/map_screen.dart';
 import 'package:goyohaeng_app/screens/map/region_spot_map.dart';
+import 'package:goyohaeng_app/screens/place/place_info_screen.dart';
 import 'package:goyohaeng_app/screens/ranking/region_ranking_screen.dart';
 import 'package:goyohaeng_app/theme/app_theme.dart';
 
@@ -144,6 +145,45 @@ void main() {
     expect(find.byType(RegionRankingScreen), findsOneWidget);
     expect(find.byType(RegionSpotMap), findsOneWidget);
     expect(find.text('담양 죽녹원'), findsWidgets); // a ranking card
+  });
+
+  testWidgets('<지역별 랭킹>: 전주 완산구 lists 5 spots; select → "자세히 보기" → 상세',
+      (tester) async {
+    tester.view.physicalSize = const Size(390, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    await tester.runAsync(() async {
+      final g = await KoreaGeo.load();
+      await g.ensureSigungu();
+    });
+
+    // 5 mock spots under 전주시 완산구 (35011).
+    expect(rankingForRegion('35011'), hasLength(5));
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: RegionRankingScreen(regionKey: '35011', regionName: '전주시 완산구'),
+      ),
+    );
+    await tester.runAsync(() async {});
+    await tester.pumpAndSettle();
+
+    expect(find.byType(RegionSpotMap), findsOneWidget);
+    expect(find.text('자세히 보기'), findsNothing);
+
+    // Select '전주 경기전' — its card exists in the non-lazy ListView even if
+    // scrolled off; bring it on-screen, then tap.
+    final card = find.text('전주 경기전', skipOffstage: false);
+    await tester.ensureVisible(card);
+    await tester.pumpAndSettle();
+    await tester.tap(card);
+    await tester.pumpAndSettle();
+    expect(find.text('자세히 보기'), findsOneWidget); // button appeared
+
+    await tester.tap(find.text('자세히 보기'));
+    await tester.pumpAndSettle();
+    expect(find.byType(PlaceInfoScreen), findsOneWidget);
   });
 
   testWidgets('RegionSpotMap: selecting a spot flies the camera to it',

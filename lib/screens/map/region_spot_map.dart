@@ -6,6 +6,7 @@ import 'package:material_symbols_icons/symbols.dart';
 import '../../config/map_config.dart';
 import '../../data/korea_crs.dart' show Epsg5179;
 import '../../data/korea_map_geo.dart';
+import '../../data/mock_map_regions.dart' show gapIndexColor;
 import '../../data/mock_region_ranking.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_spacing.dart';
@@ -145,11 +146,13 @@ class _RegionSpotMapState extends State<RegionSpotMap> {
   Marker _marker(MockTouristSpot spot, {required bool selected}) {
     return Marker(
       point: LatLng(spot.lat!, spot.lng!),
-      width: 160,
-      height: selected ? 66 : 52,
-      alignment: Alignment.topCenter,
+      width: 170,
+      height: selected ? 68 : 34,
+      // The pin's tip sits on the geo point; name/label grow upward.
+      alignment: Alignment.bottomCenter,
       child: _SpotPin(
         label: spot.name,
+        color: gapIndexColor(spot.gapIndex),
         selected: selected,
         onTap: () => widget.onMarkerTap(spot),
       ),
@@ -157,20 +160,38 @@ class _RegionSpotMapState extends State<RegionSpotMap> {
   }
 }
 
-/// Orange map pin with the spot name above it; enlarged + filled when selected.
+/// A map pin tinted by the spot's 갭지수 colour, with its name above;
+/// enlarged + filled-label when selected.
 class _SpotPin extends StatelessWidget {
   const _SpotPin({
     required this.label,
+    required this.color,
     required this.selected,
     required this.onTap,
   });
 
   final String label;
+  final Color color;
   final bool selected;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
+    final onColor =
+        ThemeData.estimateBrightnessForColor(color) == Brightness.dark
+            ? AppColors.surface
+            : AppColors.textPrimary;
+    final size = selected ? 36.0 : 26.0;
+    // A gap-index-tinted pin with a white edge for contrast on light tiles.
+    final pin = Stack(
+      alignment: Alignment.center,
+      children: [
+        Icon(Symbols.location_on_rounded,
+            size: size + 4, color: AppColors.surface, fill: 1),
+        Icon(Symbols.location_on_rounded, size: size, color: color, fill: 1),
+      ],
+    );
+
     return GestureDetector(
       // deferToChild (default): only the chip/icon absorb taps so the map
       // still gets pan/zoom gestures that start near a pin.
@@ -178,34 +199,26 @@ class _SpotPin extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            decoration: BoxDecoration(
-              color: selected ? AppColors.secondaryAccent : AppColors.surface,
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(
-                color: selected ? AppColors.secondaryAccent : AppColors.border,
+          // Only the selected pin carries its name — keeps a cluster readable.
+          if (selected) ...[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: color,
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(color: color),
+              ),
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppTextStyles.caption
+                    .copyWith(color: onColor, fontWeight: FontWeight.w600),
               ),
             ),
-            child: Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: AppTextStyles.caption.copyWith(
-                color: selected
-                    ? AppColors.textOnPrimaryButton
-                    : AppColors.textPrimary,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          const SizedBox(height: 2),
-          Icon(
-            Symbols.location_on_rounded,
-            size: selected ? 34 : 24,
-            color: AppColors.secondaryAccent,
-            fill: 1,
-          ),
+            const SizedBox(height: 1),
+          ],
+          pin,
         ],
       ),
     );
