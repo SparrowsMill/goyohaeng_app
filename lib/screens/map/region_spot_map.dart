@@ -95,7 +95,14 @@ class _RegionSpotMapState extends State<RegionSpotMap> {
         backgroundColor: AppColors.appBackground,
         minZoom: 6,
         maxZoom: 19,
-        onMapReady: () => _ready = true,
+        onMapReady: () {
+          _ready = true;
+          // Opened from search with a spot already chosen → centre on its pin.
+          final s = widget.selected;
+          if (s != null && s.hasLocation) {
+            _map.move(LatLng(s.lat!, s.lng!), 15);
+          }
+        },
         interactionOptions: const InteractionOptions(
           flags: InteractiveFlag.all,
           enableMultiFingerGestureRace: true,

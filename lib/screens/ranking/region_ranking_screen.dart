@@ -25,10 +25,16 @@ class RegionRankingScreen extends StatefulWidget {
     super.key,
     required this.regionKey,
     required this.regionName,
+    this.initialSpotName,
   });
 
   final String regionKey;
   final String regionName;
+
+  /// When opened from `<지도>` search for one place: pre-select that spot —
+  /// its pin drops on the map, its card highlights and scrolls into view, and
+  /// the "자세히 보기" button appears.
+  final String? initialSpotName;
 
   @override
   State<RegionRankingScreen> createState() => _RegionRankingScreenState();
@@ -42,6 +48,30 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
   /// The spot highlighted on the map. Tapping a selected spot (card or pin)
   /// again opens its `<장소 정보 페이지>`.
   MockTouristSpot? _selected;
+
+  final ScrollController _listController = ScrollController();
+  final GlobalKey _selectedCardKey = GlobalKey();
+  bool _didAutoScroll = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final name = widget.initialSpotName;
+    if (name != null) {
+      for (final spot in rankingForRegion(widget.regionKey)) {
+        if (spot.name == name) {
+          _selected = spot;
+          break;
+        }
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _listController.dispose();
+    super.dispose();
+  }
 
   List<MockTouristSpot> get _visibleSpots {
     final spots = rankingForRegion(widget.regionKey)
@@ -65,10 +95,27 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
     setState(() => _selected = _selected == spot ? null : spot);
   }
 
+  /// One-shot: bring the search-selected card into view after the first layout.
+  void _maybeAutoScroll() {
+    if (_didAutoScroll || _selected == null) return;
+    _didAutoScroll = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final ctx = _selectedCardKey.currentContext;
+      if (ctx != null && mounted) {
+        Scrollable.ensureVisible(
+          ctx,
+          alignment: 0.15,
+          duration: const Duration(milliseconds: 300),
+        );
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final spots = _visibleSpots;
     final hasPins = spots.any((s) => s.hasLocation);
+    _maybeAutoScroll();
 
     return Scaffold(
       backgroundColor: AppColors.appBackground,
@@ -112,6 +159,7 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
 
   Widget _buildList(List<MockTouristSpot> spots, {required bool hasPins}) {
     return ListView(
+      controller: _listController,
       padding: const EdgeInsets.fromLTRB(
         AppSpacing.xl,
         AppSpacing.lg,
@@ -159,6 +207,7 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
           for (var i = 0; i < spots.length; i++) ...[
             if (i != 0) const SizedBox(height: AppSpacing.md),
             _RankingCard(
+              key: spots[i] == _selected ? _selectedCardKey : null,
               rank: i + 1,
               spot: spots[i],
               selected: spots[i] == _selected,
@@ -284,6 +333,7 @@ class _SortDropdown extends StatelessWidget {
 
 class _RankingCard extends StatelessWidget {
   const _RankingCard({
+    super.key,
     required this.rank,
     required this.spot,
     required this.onTap,

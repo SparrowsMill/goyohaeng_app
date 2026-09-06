@@ -14,6 +14,7 @@ import '../../theme/app_text_styles.dart';
 import '../../widgets/app_bottom_nav_bar.dart';
 import '../../widgets/gap_index_info_dialog.dart';
 import '../ranking/region_ranking_screen.dart';
+import 'place_search_screen.dart';
 
 /// `<지도>` (user_flow §6) — the whole country as a continuously zoomable
 /// vector map drawn from `assets/maps/` GeoJSON. Reached via the "지도 열기"
@@ -100,6 +101,12 @@ class MapScreen extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _header(subtitle: '지역별 갭지수와 숨은 관광 스팟을 둘러보세요'),
+          const SizedBox(height: AppSpacing.md),
+          _SearchBar(
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const PlaceSearchScreen()),
+            ),
+          ),
           const SizedBox(height: AppSpacing.lg),
           const Align(alignment: Alignment.centerRight, child: _GapLegend()),
           const SizedBox(height: AppSpacing.sm),
@@ -183,6 +190,45 @@ class _GapLegend extends StatelessWidget {
         const SizedBox(width: AppSpacing.sm),
         Text('높음', style: AppTextStyles.caption),
       ],
+    );
+  }
+}
+
+/// Tappable "input" that opens `<지도>` search (지역명·장소명 → `<지역별 랭킹>`).
+class _SearchBar extends StatelessWidget {
+  const _SearchBar({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.surface,
+      borderRadius: BorderRadius.circular(AppRadius.inputField),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AppRadius.inputField),
+        onTap: onTap,
+        child: Container(
+          height: 52,
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+          decoration: BoxDecoration(
+            border: Border.all(color: AppColors.border),
+            borderRadius: BorderRadius.circular(AppRadius.inputField),
+          ),
+          child: Row(
+            children: [
+              const Icon(Symbols.search_rounded,
+                  size: 20, color: AppColors.iconInactive),
+              const SizedBox(width: AppSpacing.sm),
+              Text(
+                '지역명 · 장소명 검색',
+                style: AppTextStyles.bodyLarge
+                    .copyWith(color: AppColors.textDisabled),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

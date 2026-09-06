@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:goyohaeng_app/data/korea_map_geo.dart';
 import 'package:goyohaeng_app/data/mock_map_regions.dart';
 import 'package:goyohaeng_app/data/mock_region_ranking.dart';
+import 'package:goyohaeng_app/data/place_search.dart';
 import 'package:goyohaeng_app/screens/map/map_screen.dart';
 import 'package:goyohaeng_app/screens/map/region_spot_map.dart';
 import 'package:goyohaeng_app/screens/place/place_info_screen.dart';
@@ -361,5 +362,79 @@ void main() {
     await tester.runAsync(() async {});
     await tester.pumpAndSettle();
     expect(find.byType(RegionRankingScreen), findsNothing);
+  });
+
+  test('PlaceSearchIndex matches 장소명 and 지역명', () async {
+    final index = await PlaceSearchIndex.load();
+
+    final byPlace = index.query('죽녹원');
+    expect(byPlace.first.isPlace, isTrue);
+    expect(byPlace.first.spot?.name, '담양 죽녹원');
+    expect(byPlace.first.regionCode, '36310');
+
+    final byRegion = index.query('담양');
+    expect(byRegion.any((r) => !r.isPlace && r.regionCode == '36310'), isTrue);
+
+    expect(index.query('없는장소xyz'), isEmpty);
+  });
+
+  Future<void> openSearch(WidgetTester tester, String term) async {
+    await tester.runAsync(() async {
+      final g = await KoreaGeo.load();
+      await g.ensureSigungu();
+      await PlaceSearchIndex.load();
+    });
+    await pumpMapScreen(tester);
+
+    await tester.tap(find.text('지역명 · 장소명 검색'));
+    await tester.pump(); // start the push
+    await tester.pump(const Duration(milliseconds: 400)); // finish the push
+    await tester.runAsync(() async {}); // resolve PlaceSearchIndex.load()
+    await tester.pump();
+
+    await tester.enterText(find.byType(EditableText), term);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+  }
+
+  testWidgets('map search: 지역명 검색 → 그 지역의 <지역별 랭킹>', (tester) async {
+    tester.view.physicalSize = const Size(390, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    await openSearch(tester, '담양군');
+    // The first result row (region "담양군") — scope to the results list so the
+    // AppBar's search field (now also holding "담양군") isn't what we tap.
+    await tester.tap(
+      find
+          .descendant(of: find.byType(ListView), matching: find.text('담양군'))
+          .first,
+    );
+    await tester.runAsync(() async {});
+    await tester.pumpAndSettle();
+
+    expect(find.byType(RegionRankingScreen), findsOneWidget);
+    expect(find.text('담양 죽녹원'), findsWidgets);
+  });
+
+  testWidgets('map search: 장소명 검색 → 핀 선택 + "자세히 보기" → 상세', (tester) async {
+    tester.view.physicalSize = const Size(390, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    await openSearch(tester, '오목대');
+    await tester.tap(find.text('전주 오목대').last);
+    await tester.runAsync(() async {});
+    await tester.pumpAndSettle();
+
+    expect(find.byType(RegionRankingScreen), findsOneWidget);
+    // Pre-selected → its "자세히 보기" button is already shown.
+    expect(find.text('자세히 보기'), findsOneWidget);
+
+    await tester.ensureVisible(find.text('자세히 보기'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('자세히 보기'));
+    await tester.pumpAndSettle();
+    expect(find.byType(PlaceInfoScreen), findsOneWidget);
   });
 }
