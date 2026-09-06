@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:goyohaeng_app/data/korea_map_geo.dart';
 import 'package:goyohaeng_app/data/mock_map_regions.dart';
@@ -168,6 +169,56 @@ void main() {
     expect(find.text('담양군 랭킹'), findsOneWidget);
     await tester.tap(find.text('뒤로'));
     expect(back, isTrue);
+  });
+
+  testWidgets('RegionDetailMap responds to a pinch (camera zoom changes)',
+      (tester) async {
+    tester.view.physicalSize = const Size(390, 700);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    await tester.runAsync(() async {
+      final g = await KoreaGeo.load();
+      await g.ensureSigungu();
+    });
+
+    final controller = MapController();
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light,
+        home: Scaffold(
+          body: RegionDetailMap(
+            regionCode: '36310',
+            regionName: '담양군',
+            onBack: () {},
+            mapController: controller,
+          ),
+        ),
+      ),
+    );
+    await tester.runAsync(() async {});
+    await tester.pumpAndSettle();
+
+    final z0 = controller.camera.zoom;
+    final c = tester.getCenter(find.byType(FlutterMap));
+
+    // Two-finger spread ≈ pinch-zoom-in.
+    final g1 = await tester.createGesture();
+    final g2 = await tester.createGesture();
+    await g1.down(c + const Offset(-20, 0));
+    await g2.down(c + const Offset(20, 0));
+    await tester.pump();
+    for (var i = 1; i <= 8; i++) {
+      await g1.moveBy(const Offset(-12, 0));
+      await g2.moveBy(const Offset(12, 0));
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    await g1.up();
+    await g2.up();
+    await tester.pumpAndSettle();
+
+    expect(controller.camera.zoom, greaterThan(z0 + 0.3),
+        reason: 'pinch-out should zoom the camera in');
   });
 
   testWidgets('tapping a multi-구 시 opens its 구 (one more level)',

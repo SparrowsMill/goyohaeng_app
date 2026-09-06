@@ -26,6 +26,7 @@ class RegionDetailMap extends StatefulWidget {
     required this.regionName,
     required this.onBack,
     this.aspectRatio,
+    this.mapController,
   });
 
   /// 행정구역 코드 (시군구 5자리).
@@ -36,6 +37,9 @@ class RegionDetailMap extends StatefulWidget {
   /// If set, wrap the map in an `AspectRatio`; otherwise it fills its parent.
   final double? aspectRatio;
 
+  /// Injected in tests to read/drive the camera; otherwise one is created.
+  final MapController? mapController;
+
   @override
   State<RegionDetailMap> createState() => _RegionDetailMapState();
 }
@@ -43,6 +47,7 @@ class RegionDetailMap extends StatefulWidget {
 class _RegionDetailMapState extends State<RegionDetailMap> {
   late final List<MockTouristSpot> _spots = rankingForRegion(widget.regionCode);
   late final Future<List<List<LatLng>>> _ringsFuture = _loadRings();
+  late final MapController _map = widget.mapController ?? MapController();
 
   Future<List<List<LatLng>>> _loadRings() async {
     final geo = await KoreaGeo.load();
@@ -122,6 +127,7 @@ class _RegionDetailMapState extends State<RegionDetailMap> {
     final located = _spots.where((s) => s.hasLocation).toList();
 
     return FlutterMap(
+      mapController: _map,
       options: MapOptions(
         backgroundColor: AppColors.appBackground,
         minZoom: 6,
