@@ -25,7 +25,7 @@ class RegionDetailMap extends StatefulWidget {
     required this.regionCode,
     required this.regionName,
     required this.onBack,
-    this.aspectRatio = 0.92,
+    this.aspectRatio,
   });
 
   /// 행정구역 코드 (시군구 5자리).
@@ -33,8 +33,8 @@ class RegionDetailMap extends StatefulWidget {
   final String regionName;
   final VoidCallback onBack;
 
-  /// Kept equal to the vector map's box so the cross-fade doesn't resize.
-  final double aspectRatio;
+  /// If set, wrap the map in an `AspectRatio`; otherwise it fills its parent.
+  final double? aspectRatio;
 
   @override
   State<RegionDetailMap> createState() => _RegionDetailMapState();
@@ -77,9 +77,8 @@ class _RegionDetailMapState extends State<RegionDetailMap> {
 
   @override
   Widget build(BuildContext context) {
-    return AspectRatio(
-      aspectRatio: widget.aspectRatio,
-      child: ClipRRect(
+    final ar = widget.aspectRatio;
+    final card = ClipRRect(
         borderRadius: BorderRadius.circular(AppRadius.card),
         child: Stack(
           fit: StackFit.expand,
@@ -114,8 +113,8 @@ class _RegionDetailMapState extends State<RegionDetailMap> {
             ),
           ],
         ),
-      ),
     );
+    return ar == null ? card : AspectRatio(aspectRatio: ar, child: card);
   }
 
   Widget _buildMap(List<List<LatLng>> rings) {

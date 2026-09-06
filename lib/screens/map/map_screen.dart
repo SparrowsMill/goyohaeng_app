@@ -52,77 +52,7 @@ class _MapScreenState extends State<MapScreen> {
         title: const Text('지도'),
         actions: const [_NotificationBell()],
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(
-          AppSpacing.xl,
-          AppSpacing.lg,
-          AppSpacing.xl,
-          AppSpacing.xxl,
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Text('어디로 떠나볼까요?', style: AppTextStyles.h2),
-                const SizedBox(width: AppSpacing.xs),
-                Image.asset(
-                  'assets/illustrations/sparrow/sparrow_default.png',
-                  width: 30,
-                  height: 30,
-                  errorBuilder: (context, error, stackTrace) =>
-                      const SizedBox(width: 30),
-                ),
-              ],
-            ),
-            const SizedBox(height: AppSpacing.xs),
-            Text(
-              '지역별 갭지수와 숨은 관광 스팟을 둘러보세요',
-              style: AppTextStyles.bodyMedium.copyWith(
-                color: AppColors.textSecondary,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: AppSpacing.lg),
-            const Align(
-              alignment: Alignment.centerRight,
-              child: _GapLegend(),
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            const Align(
-              alignment: Alignment.centerRight,
-              child: GapIndexInfoButton(),
-            ),
-            const SizedBox(height: AppSpacing.lg),
-            AnimatedSwitcher(
-              duration: AppMotion.modalTransition,
-              switchInCurve: AppMotion.curve,
-              switchOutCurve: AppMotion.curve,
-              transitionBuilder: (child, animation) =>
-                  FadeTransition(opacity: animation, child: child),
-              child: _detail == null
-                  ? _KoreaMap(
-                      key: const ValueKey('vector'),
-                      onEnterRegion: (code, name) => setState(
-                          () => _detail = (code: code, name: name)),
-                    )
-                  : RegionDetailMap(
-                      key: ValueKey('detail_${_detail!.code}'),
-                      regionCode: _detail!.code,
-                      regionName: _detail!.name,
-                      onBack: () => setState(() => _detail = null),
-                    ),
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            Text(
-              _detail == null
-                  ? '지역을 누르면 시·군·구까지 펼쳐져요'
-                  : '지도의 장소를 눌러 자세히 살펴보세요',
-              style: AppTextStyles.caption,
-            ),
-          ],
-        ),
-      ),
+      body: _detail == null ? _buildVectorBody() : _buildDetailBody(_detail!),
       bottomNavigationBar: AppBottomNavBar(
         currentIndex: 1,
         onTap: (index) {
@@ -132,6 +62,111 @@ class _MapScreenState extends State<MapScreen> {
           // * TODO: 랭킹/기록 탭 — 해당 화면 구현 후 연결
         },
       ),
+    );
+  }
+
+  Widget _header({String? subtitle}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text('어디로 떠나볼까요?', style: AppTextStyles.h2),
+            const SizedBox(width: AppSpacing.xs),
+            Image.asset(
+              'assets/illustrations/sparrow/sparrow_default.png',
+              width: 30,
+              height: 30,
+              errorBuilder: (context, error, stackTrace) =>
+                  const SizedBox(width: 30),
+            ),
+          ],
+        ),
+        if (subtitle != null) ...[
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            subtitle,
+            style: AppTextStyles.bodyMedium.copyWith(
+              color: AppColors.textSecondary,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  /// Nationwide → 시도 → 시군구 → 구 vector drill-down. Scrollable as a small-
+  /// screen safety net; `_KoreaMap` navigates by tap so it doesn't need pan.
+  Widget _buildVectorBody() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.xl,
+        AppSpacing.lg,
+        AppSpacing.xl,
+        AppSpacing.xxl,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _header(subtitle: '지역별 갭지수와 숨은 관광 스팟을 둘러보세요'),
+          const SizedBox(height: AppSpacing.lg),
+          const Align(alignment: Alignment.centerRight, child: _GapLegend()),
+          const SizedBox(height: AppSpacing.sm),
+          const Align(
+            alignment: Alignment.centerRight,
+            child: GapIndexInfoButton(),
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          _KoreaMap(
+            onEnterRegion: (code, name) =>
+                setState(() => _detail = (code: code, name: name)),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Text('지역을 누르면 시·군·구까지 펼쳐져요',
+              style: AppTextStyles.caption),
+        ],
+      ),
+    );
+  }
+
+  /// One 구/군 open on the real tile map. Deliberately **not** scrollable so
+  /// `flutter_map` wins every pan/zoom gesture; the map fills the space.
+  Widget _buildDetailBody(({String code, String name}) detail) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.xl,
+            AppSpacing.lg,
+            AppSpacing.xl,
+            AppSpacing.md,
+          ),
+          child: _header(),
+        ),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
+            child: RegionDetailMap(
+              key: ValueKey('detail_${detail.code}'),
+              regionCode: detail.code,
+              regionName: detail.name,
+              onBack: () => setState(() => _detail = null),
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.xl,
+            AppSpacing.sm,
+            AppSpacing.xl,
+            AppSpacing.lg,
+          ),
+          child: Text('지도의 장소를 눌러 자세히 살펴보세요',
+              style: AppTextStyles.caption),
+        ),
+      ],
     );
   }
 }
@@ -210,7 +245,7 @@ const _sidoShortName = <String, String>{
 };
 
 class _KoreaMap extends StatefulWidget {
-  const _KoreaMap({super.key, required this.onEnterRegion});
+  const _KoreaMap({required this.onEnterRegion});
 
   /// Called with a 시군구/구 code + name when the user taps a leaf region
   /// (a 군, a 자치구, or a 구 within a drilled 시) — `MapScreen` then swaps in
