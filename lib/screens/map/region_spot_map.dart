@@ -48,10 +48,6 @@ class _RegionSpotMapState extends State<RegionSpotMap> {
   late final MapController _map = widget.mapController ?? MapController();
   bool _ready = false;
 
-  /// The device's position, once "내 위치" has been tapped.
-  LatLng? _myLocation;
-  bool _locating = false;
-
   /// "즐겨찾기" toggle — this region's favorited spots become amber star pins
   /// (in place, no camera change) and the favorites list slides up.
   bool _showFavorites = false;
@@ -59,16 +55,19 @@ class _RegionSpotMapState extends State<RegionSpotMap> {
   @override
   void initState() {
     super.initState();
-    Favorites.instance.addListener(_onFavoritesChanged);
+    Favorites.instance.addListener(_onChanged);
+    UserLocation.position.addListener(_onChanged);
+    UserLocation.ensure();
   }
 
   @override
   void dispose() {
-    Favorites.instance.removeListener(_onFavoritesChanged);
+    Favorites.instance.removeListener(_onChanged);
+    UserLocation.position.removeListener(_onChanged);
     super.dispose();
   }
 
-  void _onFavoritesChanged() {
+  void _onChanged() {
     if (mounted) setState(() {});
   }
 
@@ -81,27 +80,6 @@ class _RegionSpotMapState extends State<RegionSpotMap> {
     showFavoritesSheet(context).then((_) {
       if (mounted) setState(() => _showFavorites = false);
     });
-  }
-
-  Future<void> _goToMyLocation() async {
-    if (_locating) return;
-    setState(() => _locating = true);
-    final here = await UserLocation.current();
-    if (!mounted) return;
-    setState(() {
-      _locating = false;
-      _myLocation = here;
-    });
-    if (here == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('위치를 가져올 수 없어요. 위치 권한과 GPS를 확인해 주세요.')),
-      );
-      return;
-    }
-    if (_ready) {
-      final zoom = _map.camera.zoom;
-      _map.move(here, zoom < 15 ? 15 : zoom);
-    }
   }
 
   List<MockTouristSpot> get _located =>
@@ -146,22 +124,11 @@ class _RegionSpotMapState extends State<RegionSpotMap> {
             Positioned(
               left: AppSpacing.sm,
               bottom: AppSpacing.sm,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  MapToggleButton(
-                    icon: Symbols.star_rounded,
-                    label: '즐겨찾기',
-                    active: _showFavorites,
-                    onTap: _toggleFavorites,
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-                  MyLocationButton(
-                    onTap: _goToMyLocation,
-                    busy: _locating,
-                  ),
-                ],
+              child: MapToggleButton(
+                icon: Symbols.star_rounded,
+                label: '즐겨찾기',
+                active: _showFavorites,
+                onTap: _toggleFavorites,
               ),
             ),
           ],
@@ -231,13 +198,13 @@ class _RegionSpotMapState extends State<RegionSpotMap> {
               _marker(widget.selected!, selected: true),
           ],
         ),
-        if (_myLocation != null)
+        if (UserLocation.position.value != null)
           MarkerLayer(
             markers: [
               Marker(
-                point: _myLocation!,
-                width: 28,
-                height: 28,
+                point: UserLocation.position.value!,
+                width: 32,
+                height: 32,
                 child: const MyLocationDot(),
               ),
             ],

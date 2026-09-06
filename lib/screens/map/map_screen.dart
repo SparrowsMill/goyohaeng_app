@@ -283,10 +283,8 @@ class _KoreaMapState extends State<_KoreaMap>
   List<_MapUnit> _units = const [];
   String? _unitsKey;
 
-  /// The device's position once "내 위치" is tapped, and its projected
-  /// scene-space point (kept in sync by the layout builder) for the painter.
-  LatLng? _myLatLng;
-  bool _locating = false;
+  /// Projected scene-space point of the device position ([UserLocation]),
+  /// kept in sync by the layout builder — the painter draws the dot there.
   final ValueNotifier<Offset?> _myPoint = ValueNotifier<Offset?>(null);
 
   /// "즐겨찾기": drops an amber star pin for every favorited spot at the
@@ -299,6 +297,8 @@ class _KoreaMapState extends State<_KoreaMap>
   void initState() {
     super.initState();
     Favorites.instance.addListener(_onFavoritesChanged);
+    UserLocation.position.addListener(_onLocation);
+    UserLocation.ensure();
     _animController = AnimationController(
       vsync: this,
       duration: AppMotion.pageTransition,
@@ -315,6 +315,7 @@ class _KoreaMapState extends State<_KoreaMap>
   @override
   void dispose() {
     Favorites.instance.removeListener(_onFavoritesChanged);
+    UserLocation.position.removeListener(_onLocation);
     _tc.removeListener(_onTransform);
     _tc.dispose();
     _animController.dispose();
@@ -331,6 +332,10 @@ class _KoreaMapState extends State<_KoreaMap>
     if (mounted) setState(() {}); // refresh the star pins / removals
   }
 
+  void _onLocation() {
+    if (mounted) setState(() {}); // let the layout builder re-project the dot
+  }
+
   /// "즐겨찾기": toggle the star-pin overlay at the current view and slide the
   /// favorites list up. Dismissing the list clears the overlay. No camera move.
   void _toggleFavorites() {
@@ -342,35 +347,6 @@ class _KoreaMapState extends State<_KoreaMap>
     showFavoritesSheet(context).then((_) {
       if (mounted) setState(() => _showFavorites = false);
     });
-  }
-
-  /// "내 위치": locate the device, drop the dot, and zoom the map to it.
-  Future<void> _goToMyLocation() async {
-    if (_locating) return;
-    setState(() => _locating = true);
-    final here = await UserLocation.current();
-    if (!mounted) return;
-    setState(() {
-      _locating = false;
-      _myLatLng = here;
-    });
-    if (here == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('위치를 가져올 수 없어요. 위치 권한과 GPS를 확인해 주세요.')),
-      );
-      return;
-    }
-    final geo = _geo;
-    if (geo == null || _boxSize == Size.zero) return;
-    final project = MapProjector(bounds: geo.bounds, size: _boxSize);
-    final crs = Epsg5179.fromLatLng(here);
-    _myPoint.value = project(crs);
-    // Zoom to a ~30 km window around the point (clamped to the map's max zoom).
-    const half = 15000.0;
-    _zoomToSceneRect(Rect.fromPoints(
-      project(Offset(crs.dx - half, crs.dy - half)),
-      project(Offset(crs.dx + half, crs.dy + half)),
-    ));
   }
 
   void _onTransform() {
@@ -668,7 +644,7 @@ class _KoreaMapState extends State<_KoreaMap>
                 // Keep the "내 위치" dot and 즐겨찾기 star pins glued to their
                 // lat/lng across layout changes (projector depends on box size).
                 final project = MapProjector(bounds: geo.bounds, size: size);
-                final here = _myLatLng;
+                final here = UserLocation.position.value;
                 _myPoint.value =
                     here == null ? null : project(Epsg5179.fromLatLng(here));
                 _favPoints.value = _showFavorites
@@ -713,22 +689,11 @@ class _KoreaMapState extends State<_KoreaMap>
                       Positioned(
                         left: AppSpacing.sm,
                         bottom: AppSpacing.sm,
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            MapToggleButton(
-                              icon: Symbols.star_rounded,
-                              label: '즐겨찾기',
-                              active: _showFavorites,
-                              onTap: _toggleFavorites,
-                            ),
-                            const SizedBox(height: AppSpacing.sm),
-                            MyLocationButton(
-                              onTap: _goToMyLocation,
-                              busy: _locating,
-                            ),
-                          ],
+                        child: MapToggleButton(
+                          icon: Symbols.star_rounded,
+                          label: '즐겨찾기',
+                          active: _showFavorites,
+                          onTap: _toggleFavorites,
                         ),
                       ),
                       Positioned(
@@ -1017,19 +982,19 @@ class _KoreaMapPainter extends CustomPainter {
     return path..close();
   }
 
-  /// The "you are here" dot — constant on-screen size (÷ z), with a white ring
-  /// and a soft halo, matching `MyLocationDot` on the real tile map.
+  /// The "you are here" dot — a vivid blue disc with a white ring and a soft
+  /// halo, constant on-screen size (÷ z), matching `MyLocationDot`.
   void _paintMyLocation(Canvas canvas, double z, Rect view) {
     final p = myPoint.value;
     if (p == null || !view.contains(p)) return;
-    final r = 5.5 / z;
+    final r = 6 / z;
     canvas.drawCircle(
       p,
-      r * 2.6,
-      Paint()..color = AppColors.info.withValues(alpha: 0.18),
+      r * 2.8,
+      Paint()..color = myLocationColor.withValues(alpha: 0.22),
     );
-    canvas.drawCircle(p, r + 2.4 / z, Paint()..color = AppColors.surface);
-    canvas.drawCircle(p, r, Paint()..color = AppColors.info);
+    canvas.drawCircle(p, r + 3 / z, Paint()..color = AppColors.surface);
+    canvas.drawCircle(p, r, Paint()..color = myLocationColor);
   }
 
   void _paintLabels(
