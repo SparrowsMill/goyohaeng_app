@@ -10,6 +10,7 @@ import '../../theme/app_shadows.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
 import '../../widgets/app_bottom_nav_bar.dart';
+import '../../widgets/favorite_star_button.dart';
 import '../trend/trend_summary_screen.dart';
 import 'visit_prepare_screen.dart';
 import 'visit_unavailable_screen.dart';
@@ -78,6 +79,14 @@ class PlaceInfoScreen extends StatelessWidget {
           icon: const Icon(Symbols.arrow_back_rounded),
         ),
         title: const Text('장소 정보'),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: AppSpacing.sm),
+            child: Center(
+              child: FavoriteStarButton(spotName: spot.name, size: 26),
+            ),
+          ),
+        ],
       ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(

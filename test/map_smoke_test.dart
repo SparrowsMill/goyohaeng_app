@@ -3,6 +3,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:goyohaeng_app/data/korea_map_geo.dart';
 import 'package:goyohaeng_app/data/mock_map_regions.dart';
+import 'package:goyohaeng_app/data/favorites.dart';
 import 'package:goyohaeng_app/data/mock_region_ranking.dart';
 import 'package:goyohaeng_app/data/place_search.dart';
 import 'package:goyohaeng_app/data/user_location.dart';
@@ -11,6 +12,7 @@ import 'package:goyohaeng_app/screens/map/region_spot_map.dart';
 import 'package:goyohaeng_app/screens/place/place_info_screen.dart';
 import 'package:goyohaeng_app/screens/ranking/region_ranking_screen.dart';
 import 'package:goyohaeng_app/theme/app_theme.dart';
+import 'package:goyohaeng_app/widgets/favorite_star_button.dart';
 import 'package:goyohaeng_app/widgets/my_location_button.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:material_symbols_icons/symbols.dart';
@@ -545,6 +547,101 @@ void main() {
       await tester.pump();
 
       expect(find.textContaining('위치를 가져올 수 없어요'), findsOneWidget);
+    });
+  });
+
+  group('즐겨찾기', () {
+    tearDown(Favorites.instance.resetToSeed);
+
+    test('Favorites: toggle / count / countForRegion', () {
+      final f = Favorites.instance;
+      expect(f.contains('담양 죽녹원'), isTrue); // seeded
+      expect(f.contains('담양 소쇄원'), isFalse);
+
+      f.toggle('담양 소쇄원');
+      expect(f.contains('담양 소쇄원'), isTrue);
+      // 담양군(36310) 하위 즐겨찾기: 죽녹원 + 소쇄원.
+      expect(f.countForRegion('36310'), 2);
+      expect(f.countForRegion('36'), greaterThanOrEqualTo(2)); // 전남 전체
+
+      f.toggle('담양 죽녹원');
+      expect(f.contains('담양 죽녹원'), isFalse);
+      expect(f.countForRegion('36310'), 1);
+    });
+
+    testWidgets('별을 누르면 랭킹 카드에서 즐겨찾기 토글', (tester) async {
+      tester.view.physicalSize = const Size(390, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.runAsync(() async {
+        final g = await KoreaGeo.load();
+        await g.ensureSigungu();
+      });
+
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: RegionRankingScreen(regionKey: '36310', regionName: '담양군'),
+        ),
+      );
+      await tester.runAsync(() async {});
+      await tester.pumpAndSettle();
+
+      final star = find.byWidgetPredicate(
+        (w) => w is FavoriteStarButton && w.spotName == '담양 소쇄원',
+      );
+      expect(Favorites.instance.contains('담양 소쇄원'), isFalse);
+
+      await tester.ensureVisible(star);
+      await tester.tap(star);
+      await tester.pump();
+      expect(Favorites.instance.contains('담양 소쇄원'), isTrue);
+    });
+
+    testWidgets('RegionSpotMap: 즐겨찾기된 스팟은 별 핀으로', (tester) async {
+      tester.view.physicalSize = const Size(390, 700);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.runAsync(() async {
+        final g = await KoreaGeo.load();
+        await g.ensureSigungu();
+      });
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.light,
+          home: Scaffold(
+            body: RegionSpotMap(
+              regionCode: '36310',
+              spots: rankingForRegion('36310'),
+              selected: null,
+              onMarkerTap: (_) {},
+              mapController: MapController(),
+            ),
+          ),
+        ),
+      );
+      await tester.runAsync(() async {});
+      await tester.pumpAndSettle();
+
+      // 담양 죽녹원은 seed 즐겨찾기 → 별 글리프가 지도에 있다.
+      expect(find.byIcon(Symbols.star_rounded), findsWidgets);
+    });
+
+    testWidgets('벡터 지도: 즐겨찾기 토글 버튼', (tester) async {
+      tester.view.physicalSize = const Size(390, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+
+      await pumpMapScreen(tester);
+      expect(find.widgetWithText(MapToggleButton, '즐겨찾기'), findsOneWidget);
+
+      MapToggleButton btn() =>
+          tester.widget(find.widgetWithText(MapToggleButton, '즐겨찾기'));
+      expect(btn().active, isFalse);
+
+      await tester.tap(find.text('즐겨찾기'));
+      await tester.pumpAndSettle();
+      expect(btn().active, isTrue);
     });
   });
 }

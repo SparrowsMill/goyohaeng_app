@@ -9,6 +9,7 @@ import '../../theme/app_radius.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
 import '../../widgets/app_bottom_nav_bar.dart';
+import '../../widgets/favorite_star_button.dart';
 import '../../widgets/gap_index_info_dialog.dart';
 import '../map/region_spot_map.dart';
 import '../place/place_info_screen.dart';
@@ -398,7 +399,12 @@ class _RankingCard extends StatelessWidget {
                       ),
                     ),
                   ),
-                  const SizedBox(width: AppSpacing.sm),
+                  const SizedBox(width: AppSpacing.xs),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 1),
+                    child: FavoriteStarButton(spotName: spot.name, size: 20),
+                  ),
+                  const SizedBox(width: AppSpacing.xs),
                   Padding(
                     padding: const EdgeInsets.only(top: 3),
                     child: _GapValue(gapIndex: spot.gapIndex),

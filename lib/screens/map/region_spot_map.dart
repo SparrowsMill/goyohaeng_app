@@ -4,6 +4,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
 import '../../config/map_config.dart';
+import '../../data/favorites.dart';
 import '../../data/korea_crs.dart' show Epsg5179;
 import '../../data/korea_map_geo.dart';
 import '../../data/mock_map_regions.dart' show gapIndexColor;
@@ -49,6 +50,64 @@ class _RegionSpotMapState extends State<RegionSpotMap> {
   /// The device's position, once "내 위치" has been tapped.
   LatLng? _myLocation;
   bool _locating = false;
+
+  /// "즐겨찾기" toggle — also drops every favorited spot's star pin on the map.
+  bool _showFavorites = false;
+
+  @override
+  void initState() {
+    super.initState();
+    Favorites.instance.addListener(_onFavoritesChanged);
+  }
+
+  @override
+  void dispose() {
+    Favorites.instance.removeListener(_onFavoritesChanged);
+    super.dispose();
+  }
+
+  void _onFavoritesChanged() {
+    if (mounted) setState(() {});
+  }
+
+  /// Favorited spots to pin: this region's list already covers its own, so
+  /// only add favorites from *other* regions (deduped by name) when the
+  /// toggle is on.
+  List<MockTouristSpot> get _extraFavorites {
+    if (!_showFavorites) return const [];
+    final shown = {for (final s in _located) s.name};
+    return [
+      for (final f in Favorites.instance.locatedSpots())
+        if (!shown.contains(f.spot.name)) f.spot,
+    ];
+  }
+
+  void _toggleFavorites() {
+    final next = !_showFavorites;
+    setState(() => _showFavorites = next);
+    if (!next) return;
+    if (Favorites.instance.count == 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('즐겨찾기한 장소가 아직 없어요.')),
+      );
+      return;
+    }
+    // Frame the region's spots together with every favorite.
+    final pts = <LatLng>[
+      for (final s in _located) LatLng(s.lat!, s.lng!),
+      for (final s in _extraFavorites) LatLng(s.lat!, s.lng!),
+    ];
+    if (_ready && pts.length > 1) {
+      _map.fitCamera(
+        CameraFit.bounds(
+          bounds: LatLngBounds.fromPoints(pts),
+          padding: const EdgeInsets.all(AppSpacing.xxl),
+        ),
+      );
+    } else if (_ready && pts.length == 1) {
+      _map.move(pts.single, 13);
+    }
+  }
 
   Future<void> _goToMyLocation() async {
     if (_locating) return;
@@ -113,9 +172,22 @@ class _RegionSpotMapState extends State<RegionSpotMap> {
             Positioned(
               left: AppSpacing.sm,
               bottom: AppSpacing.sm,
-              child: MyLocationButton(
-                onTap: _goToMyLocation,
-                busy: _locating,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  MapToggleButton(
+                    icon: Symbols.star_rounded,
+                    label: '즐겨찾기',
+                    active: _showFavorites,
+                    onTap: _toggleFavorites,
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  MyLocationButton(
+                    onTap: _goToMyLocation,
+                    busy: _locating,
+                  ),
+                ],
               ),
             ),
           ],
@@ -177,6 +249,8 @@ class _RegionSpotMapState extends State<RegionSpotMap> {
           ),
         MarkerLayer(
           markers: [
+            // Favorites pinned from other regions (toggle on) sit underneath.
+            for (final spot in _extraFavorites) _marker(spot, selected: false),
             for (final spot in located)
               if (spot != widget.selected)
                 _marker(spot, selected: false),
@@ -211,6 +285,7 @@ class _RegionSpotMapState extends State<RegionSpotMap> {
         label: spot.name,
         color: gapIndexColor(spot.gapIndex),
         selected: selected,
+        favorite: Favorites.instance.contains(spot.name),
         onTap: () => widget.onMarkerTap(spot),
       ),
     );
@@ -224,12 +299,16 @@ class _SpotPin extends StatelessWidget {
     required this.label,
     required this.color,
     required this.selected,
+    required this.favorite,
     required this.onTap,
   });
 
   final String label;
   final Color color;
   final bool selected;
+
+  /// Favorited spots use a star glyph instead of the teardrop pin.
+  final bool favorite;
   final VoidCallback onTap;
 
   @override
@@ -239,13 +318,14 @@ class _SpotPin extends StatelessWidget {
             ? AppColors.surface
             : AppColors.textPrimary;
     final size = selected ? 36.0 : 26.0;
+    final glyph =
+        favorite ? Symbols.star_rounded : Symbols.location_on_rounded;
     // A gap-index-tinted pin with a white edge for contrast on light tiles.
     final pin = Stack(
       alignment: Alignment.center,
       children: [
-        Icon(Symbols.location_on_rounded,
-            size: size + 4, color: AppColors.surface, fill: 1),
-        Icon(Symbols.location_on_rounded, size: size, color: color, fill: 1),
+        Icon(glyph, size: size + 4, color: AppColors.surface, fill: 1),
+        Icon(glyph, size: size, color: color, fill: 1),
       ],
     );
 
