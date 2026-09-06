@@ -277,7 +277,7 @@ class _GapIndexInfoBody extends StatelessWidget {
               ),
               const SizedBox(height: AppSpacing.sm),
               Text(
-                '색이 진한 지역일수록 평균 갭지수가 높은 지역이에요.',
+                '남청색에 가까울수록 평균 갭지수가 높고,\n붉은색에 가까울수록 낮은 지역이에요.',
                 textAlign: TextAlign.center,
                 style: AppTextStyles.caption,
               ),

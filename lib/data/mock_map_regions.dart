@@ -73,26 +73,34 @@ RegionStats _deterministicStats(String code) {
 /// 갭지수 values the color scale's two ends map to. Real data clusters in
 /// roughly the 20–80 band, so anchoring the scale there (rather than a flat
 /// 0–100) keeps neighbouring regions visibly distinct; values outside just
-/// saturate to the end color. The legend runs pale cream ("낮음") → deep
-/// olive ("높음").
+/// saturate to the end color.
+///
+/// The scale runs 붉은 흙빛 ("낮음") → 따뜻한 모래빛 (중간) → 차분한 남청색
+/// ("높음"), all muted to sit inside the warm storybook palette.
 const gapIndexScaleMin = 20;
 const gapIndexScaleMax = 80;
 
-/// Pale yellow-green end of the 갭지수 color scale.
-const _gapLow = Color(0xFFEFE8C8);
+/// Muted terracotta — 갭지수가 낮은 쪽 (관심 대비 방문이 이미 많음).
+const _gapLow = Color(0xFFB75E4D);
 
-/// Deep forest-olive end of the 갭지수 color scale.
-const _gapHigh = Color(0xFF454B22);
+/// Warm sand — the neutral middle of the scale.
+const _gapMid = Color(0xFFE9DFC0);
 
-/// Color for a given 갭지수 on the low→high scale used by the map and legend.
+/// Muted slate blue — 갭지수가 높은 쪽 (숨은 명소).
+const _gapHigh = Color(0xFF4C6B8A);
+
+/// Color for a given 갭지수 on the low→mid→high scale used by the map, pins,
+/// and legend.
 Color gapIndexColor(num gapIndex) {
   final t =
       ((gapIndex - gapIndexScaleMin) / (gapIndexScaleMax - gapIndexScaleMin))
           .clamp(0.0, 1.0);
-  return Color.lerp(_gapLow, _gapHigh, t)!;
+  return t < 0.5
+      ? Color.lerp(_gapLow, _gapMid, t * 2)!
+      : Color.lerp(_gapMid, _gapHigh, (t - 0.5) * 2)!;
 }
 
 /// The full low→high gradient, for the legend bar.
 const gapIndexGradient = LinearGradient(
-  colors: [_gapLow, _gapHigh],
+  colors: [_gapLow, _gapMid, _gapHigh],
 );
