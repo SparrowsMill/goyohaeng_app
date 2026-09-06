@@ -282,4 +282,44 @@ void main() {
     expect(find.byType(RegionRankingScreen), findsNothing); // still the vector map
     expect(find.text('뒤로'), findsOneWidget); // the step-out pill switched
   });
+
+  testWidgets('system back steps out one drill level, not off the screen',
+      (tester) async {
+    tester.view.physicalSize = const Size(390, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    final geo = await tester.runAsync(() async {
+      final g = await KoreaGeo.load();
+      await g.ensureSigungu();
+      return g;
+    });
+    await pumpMapScreen(tester);
+
+    final box = tester.getRect(find.byType(InteractiveViewer));
+    final proj = MapProjector(bounds: geo!.bounds, size: box.size);
+    TransformationController tc() => tester
+        .widget<InteractiveViewer>(find.byType(InteractiveViewer))
+        .transformationController!;
+    Offset screenFor(Offset raw) =>
+        MatrixUtils.transformPoint(tc().value, proj(raw)) + box.topLeft;
+    final damyang = geo.sigunguLabels.firstWhere((l) => l.id == '36310').point;
+
+    await tester.tapAt(screenFor(damyang)); // focus 전남
+    await tester.runAsync(() async {});
+    await tester.pumpAndSettle();
+
+    // System back: should un-focus, not leave MapScreen.
+    final popped = await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(popped, isTrue); // handled (by PopScope), route not popped
+    expect(find.byType(MapScreen), findsOneWidget);
+
+    // Now we're back at the nationwide view: one tap only focuses 전남 again,
+    // it does not jump straight into the ranking screen.
+    await tester.tapAt(screenFor(damyang));
+    await tester.runAsync(() async {});
+    await tester.pumpAndSettle();
+    expect(find.byType(RegionRankingScreen), findsNothing);
+  });
 }

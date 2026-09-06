@@ -553,6 +553,18 @@ class _KoreaMapState extends State<_KoreaMap>
     final aspectRatio =
         geo == null ? 0.92 : geo.bounds.width / geo.bounds.height;
 
+    return PopScope(
+      // Back steps out one drill level at a time; only leaves the screen once
+      // we're at the nationwide view.
+      canPop: _focusedSido.value == null,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _popFocus();
+      },
+      child: _buildMap(context, geo, aspectRatio),
+    );
+  }
+
+  Widget _buildMap(BuildContext context, KoreaGeo? geo, double aspectRatio) {
     return AspectRatio(
       aspectRatio: aspectRatio,
       child: geo == null
