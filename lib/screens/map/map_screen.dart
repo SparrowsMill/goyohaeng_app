@@ -15,6 +15,7 @@ import '../../theme/app_radius.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
 import '../../widgets/app_bottom_nav_bar.dart';
+import '../../widgets/favorites_sheet.dart';
 import '../../widgets/gap_index_info_dialog.dart';
 import '../../widgets/my_location_button.dart';
 import '../ranking/region_ranking_screen.dart';
@@ -334,17 +335,29 @@ class _KoreaMapState extends State<_KoreaMap>
     });
   }
 
-  /// "즐겨찾기": toggle the favorites overlay on the whole map.
+  /// "즐겨찾기": light up the favorites overlay (star pins + "★ N" counts) and
+  /// slide up the half-screen favorites list. Dismissing the list clears the
+  /// overlay again.
   void _toggleFavorites() {
+    if (_showFavorites) {
+      setState(() {
+        _showFavorites = false;
+        _unitsKey = null;
+      });
+      return;
+    }
     setState(() {
-      _showFavorites = !_showFavorites;
+      _showFavorites = true;
       _unitsKey = null;
     });
-    if (_showFavorites && Favorites.instance.count == 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('즐겨찾기한 장소가 아직 없어요.')),
-      );
-    }
+    showFavoritesSheet(context).then((_) {
+      if (mounted) {
+        setState(() {
+          _showFavorites = false;
+          _unitsKey = null;
+        });
+      }
+    });
   }
 
   /// "내 위치": locate the device, drop the dot, and zoom the map to it.

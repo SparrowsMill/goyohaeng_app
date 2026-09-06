@@ -627,7 +627,7 @@ void main() {
       expect(find.byIcon(Symbols.star_rounded), findsWidgets);
     });
 
-    testWidgets('벡터 지도: 즐겨찾기 토글 버튼', (tester) async {
+    testWidgets('벡터 지도: 즐겨찾기 버튼 → 반쪽 목록 + 별로 해제', (tester) async {
       tester.view.physicalSize = const Size(390, 800);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
@@ -641,7 +641,38 @@ void main() {
 
       await tester.tap(find.text('즐겨찾기'));
       await tester.pumpAndSettle();
+
+      // Overlay on + the half-sheet listing the 3 seeded favorites.
       expect(btn().active, isTrue);
+      expect(find.text('즐겨찾기 3곳'), findsOneWidget);
+      expect(find.text('담양 죽녹원'), findsOneWidget);
+
+      // The row keeps a star → unfavorite in place.
+      await tester.tap(find.byWidgetPredicate(
+        (w) => w is FavoriteStarButton && w.spotName == '담양 죽녹원',
+      ));
+      await tester.pumpAndSettle();
+      expect(Favorites.instance.contains('담양 죽녹원'), isFalse);
+      expect(find.text('즐겨찾기 2곳'), findsOneWidget);
+
+      // Dismiss the sheet → overlay clears.
+      await tester.tapAt(const Offset(195, 60));
+      await tester.pumpAndSettle();
+      expect(btn().active, isFalse);
+    });
+
+    testWidgets('즐겨찾기 목록에서 항목 탭 → <장소 정보>', (tester) async {
+      tester.view.physicalSize = const Size(390, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+
+      await pumpMapScreen(tester);
+      await tester.tap(find.text('즐겨찾기'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('전주 경기전'));
+      await tester.pumpAndSettle();
+      expect(find.byType(PlaceInfoScreen), findsOneWidget);
     });
   });
 }

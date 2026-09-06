@@ -13,6 +13,7 @@ import '../../data/user_location.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
+import '../../widgets/favorites_sheet.dart';
 import '../../widgets/my_location_button.dart';
 
 /// The map half of `<지역별 랭킹>`: a real slippy map (VWorld tiles when
@@ -83,15 +84,12 @@ class _RegionSpotMapState extends State<RegionSpotMap> {
   }
 
   void _toggleFavorites() {
-    final next = !_showFavorites;
-    setState(() => _showFavorites = next);
-    if (!next) return;
-    if (Favorites.instance.count == 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('즐겨찾기한 장소가 아직 없어요.')),
-      );
+    if (_showFavorites) {
+      setState(() => _showFavorites = false);
       return;
     }
+    setState(() => _showFavorites = true);
+
     // Frame the region's spots together with every favorite.
     final pts = <LatLng>[
       for (final s in _located) LatLng(s.lat!, s.lng!),
@@ -107,6 +105,10 @@ class _RegionSpotMapState extends State<RegionSpotMap> {
     } else if (_ready && pts.length == 1) {
       _map.move(pts.single, 13);
     }
+
+    showFavoritesSheet(context).then((_) {
+      if (mounted) setState(() => _showFavorites = false);
+    });
   }
 
   Future<void> _goToMyLocation() async {
