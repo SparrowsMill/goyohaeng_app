@@ -12,7 +12,6 @@ import '../../data/mock_region_ranking.dart';
 import '../../data/user_location.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_spacing.dart';
-import '../../widgets/favorites_sheet.dart';
 import '../../widgets/my_location_button.dart';
 import '../../widgets/spot_pin.dart';
 
@@ -71,16 +70,9 @@ class _RegionSpotMapState extends State<RegionSpotMap> {
     if (mounted) setState(() {});
   }
 
-  void _toggleFavorites() {
-    if (_showFavorites) {
-      setState(() => _showFavorites = false);
-      return;
-    }
-    setState(() => _showFavorites = true);
-    showFavoritesSheet(context).then((_) {
-      if (mounted) setState(() => _showFavorites = false);
-    });
-  }
+  /// This region's ranked list is already on screen below the map, so the
+  /// toggle here just flips the favorited spots to amber star pins in place.
+  void _toggleFavorites() => setState(() => _showFavorites = !_showFavorites);
 
   List<MockTouristSpot> get _located =>
       widget.spots.where((s) => s.hasLocation).toList();

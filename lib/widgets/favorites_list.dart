@@ -11,19 +11,15 @@ import '../theme/app_spacing.dart';
 import '../theme/app_text_styles.dart';
 import 'favorite_star_button.dart';
 
-/// Slides up a half-screen list of every favorited place, filterable by
-/// 시/군/구. Each row keeps its star so it can be removed in place; tapping a
-/// row opens `<장소 정보>`.
-Future<void> showFavoritesSheet(BuildContext context) {
-  return showModalBottomSheet<void>(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: AppColors.surface,
-    showDragHandle: true,
-    barrierColor: AppColors.textPrimary.withValues(alpha: 0.15),
-    shape: const RoundedRectangleBorder(borderRadius: AppRadius.bottomSheet),
-    builder: (_) => const _FavoritesSheet(),
-  );
+/// The favorites list body — a "즐겨찾기 N곳" header, a 시/군/구 filter, then a
+/// row per favorited place (each keeps its star for in-place removal; tapping a
+/// row opens `<장소 정보>`). Sized by its parent; used as the bottom half of the
+/// split `<지도>` view.
+class FavoritesList extends StatefulWidget {
+  const FavoritesList({super.key});
+
+  @override
+  State<FavoritesList> createState() => _FavoritesListState();
 }
 
 /// 시/군/구 name a spot belongs to — the 2nd address token ("담양군",
@@ -33,24 +29,15 @@ String _sigunguOf(MockTouristSpot spot) {
   return parts.length > 1 ? parts[1] : parts.first;
 }
 
-class _FavoritesSheet extends StatefulWidget {
-  const _FavoritesSheet();
-
-  @override
-  State<_FavoritesSheet> createState() => _FavoritesSheetState();
-}
-
-class _FavoritesSheetState extends State<_FavoritesSheet> {
+class _FavoritesListState extends State<FavoritesList> {
   /// `null` == 전체.
   String? _sigungu;
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: MediaQuery.sizeOf(context).height * 0.5,
-      child: AnimatedBuilder(
-        animation: Favorites.instance,
-        builder: (context, _) {
+    return AnimatedBuilder(
+      animation: Favorites.instance,
+      builder: (context, _) {
           final all = [for (final f in Favorites.instance.spots()) f.spot];
           final regions = <String>{for (final s in all) _sigunguOf(s)}.toList()
             ..sort();
@@ -111,22 +98,17 @@ class _FavoritesSheetState extends State<_FavoritesSheet> {
                         ),
                         itemBuilder: (_, i) => _FavoriteRow(
                           spot: spots[i],
-                          onOpen: () {
-                            final nav = Navigator.of(context);
-                            nav.pop();
-                            nav.push(
-                              MaterialPageRoute(
-                                builder: (_) => PlaceInfoScreen(spot: spots[i]),
-                              ),
-                            );
-                          },
+                          onOpen: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => PlaceInfoScreen(spot: spots[i]),
+                            ),
+                          ),
                         ),
                       ),
               ),
             ],
           );
-        },
-      ),
+      },
     );
   }
 }

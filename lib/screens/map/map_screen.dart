@@ -15,7 +15,7 @@ import '../../theme/app_radius.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
 import '../../widgets/app_bottom_nav_bar.dart';
-import '../../widgets/favorites_sheet.dart';
+import '../../widgets/favorites_list.dart';
 import '../../widgets/gap_index_info_dialog.dart';
 import '../../widgets/my_location_button.dart';
 import '../ranking/region_ranking_screen.dart';
@@ -33,8 +33,17 @@ import 'place_search_screen.dart';
 ///   - 군·자치구·구 탭 : `<지역별 랭킹>` (목록 + 실제 타일 지도 반반)
 ///
 /// "갭지수란?" opens the explainer; the bottom-right pill steps out one level.
-class MapScreen extends StatelessWidget {
+class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
+
+  @override
+  State<MapScreen> createState() => _MapScreenState();
+}
+
+class _MapScreenState extends State<MapScreen> {
+  /// "즐겨찾기" — splits the screen: vector map on top (still fully
+  /// interactive, star pins on), favorites list on the bottom.
+  bool _favoritesOpen = false;
 
   @override
   Widget build(BuildContext context) {
@@ -62,9 +71,8 @@ class MapScreen extends StatelessWidget {
   }
 
   /// Nationwide → 시도 → 시군구 → 구 vector drill-down. The chrome (검색 바 +
-  /// 갭지수 범례/설명) is a fixed header — like the bottom nav — and the map
-  /// fills the rest of the screen, with its overlay buttons pinned to the
-  /// map's corners.
+  /// 갭지수 범례/설명) is a fixed header; the map fills the rest. Toggling
+  /// "즐겨찾기" splits the map and a favorites list, both live at once.
   Widget _buildVectorBody(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -99,6 +107,9 @@ class MapScreen extends StatelessWidget {
         ),
         Expanded(
           child: _KoreaMap(
+            favoritesActive: _favoritesOpen,
+            onToggleFavorites: () =>
+                setState(() => _favoritesOpen = !_favoritesOpen),
             onEnterRegion: (code, name) => Navigator.of(context).push(
               MaterialPageRoute(
                 builder: (_) => RegionRankingScreen(
@@ -109,6 +120,13 @@ class MapScreen extends StatelessWidget {
             ),
           ),
         ),
+        if (_favoritesOpen) ...[
+          const Divider(height: 1, color: AppColors.border),
+          SizedBox(
+            height: MediaQuery.sizeOf(context).height * 0.4,
+            child: const FavoritesList(),
+          ),
+        ],
       ],
     );
   }
@@ -232,12 +250,21 @@ const _sidoShortName = <String, String>{
 };
 
 class _KoreaMap extends StatefulWidget {
-  const _KoreaMap({required this.onEnterRegion});
+  const _KoreaMap({
+    required this.onEnterRegion,
+    required this.favoritesActive,
+    required this.onToggleFavorites,
+  });
 
   /// Called with a 시군구/구 code + name when the user taps a leaf region
   /// (a 군, a 자치구, or a 구 within a drilled 시) — `MapScreen` then swaps in
   /// the real tile map for it.
   final void Function(String regionCode, String regionName) onEnterRegion;
+
+  /// Whether the 즐겨찾기 overlay (star pins) is on — parent-controlled so the
+  /// split favorites list stays in sync with it.
+  final bool favoritesActive;
+  final VoidCallback onToggleFavorites;
 
   @override
   State<_KoreaMap> createState() => _KoreaMapState();
@@ -287,9 +314,8 @@ class _KoreaMapState extends State<_KoreaMap>
   /// kept in sync by the layout builder — the painter draws the dot there.
   final ValueNotifier<Offset?> _myPoint = ValueNotifier<Offset?>(null);
 
-  /// "즐겨찾기": drops an amber star pin for every favorited spot at the
-  /// current view (no camera change) + slides the list up from the bottom.
-  bool _showFavorites = false;
+  /// Scene-space points of every favorited located spot, kept in sync by the
+  /// layout builder when [widget.favoritesActive] — the painter draws stars.
   final ValueNotifier<List<Offset>> _favPoints =
       ValueNotifier<List<Offset>>(const []);
 
@@ -334,19 +360,6 @@ class _KoreaMapState extends State<_KoreaMap>
 
   void _onLocation() {
     if (mounted) setState(() {}); // let the layout builder re-project the dot
-  }
-
-  /// "즐겨찾기": toggle the star-pin overlay at the current view and slide the
-  /// favorites list up. Dismissing the list clears the overlay. No camera move.
-  void _toggleFavorites() {
-    if (_showFavorites) {
-      setState(() => _showFavorites = false);
-      return;
-    }
-    setState(() => _showFavorites = true);
-    showFavoritesSheet(context).then((_) {
-      if (mounted) setState(() => _showFavorites = false);
-    });
   }
 
   void _onTransform() {
@@ -647,7 +660,7 @@ class _KoreaMapState extends State<_KoreaMap>
                 final here = UserLocation.position.value;
                 _myPoint.value =
                     here == null ? null : project(Epsg5179.fromLatLng(here));
-                _favPoints.value = _showFavorites
+                _favPoints.value = widget.favoritesActive
                     ? [
                         for (final f in Favorites.instance.locatedSpots())
                           project(Epsg5179.fromLatLng(
@@ -680,7 +693,7 @@ class _KoreaMapState extends State<_KoreaMap>
                               focusOutline: _focusOutline,
                               units: _units,
                               myPoint: _myPoint,
-                              showFavorites: _showFavorites,
+                              showFavorites: widget.favoritesActive,
                               favPoints: _favPoints,
                             ),
                           ),
@@ -692,8 +705,8 @@ class _KoreaMapState extends State<_KoreaMap>
                         child: MapToggleButton(
                           icon: Symbols.star_rounded,
                           label: '즐겨찾기',
-                          active: _showFavorites,
-                          onTap: _toggleFavorites,
+                          active: widget.favoritesActive,
+                          onTap: widget.onToggleFavorites,
                         ),
                       ),
                       Positioned(

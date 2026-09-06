@@ -13,6 +13,7 @@ import 'package:goyohaeng_app/screens/place/place_info_screen.dart';
 import 'package:goyohaeng_app/screens/ranking/region_ranking_screen.dart';
 import 'package:goyohaeng_app/theme/app_theme.dart';
 import 'package:goyohaeng_app/widgets/favorite_star_button.dart';
+import 'package:goyohaeng_app/widgets/favorites_list.dart';
 import 'package:goyohaeng_app/widgets/my_location_button.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:material_symbols_icons/symbols.dart';
@@ -576,7 +577,7 @@ void main() {
       expect(Favorites.instance.contains('담양 소쇄원'), isTrue);
     });
 
-    testWidgets('RegionSpotMap: 즐겨찾기 토글 켜야 별 핀, 꺼져 있으면 기본 핀', (tester) async {
+    testWidgets('RegionSpotMap: 즐겨찾기 토글 켜야 별 핀 (시트/분할 없음)', (tester) async {
       tester.view.physicalSize = const Size(390, 700);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
@@ -614,23 +615,25 @@ void main() {
       expect(starInMap, findsWidgets); // 이제 별 핀
     });
 
-    testWidgets('벡터 지도: 즐겨찾기 버튼 → 반쪽 목록 + 별로 해제', (tester) async {
-      tester.view.physicalSize = const Size(390, 800);
+    testWidgets('벡터 지도: 즐겨찾기 = 지도+목록 분할, 지도도 계속 살아있음', (tester) async {
+      tester.view.physicalSize = const Size(390, 900);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
 
       await pumpMapScreen(tester);
-      expect(find.widgetWithText(MapToggleButton, '즐겨찾기'), findsOneWidget);
 
       MapToggleButton btn() =>
           tester.widget(find.widgetWithText(MapToggleButton, '즐겨찾기'));
       expect(btn().active, isFalse);
+      expect(find.byType(FavoritesList), findsNothing);
 
       await tester.tap(find.text('즐겨찾기'));
       await tester.pumpAndSettle();
 
-      // Overlay on + the half-sheet listing the 3 seeded favorites.
+      // Split: the map is still there AND the list showed up.
       expect(btn().active, isTrue);
+      expect(find.byType(InteractiveViewer), findsOneWidget); // map alive
+      expect(find.byType(FavoritesList), findsOneWidget);
       expect(find.text('즐겨찾기 3곳'), findsOneWidget);
       expect(find.text('담양 죽녹원'), findsOneWidget);
 
@@ -642,10 +645,11 @@ void main() {
       expect(Favorites.instance.contains('담양 죽녹원'), isFalse);
       expect(find.text('즐겨찾기 2곳'), findsOneWidget);
 
-      // Dismiss the sheet → overlay clears.
-      await tester.tapAt(const Offset(195, 60));
+      // Toggle off → list gone.
+      await tester.tap(find.text('즐겨찾기'));
       await tester.pumpAndSettle();
       expect(btn().active, isFalse);
+      expect(find.byType(FavoritesList), findsNothing);
     });
 
     testWidgets('즐겨찾기 목록에서 항목 탭 → <장소 정보>', (tester) async {
