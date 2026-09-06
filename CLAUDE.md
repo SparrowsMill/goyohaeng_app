@@ -359,14 +359,10 @@ downsamples cleanly; no `2.0x`/`3.0x` variant folders needed).
   `sido_boundary` / `sigungu_boundary` (+ `*_labels` inner points); parsed by
   `lib/data/korea_map_geo.dart`, shaded by `mock_map_regions.dart`. No
   per-region map illustration is needed for that screen.
-- `assets/illustrations/map/`
-  - `map_{name}.png` — decorative map storytelling elements (e.g. `map_windmill.png`)
-  - Screen-specific map art may instead follow a `main_{name}.png` / `{name}_icon.png`
-    pattern where a screen's whole map card is delivered as one or two flattened
-    images rather than many small pieces (e.g. mill-home's `main_map.png` — the
-    Korea watercolor map with its static badge pins baked in — plus a separate
-    `cur_position_icon.png` overlaid in code at the current/selected location,
-    and `main_mill_list.png`, the entire region-list card baked as one static image)
+- `assets/illustrations/map/` — decorative map storytelling elements
+  (`map_{name}.png`, e.g. `map_windmill.png`). The mill-home mini-map is no
+  longer baked art — it renders the live `<지도>` vector map cropped to the
+  user's location (`lib/widgets/mini_korea_map.dart`).
 - `assets/illustrations/icon/`
   - `main_{name}_icon.png` — small cutout (RGBA) decorative icons standing in for
     what would otherwise be a functional Material Symbol, used where the design

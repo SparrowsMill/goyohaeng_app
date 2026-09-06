@@ -80,8 +80,6 @@ flutter:
     - assets/maps/
     - assets/illustrations/sparrow/
     - assets/illustrations/rewards/
-    - assets/illustrations/map/
-    - assets/illustrations/map/mill_list/
     - assets/illustrations/scenes/
     - assets/illustrations/icon/
     - assets/illustrations/ranking/
