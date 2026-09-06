@@ -74,6 +74,8 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
     final spots = _visibleSpots;
     final hasMap = spots.any((s) => s.hasLocation);
 
+    final list = _buildList(spots, hasMap: hasMap);
+
     return Scaffold(
       backgroundColor: AppColors.appBackground,
       appBar: AppBar(
@@ -83,85 +85,25 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
         ),
         title: Text('${widget.regionName} 관광스팟'),
       ),
-      body: Column(
-        children: [
-          if (hasMap)
-            SizedBox(
-              height: MediaQuery.sizeOf(context).height * 0.42,
-              child: RegionSpotMap(
-                key: ValueKey('spotmap_${widget.regionKey}'),
-                regionCode: widget.regionKey,
-                spots: spots,
-                selected: _selected,
-                onMarkerTap: _select,
-              ),
-            ),
-          Expanded(
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(
-                AppSpacing.xl,
-                AppSpacing.lg,
-                AppSpacing.xl,
-                AppSpacing.xxl,
-              ),
+      body: hasMap
+          // Side-by-side: map on the left, ranked list on the right.
+          ? Row(
               children: [
-                if (!hasMap) ...[
-                  _Header(regionName: widget.regionName),
-                  const SizedBox(height: AppSpacing.xl),
-                ],
-                _CategoryFilter(
-                  selected: _category,
-                  onChanged: (value) => setState(() => _category = value),
+                SizedBox(
+                  width: MediaQuery.sizeOf(context).width * 0.4,
+                  child: RegionSpotMap(
+                    key: ValueKey('spotmap_${widget.regionKey}'),
+                    regionCode: widget.regionKey,
+                    spots: spots,
+                    selected: _selected,
+                    onMarkerTap: _select,
+                  ),
                 ),
-                const SizedBox(height: AppSpacing.md),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _SortDropdown(
-                        descending: _descending,
-                        onChanged: (value) =>
-                            setState(() => _descending = value),
-                      ),
-                    ),
-                    const SizedBox(width: AppSpacing.sm),
-                    const GapIndexInfoButton(),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.xs),
-                Text(
-                  hasMap
-                      ? '목록에서 장소를 누르면 지도에 표시돼요 · 한 번 더 누르면 상세'
-                      : '선택한 필터와 정렬은 다음에도 유지돼요',
-                  style: AppTextStyles.caption,
-                ),
-                const SizedBox(height: AppSpacing.lg),
-                if (spots.isEmpty)
-                  Padding(
-                    padding:
-                        const EdgeInsets.symmetric(vertical: AppSpacing.huge),
-                    child: Center(
-                      child: Text(
-                        '해당하는 관광 스팟이 아직 없어요.',
-                        style: AppTextStyles.bodyMedium
-                            .copyWith(color: AppColors.textSecondary),
-                      ),
-                    ),
-                  )
-                else
-                  for (var i = 0; i < spots.length; i++) ...[
-                    if (i != 0) const SizedBox(height: AppSpacing.md),
-                    _RankingCard(
-                      rank: i + 1,
-                      spot: spots[i],
-                      selected: spots[i] == _selected,
-                      onTap: () => _select(spots[i]),
-                    ),
-                  ],
+                const VerticalDivider(width: 1, color: AppColors.border),
+                Expanded(child: list),
               ],
-            ),
-          ),
-        ],
-      ),
+            )
+          : list,
       bottomNavigationBar: AppBottomNavBar(
         currentIndex: 2,
         onTap: (index) {
@@ -173,6 +115,69 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
           // * TODO: 기록 탭 — 해당 화면 구현 후 연결
         },
       ),
+    );
+  }
+
+  Widget _buildList(List<MockTouristSpot> spots, {required bool hasMap}) {
+    return ListView(
+      padding: EdgeInsets.fromLTRB(
+        hasMap ? AppSpacing.md : AppSpacing.xl,
+        AppSpacing.lg,
+        hasMap ? AppSpacing.md : AppSpacing.xl,
+        AppSpacing.xxl,
+      ),
+      children: [
+        if (!hasMap) ...[
+          _Header(regionName: widget.regionName),
+          const SizedBox(height: AppSpacing.xl),
+        ],
+        _CategoryFilter(
+          selected: _category,
+          onChanged: (value) => setState(() => _category = value),
+        ),
+        const SizedBox(height: AppSpacing.md),
+        Row(
+          children: [
+            Expanded(
+              child: _SortDropdown(
+                descending: _descending,
+                onChanged: (value) => setState(() => _descending = value),
+              ),
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            const GapIndexInfoButton(),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.xs),
+        Text(
+          hasMap
+              ? '장소를 누르면 지도에 표시돼요 · 한 번 더 누르면 상세'
+              : '선택한 필터와 정렬은 다음에도 유지돼요',
+          style: AppTextStyles.caption,
+        ),
+        const SizedBox(height: AppSpacing.lg),
+        if (spots.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: AppSpacing.huge),
+            child: Center(
+              child: Text(
+                '해당하는 관광 스팟이 아직 없어요.',
+                style: AppTextStyles.bodyMedium
+                    .copyWith(color: AppColors.textSecondary),
+              ),
+            ),
+          )
+        else
+          for (var i = 0; i < spots.length; i++) ...[
+            if (i != 0) const SizedBox(height: AppSpacing.md),
+            _RankingCard(
+              rank: i + 1,
+              spot: spots[i],
+              selected: spots[i] == _selected,
+              onTap: () => _select(spots[i]),
+            ),
+          ],
+      ],
     );
   }
 }
@@ -232,20 +237,21 @@ class _CategoryFilter extends StatelessWidget {
         (label: category.label, value: category),
     ];
 
-    // Always one row — the four chips split the width evenly.
-    return Row(
-      children: [
-        for (var i = 0; i < items.length; i++) ...[
-          if (i != 0) const SizedBox(width: AppSpacing.sm),
-          Expanded(
-            child: _FilterChip(
+    // Horizontally scrollable so it survives a narrow (side-by-side) layout.
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          for (var i = 0; i < items.length; i++) ...[
+            if (i != 0) const SizedBox(width: AppSpacing.sm),
+            _FilterChip(
               label: items[i].label,
               selected: selected == items[i].value,
               onTap: () => onChanged(items[i].value),
             ),
-          ),
+          ],
         ],
-      ],
+      ),
     );
   }
 }
