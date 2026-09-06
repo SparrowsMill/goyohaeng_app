@@ -1,0 +1,19 @@
+{"type":"FeatureCollection", "features": [
+{"type":"Feature","geometry":{"type":"Point","coordinates":[955018.9752618232,1950397.5619008127]},"properties":{"id":"11","title":"서울특별시"}},
+{"type":"Feature","geometry":{"type":"Point","coordinates":[1143421.942969531,1691662.0676907117]},"properties":{"id":"21","title":"부산광역시"}},
+{"type":"Feature","geometry":{"type":"Point","coordinates":[1097365.1047307616,1760176.5183381876]},"properties":{"id":"22","title":"대구광역시"}},
+{"type":"Feature","geometry":{"type":"Point","coordinates":[927099.8389820319,1944665.1860492239]},"properties":{"id":"23","title":"인천광역시"}},
+{"type":"Feature","geometry":{"type":"Point","coordinates":[939407.6800037089,1684670.5872345702]},"properties":{"id":"24","title":"광주광역시"}},
+{"type":"Feature","geometry":{"type":"Point","coordinates":[990820.2306298818,1816658.1692830077]},"properties":{"id":"25","title":"대전광역시"}},
+{"type":"Feature","geometry":{"type":"Point","coordinates":[1157692.9256298712,1730074.4213261383]},"properties":{"id":"26","title":"울산광역시"}},
+{"type":"Feature","geometry":{"type":"Point","coordinates":[979062.2465816407,1836360.6235527343]},"properties":{"id":"29","title":"세종특별자치시"}},
+{"type":"Feature","geometry":{"type":"Point","coordinates":[994437.8056223639,1936060.9965180669]},"properties":{"id":"31","title":"경기도"}},
+{"type":"Feature","geometry":{"type":"Point","coordinates":[1070630.5979726086,1969823.1390929406]},"properties":{"id":"32","title":"강원도"}},
+{"type":"Feature","geometry":{"type":"Point","coordinates":[1019641.6626647463,1871295.5389211986]},"properties":{"id":"33","title":"충청북도"}},
+{"type":"Feature","geometry":{"type":"Point","coordinates":[942620.6854324827,1836986.640019759]},"properties":{"id":"34","title":"충청남도"}},
+{"type":"Feature","geometry":{"type":"Point","coordinates":[967963.4190362293,1748453.7749127918]},"properties":{"id":"35","title":"전라북도"}},
+{"type":"Feature","geometry":{"type":"Point","coordinates":[947457.6211739242,1651027.5587701027]},"properties":{"id":"36","title":"전라남도"}},
+{"type":"Feature","geometry":{"type":"Point","coordinates":[1111805.983975195,1827318.711756836]},"properties":{"id":"37","title":"경상북도"}},
+{"type":"Feature","geometry":{"type":"Point","coordinates":[1067956.3550646482,1704877.9484616278]},"properties":{"id":"38","title":"경상남도"}},
+{"type":"Feature","geometry":{"type":"Point","coordinates":[911879.6052181039,1488496.4766611347]},"properties":{"id":"39","title":"제주특별자치도"}}
+]}

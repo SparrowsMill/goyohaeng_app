@@ -115,10 +115,12 @@ class MockTouristSpot {
   }
 }
 
-/// Keyed by [MockMapRegion.key]. Regions without a bespoke list fall back to
-/// [_fallbackSpots] so no region opens empty.
+/// Keyed by 행정구역 코드 (시군구 5자리) — see `korea_map_geo.dart`. A 시도
+/// (2자리) query in [rankingForRegion] gathers every child 시군구's spots;
+/// regions with no data fall back to [_fallbackSpots] so nothing opens empty.
 const mockRegionRankings = <String, List<MockTouristSpot>>{
-  'jeolla': [
+  // 전라남도 담양군
+  '36310': [
     MockTouristSpot(
       name: '담양 죽녹원',
       category: SpotCategory.activity,
@@ -188,6 +190,9 @@ const mockRegionRankings = <String, List<MockTouristSpot>>{
       trendKeywords: ['힐링산책', '전통풍경', '산책', '노거수'],
       phone: '061-380-3752',
     ),
+  ],
+  // 전라남도 순천시
+  '36030': [
     MockTouristSpot(
       name: '순천만 국가정원',
       category: SpotCategory.activity,
@@ -207,6 +212,9 @@ const mockRegionRankings = <String, List<MockTouristSpot>>{
       phone: '1577-2013',
       homepage: 'https://scbay.suncheon.go.kr',
     ),
+  ],
+  // 전라남도 보성군
+  '36360': [
     MockTouristSpot(
       name: '보성 녹차밭',
       category: SpotCategory.cafe,
@@ -225,6 +233,9 @@ const mockRegionRankings = <String, List<MockTouristSpot>>{
       trendKeywords: ['녹차밭', '초록물결', '사진명소', '드라이브'],
       phone: '061-852-4540',
     ),
+  ],
+  // 전라남도 여수시
+  '36020': [
     MockTouristSpot(
       name: '여수 해상케이블카',
       category: SpotCategory.activity,
@@ -244,6 +255,9 @@ const mockRegionRankings = <String, List<MockTouristSpot>>{
       phone: '061-664-7301',
       homepage: 'https://www.yeosucablecar.com',
     ),
+  ],
+  // 전라북도 전주시 완산구
+  '35011': [
     MockTouristSpot(
       name: '전주 한옥마을',
       category: SpotCategory.restaurant,
@@ -262,6 +276,9 @@ const mockRegionRankings = <String, List<MockTouristSpot>>{
       phone: '063-282-1330',
       homepage: 'https://hanok.jeonju.go.kr',
     ),
+  ],
+  // 전라북도 군산시
+  '35020': [
     MockTouristSpot(
       name: '군산 초원사진관',
       category: SpotCategory.activity,
@@ -279,6 +296,9 @@ const mockRegionRankings = <String, List<MockTouristSpot>>{
       trendKeywords: ['영화촬영지', '레트로', '흑백사진', '군산여행'],
       phone: '063-445-6879',
     ),
+  ],
+  // 전라남도 목포시
+  '36010': [
     MockTouristSpot(
       name: '목포 근대역사관',
       category: SpotCategory.cafe,
@@ -316,10 +336,23 @@ const _fallbackSpots = <MockTouristSpot>[
   ),
 ];
 
-List<MockTouristSpot> rankingForRegion(String regionKey) =>
-    mockRegionRankings[regionKey] ?? _fallbackSpots;
+/// Spots for a 행정구역 코드. Exact 시군구 (5자리) match first; a 시도 (2자리)
+/// code gathers every child 시군구's spots. Falls back to [_fallbackSpots] so
+/// nothing opens empty.
+List<MockTouristSpot> rankingForRegion(String regionCode) {
+  final exact = mockRegionRankings[regionCode];
+  if (exact != null) return exact;
+  if (regionCode.length <= 2) {
+    final gathered = <MockTouristSpot>[
+      for (final entry in mockRegionRankings.entries)
+        if (entry.key.startsWith(regionCode)) ...entry.value,
+    ];
+    if (gathered.isNotEmpty) return gathered;
+  }
+  return _fallbackSpots;
+}
 
-/// The region key whose ranking list contains [spot] (matched by name), or
+/// The 시군구 code whose ranking list contains [spot] (matched by name), or
 /// `null` if it only came from [_fallbackSpots]. Used by `<방문 불가>` to pull
 /// nearby recommendations from the same region.
 String? regionKeyForSpot(MockTouristSpot spot) {

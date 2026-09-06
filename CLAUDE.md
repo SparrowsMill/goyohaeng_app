@@ -354,6 +354,11 @@ downsamples cleanly; no `2.0x`/`3.0x` variant folders needed).
 - `assets/illustrations/rewards/`
   - `ingredient_{name}.png` — mill ingredient reward images (e.g. `ingredient_rice.png`)
   - `travel_{name}.png` — travel reward scene images (e.g. `travel_beach.png`)
+- `assets/maps/` — GeoJSON, not art. The `<지도>` screen
+  (`lib/screens/map/map_screen.dart`) renders a live vector map from
+  `sido_boundary` / `sigungu_boundary` (+ `*_labels` inner points); parsed by
+  `lib/data/korea_map_geo.dart`, shaded by `mock_map_regions.dart`. No
+  per-region map illustration is needed for that screen.
 - `assets/illustrations/map/`
   - `map_{name}.png` — decorative map storytelling elements (e.g. `map_windmill.png`)
   - Screen-specific map art may instead follow a `main_{name}.png` / `{name}_icon.png`

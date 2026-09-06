@@ -9,9 +9,10 @@ import 'package:goyohaeng_app/screens/trend/trend_summary_screen.dart';
 import 'package:goyohaeng_app/theme/app_theme.dart';
 
 void main() {
-  final spot = rankingForRegion('jeolla').first;
+  // '36' = 전라남도 — gathers every child 시군구's spots (담양·순천·여수·…).
+  final spot = rankingForRegion('36').first;
   final unavailable =
-      rankingForRegion('jeolla').firstWhere((s) => !s.visitVerifiable);
+      rankingForRegion('36').firstWhere((s) => !s.visitVerifiable);
 
   testWidgets('PlaceInfoScreen builds', (tester) async {
     await tester.pumpWidget(

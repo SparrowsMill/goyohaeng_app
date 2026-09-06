@@ -1,156 +1,73 @@
 import 'package:flutter/material.dart';
 
-/// The six broad regions the `<지도>` screen divides the country into — a
-/// coarser grouping than the ten sub-regions in `mock_regions.dart` (used by
-/// the mill-home TOP 3 list). Each carries its average 갭지수 and the number
-/// of tourist spots, shown over the watercolor map.
+/// Placeholder 갭지수 / 관광 스팟 수 for the `<지도>` screen, keyed by the
+/// 행정구역 codes in `assets/maps/` (시도 = 2자리, 시군구 = 5자리).
 ///
-/// The map is assembled from six neutral watercolor cutouts
-/// (`assets/illustrations/map/full_map/<key>_map.png`), each tinted at
-/// runtime by its 갭지수 ([gapIndexColor]). Placeholder values until a real
-/// backend exists; the numbers match the approved map mockup.
-class MockMapRegion {
-  const MockMapRegion({
-    required this.key,
-    required this.displayName,
-    required this.avgGapIndex,
-    required this.spotCount,
-    required this.artSize,
-    required this.artTopLeft,
-    this.scale = 1.0,
-    this.labelAlignment = Alignment.center,
-    this.labelScale = 1.0,
-  });
-
-  /// Stable id passed to `<지역별 맵 페이지>` when the region is tapped; also
-  /// the `full_map/<key>_map.png` filename stem.
-  final String key;
-  final String displayName;
+/// The map is drawn from GeoJSON (`korea_map_geo.dart`); this file only
+/// supplies the numbers each region is shaded and labelled by. Real values
+/// come from the backend later — [mockSidoStats] is hand-set to match the
+/// approved mockup, and the 250 시군구 fall back to [_deterministicStats] so
+/// the mid-zoom view looks alive without authoring 250 rows by hand.
+///
+/// * TODO(backend): 지역별 평균 갭지수 / 스팟 수 API 연동
+class RegionStats {
+  const RegionStats({required this.avgGapIndex, required this.spotCount});
   final int avgGapIndex;
   final int spotCount;
-
-  /// Native pixel size of `full_map/<key>_map.png` — the source of truth for
-  /// this region's aspect ratio. Only change it if the art is re-exported at
-  /// a different size; to resize a region on the map, use [scale] instead.
-  final Size artSize;
-
-  /// Per-region size multiplier applied to [artSize], aspect ratio locked.
-  /// This is the knob for "make 강원 a bit bigger / 제주 a bit smaller":
-  /// 1.0 = native, 1.2 = 20% larger, 0.8 = 20% smaller.
-  final double scale;
-
-  /// Top-left of this cutout within the shared map composition, in the same
-  /// (arbitrary) pixel units as [artSize]. These six offsets are the only
-  /// hand-tuned layout values — nudge one to move a region. Everything else
-  /// (overall map size, aspect ratio, each region's relative scale) follows
-  /// from the art dimensions.
-  final Offset artTopLeft;
-
-  /// Where the text label (name + 갭지수/스팟 lines) sits inside the region's
-  /// box. Values outside [-1, 1] float it beyond the box.
-  final Alignment labelAlignment;
-
-  /// Font-size multiplier for this region's label — the knob for "수도권 text
-  /// too big / 경상 text too small". 1.0 = default, 0.8 = smaller, 1.3 = bigger.
-  final double labelScale;
-
-  String get asset => 'assets/illustrations/map/full_map/${key}_map.png';
-
-  Rect get artRect => artTopLeft & (artSize * scale);
 }
 
-/// Ordered back-to-front (painted in this order; later regions win an
-/// overlapping tap).
-///
-/// Per region, the tuning knobs:
-///   - `scale`          → region size on the map (aspect ratio locked)
-///   - `artTopLeft`     → region position within the composition
-///   - `labelAlignment` → where the name/stats sit over the blob
-///   - `labelScale`     → label font size for that region
-/// `artSize` is the native export size and normally stays put. Values here
-/// are rough starting points — expect an in-app tuning pass.
-///
-/// A getter, not a top-level `const`, so edits below show up on hot reload
-/// (`r`) instead of only on hot restart (`R`). Do ONE hot restart after this
-/// change to clear the previously-cached const, then `r` works. Switch back
-/// to `const mockMapRegions = …` once the layout is settled.
-List<MockMapRegion> get mockMapRegions => <MockMapRegion>[
-  MockMapRegion(
-    key: 'gangwon',
-    displayName: '강원',
-    avgGapIndex: 38,
-    spotCount: 18,
-    artSize: Size(508, 561),
-    scale: 1.0,
-    artTopLeft: Offset(655, 60),
-    labelAlignment: Alignment(0.01, 0.08),
-    labelScale: 0.8,
-  ),
-  MockMapRegion(
-    key: 'chungcheong',
-    displayName: '충청',
-    avgGapIndex: 43,
-    spotCount: 12,
-    artSize: Size(609, 412),
-    scale: 1.0,
-    artTopLeft: Offset(230, 475),
-    labelAlignment: Alignment(0.06, 0.13),
-    labelScale: 0.8,
-  ),
-  MockMapRegion(
-    key: 'gyeongsang',
-    displayName: '경상',
-    avgGapIndex: 67,
-    spotCount: 21,
-    artSize: Size(507, 653),
-    scale: 1.0,
-    artTopLeft: Offset(705, 540),
-    labelAlignment: Alignment(-0.04, -0.05),
-    labelScale: 0.8,
-  ),
-  MockMapRegion(
-    key: 'jeolla',
-    displayName: '전라',
-    avgGapIndex: 58,
-    spotCount: 16,
-    artSize: Size(624, 546),
-    scale: 1.0,
-    artTopLeft: Offset(110, 810),
-    labelAlignment: Alignment(0.30, -0.30),
-    labelScale: 0.8,
-  ),
-  MockMapRegion(
-    key: 'capital',
-    displayName: '수도권',
-    avgGapIndex: 24,
-    spotCount: 15,
-    artSize: Size(634, 527),
-    scale: 1.0,
-    artTopLeft: Offset(135, 90),
-    labelAlignment: Alignment(0.25, 0.06),
-    labelScale: 0.8,
-  ),
-  MockMapRegion(
-    key: 'jeju',
-    displayName: '제주',
-    avgGapIndex: 74,
-    spotCount: 9,
-    artSize: Size(353, 170),
-    scale: 1.0,
-    artTopLeft: Offset(200, 1400),
-    labelAlignment: Alignment(-0.28, -0.35),
-    labelScale: 0.7,
-  ),
-];
+/// 시도 code → stats. All 17 시도 present.
+const mockSidoStats = <String, RegionStats>{
+  '11': RegionStats(avgGapIndex: 22, spotCount: 14), // 서울특별시
+  '21': RegionStats(avgGapIndex: 61, spotCount: 9), // 부산광역시
+  '22': RegionStats(avgGapIndex: 58, spotCount: 7), // 대구광역시
+  '23': RegionStats(avgGapIndex: 34, spotCount: 8), // 인천광역시
+  '24': RegionStats(avgGapIndex: 55, spotCount: 6), // 광주광역시
+  '25': RegionStats(avgGapIndex: 46, spotCount: 5), // 대전광역시
+  '26': RegionStats(avgGapIndex: 52, spotCount: 5), // 울산광역시
+  '29': RegionStats(avgGapIndex: 40, spotCount: 3), // 세종특별자치시
+  '31': RegionStats(avgGapIndex: 27, spotCount: 19), // 경기도
+  '32': RegionStats(avgGapIndex: 38, spotCount: 18), // 강원도
+  '33': RegionStats(avgGapIndex: 44, spotCount: 10), // 충청북도
+  '34': RegionStats(avgGapIndex: 43, spotCount: 12), // 충청남도
+  '35': RegionStats(avgGapIndex: 54, spotCount: 11), // 전라북도
+  '36': RegionStats(avgGapIndex: 62, spotCount: 16), // 전라남도
+  '37': RegionStats(avgGapIndex: 66, spotCount: 15), // 경상북도
+  '38': RegionStats(avgGapIndex: 64, spotCount: 13), // 경상남도
+  '39': RegionStats(avgGapIndex: 74, spotCount: 9), // 제주특별자치도
+};
 
-/// Bounding box of the whole assembled map, in the same pixel units as each
-/// region's [MockMapRegion.artRect].
-Rect mapCompositionRect() {
-  var rect = mockMapRegions.first.artRect;
-  for (final region in mockMapRegions.skip(1)) {
-    rect = rect.expandToInclude(region.artRect);
+/// 시군구 code → hand-set stats where real data exists; everything else uses
+/// [_deterministicStats]. Keys match `mock_region_ranking.dart`.
+const _sigunguOverrides = <String, RegionStats>{
+  '36310': RegionStats(avgGapIndex: 78, spotCount: 4), // 담양군
+  '36030': RegionStats(avgGapIndex: 82, spotCount: 3), // 순천시
+  '36360': RegionStats(avgGapIndex: 76, spotCount: 2), // 보성군
+  '36020': RegionStats(avgGapIndex: 68, spotCount: 3), // 여수시
+  '36010': RegionStats(avgGapIndex: 47, spotCount: 2), // 목포시
+  '35011': RegionStats(avgGapIndex: 61, spotCount: 2), // 전주시 완산구
+  '35020': RegionStats(avgGapIndex: 54, spotCount: 2), // 군산시
+};
+
+/// Stats for any region code — 시도, 시군구, or an unknown key.
+RegionStats statsForRegion(String code) {
+  return mockSidoStats[code] ??
+      _sigunguOverrides[code] ??
+      _deterministicStats(code);
+}
+
+/// Stable pseudo-random stats derived from the code so a region always shades
+/// the same way between launches, clustered in the 갭지수 20–80 band.
+RegionStats _deterministicStats(String code) {
+  var h = 2166136261;
+  for (final unit in code.codeUnits) {
+    h = (h ^ unit) * 16777619;
+    h &= 0xFFFFFFFF;
   }
-  return rect;
+  return RegionStats(
+    avgGapIndex: 20 + (h % 61), // 20..80
+    spotCount: 2 + ((h >> 8) % 12), // 2..13
+  );
 }
 
 /// 갭지수 values the color scale's two ends map to. Real data clusters in
@@ -169,8 +86,9 @@ const _gapHigh = Color(0xFF454B22);
 
 /// Color for a given 갭지수 on the low→high scale used by the map and legend.
 Color gapIndexColor(num gapIndex) {
-  final t = ((gapIndex - gapIndexScaleMin) / (gapIndexScaleMax - gapIndexScaleMin))
-      .clamp(0.0, 1.0);
+  final t =
+      ((gapIndex - gapIndexScaleMin) / (gapIndexScaleMax - gapIndexScaleMin))
+          .clamp(0.0, 1.0);
   return Color.lerp(_gapLow, _gapHigh, t)!;
 }
 
