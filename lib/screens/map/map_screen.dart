@@ -233,6 +233,13 @@ class _KoreaMapState extends State<_KoreaMap>
   final Map<String, Path> _sigunguPaths = {};
   Path _countryOutline = Path();
 
+  /// Union of the focused 시도's 시군구 paths — its outer edge, used instead of
+  /// the coarse `sido_boundary` polygon (the two files are simplified
+  /// differently, so the 시도 outline otherwise floats off the 시군구 fills).
+  /// Keyed by `"<sidoId>@<size>"` so it rebuilds on focus or layout change.
+  Path? _focusOutline;
+  String? _focusOutlineKey;
+
   @override
   void initState() {
     super.initState();
@@ -306,6 +313,8 @@ class _KoreaMapState extends State<_KoreaMap>
     _sigunguPaths
       ..clear()
       ..addEntries(geo.sigungu.map((r) => MapEntry(r.id, pathFor(r))));
+
+    _focusOutlineKey = null; // paths changed — force the focus outline to rebuild
   }
 
   // ── interaction ───────────────────────────────────────────────────────────
@@ -341,15 +350,37 @@ class _KoreaMapState extends State<_KoreaMap>
 
   /// Focus one 시도: expand it to 시군구 and zoom the camera to it.
   void _focusSido(GeoRegion sido) {
-    _focusedSido.value = sido.id;
+    setState(() => _focusedSido.value = sido.id);
     _ensureSigungu();
     _zoomToRegion(sido);
   }
 
   /// Back to the nationwide 시도 view.
   void _resetView() {
-    _focusedSido.value = null;
+    setState(() => _focusedSido.value = null);
     _animateTo(Matrix4.identity());
+  }
+
+  /// (Re)builds [_focusOutline] for the current focus + layout if stale.
+  void _ensureFocusOutline() {
+    final geo = _geo;
+    final focused = _focusedSido.value;
+    final key = focused == null ? null : '$focused@$_boxSize';
+    if (key == _focusOutlineKey) return;
+    _focusOutlineKey = key;
+
+    if (focused == null || geo == null || !geo.sigunguReady) {
+      _focusOutline = null;
+      return;
+    }
+    Path? union;
+    for (final r in geo.sigungu) {
+      if (r.sidoId != focused) continue;
+      final p = _sigunguPaths[r.id];
+      if (p == null) continue;
+      union = union == null ? p : Path.combine(PathOperation.union, union, p);
+    }
+    _focusOutline = union;
   }
 
   void _handleTap(Offset scenePos) {
@@ -405,6 +436,7 @@ class _KoreaMapState extends State<_KoreaMap>
                 final size = constraints.biggest;
                 _boxSize = size;
                 _rebuildPaths(geo, size);
+                _ensureFocusOutline();
                 if (_viewport.value == Rect.zero) {
                   _viewport.value = Offset.zero & size;
                 }
@@ -429,6 +461,7 @@ class _KoreaMapState extends State<_KoreaMap>
                               scale: _scale,
                               viewport: _viewport,
                               focusedSido: _focusedSido,
+                              focusOutline: _focusOutline,
                             ),
                           ),
                         ),
@@ -525,6 +558,7 @@ class _KoreaMapPainter extends CustomPainter {
     required this.scale,
     required this.viewport,
     required this.focusedSido,
+    required this.focusOutline,
   }) : super(repaint: Listenable.merge([scale, viewport, focusedSido]));
 
   final KoreaGeo geo;
@@ -535,6 +569,10 @@ class _KoreaMapPainter extends CustomPainter {
   final ValueListenable<Rect> viewport;
   final ValueListenable<String?> focusedSido;
 
+  /// Union of the focused 시도's 시군구 — drawn as that province's outline so
+  /// it hugs the 시군구 fills. `null` when nothing is focused / not ready yet.
+  final Path? focusOutline;
+
   @override
   void paint(Canvas canvas, Size size) {
     final z = scale.value.clamp(1.0, 12.0);
@@ -543,7 +581,7 @@ class _KoreaMapPainter extends CustomPainter {
     final showSigungu = focused != null && geo.sigunguReady;
 
     canvas.drawShadow(
-      countryOutline,
+      focused != null && focusOutline != null ? focusOutline! : countryOutline,
       AppColors.textPrimary.withValues(alpha: 0.5),
       6,
       false,
@@ -583,9 +621,17 @@ class _KoreaMapPainter extends CustomPainter {
       }
     }
 
-    // 시도 outlines drawn last so they read over the 시군구 subdivisions.
-    for (final path in sidoPaths.values) {
-      canvas.drawPath(path, sidoStroke);
+    // Outlines drawn last so they read over the 시군구 subdivisions.
+    // `sido_boundary` and `sigungu_boundary` are generalised differently, so
+    // while one 시도 is focused only *its* outline is drawn — from the 시군구
+    // union ([focusOutline]) — and the other provinces' coarse outlines are
+    // dropped rather than left as stray white lines that miss the fills.
+    if (focused == null) {
+      for (final path in sidoPaths.values) {
+        canvas.drawPath(path, sidoStroke);
+      }
+    } else {
+      canvas.drawPath(focusOutline ?? sidoPaths[focused] ?? Path(), sidoStroke);
     }
 
     _paintLabels(canvas, project, z, view, focused);
@@ -692,5 +738,6 @@ class _KoreaMapPainter extends CustomPainter {
       old.sidoPaths != sidoPaths ||
       old.sigunguPaths != sigunguPaths ||
       old.countryOutline != countryOutline ||
-      old.focusedSido != focusedSido;
+      old.focusedSido != focusedSido ||
+      old.focusOutline != focusOutline;
 }
