@@ -5,9 +5,8 @@ import 'korea_map_geo.dart' show GeoRegion, GeoLabel;
 
 /// A WGS84 geographic coordinate (EPSG:4326), in degrees.
 ///
-/// Deliberately not tied to any map-SDK type — the real-map stage (Phase C)
-/// converts this to the chosen SDK's coordinate class (`NLatLng` for
-/// `flutter_naver_map`) right at the widget boundary.
+/// A plain value type — kept lightweight for map math and any future map-SDK
+/// / deep-link boundary.
 class LatLng {
   const LatLng(this.lat, this.lng);
 
@@ -100,6 +99,44 @@ class Epsg5179 {
             cosPhi1;
 
     return LatLng(_rad2deg(lat), _rad2deg(lon));
+  }
+
+  /// Converts WGS84 lat/lng to a raw source-CRS point (EPSG:5179 metres) — the
+  /// forward of [toLatLng], for placing lat/lng data (tourist-spot markers) on
+  /// the vector map. Standard Snyder forward Transverse Mercator.
+  static Offset fromLatLng(LatLng ll) {
+    final phi = _deg2rad(ll.lat);
+    final lam = _deg2rad(ll.lng);
+
+    final sinPhi = math.sin(phi);
+    final cosPhi = math.cos(phi);
+    final tanPhi = math.tan(phi);
+
+    final n = _a / math.sqrt(1 - _e2 * sinPhi * sinPhi);
+    final t = tanPhi * tanPhi;
+    final c = _ep2 * cosPhi * cosPhi;
+    final a = (lam - _lon0) * cosPhi;
+    final a2 = a * a, a3 = a2 * a, a4 = a3 * a, a5 = a4 * a, a6 = a5 * a;
+    final m = _meridianArc(phi);
+
+    final x = _k0 *
+            n *
+            (a +
+                (1 - t + c) * a3 / 6 +
+                (5 - 18 * t + t * t + 72 * c - 58 * _ep2) * a5 / 120) +
+        _x0;
+    final y = _k0 *
+            (m -
+                _m0 +
+                n *
+                    tanPhi *
+                    (a2 / 2 +
+                        (5 - t + 9 * c + 4 * c * c) * a4 / 24 +
+                        (61 - 58 * t + t * t + 600 * c - 330 * _ep2) *
+                            a6 /
+                            720)) +
+        _y0;
+    return Offset(x, y);
   }
 
   static double _meridianArc(double phi) =>

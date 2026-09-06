@@ -3,8 +3,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:goyohaeng_app/data/korea_map_geo.dart';
 import 'package:goyohaeng_app/data/mock_map_regions.dart';
 import 'package:goyohaeng_app/data/mock_region_ranking.dart';
+import 'package:goyohaeng_app/data/korea_crs.dart';
 import 'package:goyohaeng_app/screens/map/map_screen.dart';
-import 'package:goyohaeng_app/screens/map/region_naver_map.dart';
+import 'package:goyohaeng_app/screens/place/place_info_screen.dart';
 import 'package:goyohaeng_app/theme/app_theme.dart';
 
 void main() {
@@ -106,38 +107,51 @@ void main() {
     );
   });
 
-  testWidgets('a 시군구 tap inside the focused 시도 crosses to the real map',
+  testWidgets('drilling 시도 → 군 → spot pin opens <장소 정보 페이지>',
       (tester) async {
-    // Warm both layers so the second tap lands on a ready 시군구 path.
-    await tester.runAsync(() async {
-      final geo = await KoreaGeo.load();
-      await geo.ensureSigungu();
+    tester.view.physicalSize = const Size(390, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    final geo = await tester.runAsync(() async {
+      final g = await KoreaGeo.load();
+      await g.ensureSigungu();
+      return g;
     });
     await pumpMapScreen(tester);
 
     final box = tester.getRect(find.byType(InteractiveViewer));
-    final gyeonggi = Offset(
-      box.left + box.width * 0.44,
-      box.top + box.height * 0.22,
-    );
+    final proj = MapProjector(bounds: geo!.bounds, size: box.size);
+    TransformationController tc() => tester
+        .widget<InteractiveViewer>(find.byType(InteractiveViewer))
+        .transformationController!;
+    Offset screenFor(Offset raw) =>
+        MatrixUtils.transformPoint(tc().value, proj(raw)) + box.topLeft;
 
-    await tester.tapAt(gyeonggi); // focus the 시도 there, camera zooms to it
+    // 담양군 (36310) has spots with coords. Its label point sits inside it.
+    final damyang = geo.sigunguLabels.firstWhere((l) => l.id == '36310').point;
+
+    await tester.tapAt(screenFor(damyang)); // focus 전남
     await tester.runAsync(() async {});
     await tester.pumpAndSettle();
-    expect(find.text('전국 보기'), findsOneWidget);
 
-    // Same screen point again — now well inside the focused 시도 → a 시군구.
-    await tester.tapAt(gyeonggi);
+    await tester.tapAt(screenFor(damyang)); // open 담양군 → spot pins
+    await tester.runAsync(() async {});
+    await tester.pumpAndSettle();
+    expect(find.text('뒤로'), findsOneWidget);
+    expect(find.byType(PlaceInfoScreen), findsNothing);
+
+    // Tap 담양 죽녹원's pin (its lat/lng, forward-projected).
+    final spot = rankingForRegion('36310').firstWhere((s) => s.hasLocation);
+    final pinRaw = Epsg5179.fromLatLng(LatLng(spot.lat!, spot.lng!));
+    await tester.tapAt(screenFor(pinRaw));
     await tester.pumpAndSettle();
 
-    expect(find.byType(RegionNaverMap), findsOneWidget);
-    expect(find.text('전체 지도로'), findsOneWidget);
+    expect(find.byType(PlaceInfoScreen), findsOneWidget);
   });
 
-  testWidgets('tapping a multi-구 시 opens its 구 (one more level, not the map)',
+  testWidgets('tapping a multi-구 시 opens its 구 (one more level)',
       (tester) async {
-    // A real phone viewport — the default 800×600 changes the map projection
-    // enough that the computed tap point misses the (tiny) 수원 shape.
     tester.view.physicalSize = const Size(390, 800);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -170,33 +184,7 @@ void main() {
     await tester.runAsync(() async {});
     await tester.pumpAndSettle();
 
-    expect(find.byType(RegionNaverMap), findsNothing); // not the real map yet
+    expect(find.byType(PlaceInfoScreen), findsNothing); // still on the vector map
     expect(find.text('뒤로'), findsOneWidget); // the step-out pill switched
-  });
-
-  testWidgets('RegionNaverMap shows the off-device fallback + working controls',
-      (tester) async {
-    var backCalled = false;
-    await tester.pumpWidget(
-      MaterialApp(
-        theme: AppTheme.light,
-        home: Scaffold(
-          body: RegionNaverMap(
-            regionCode: '36310',
-            regionName: '담양군',
-            onBack: () => backCalled = true,
-          ),
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    // NAVER SDK isn't initialised in tests → fallback, not a NaverMap.
-    expect(find.textContaining('지도 미리보기'), findsOneWidget);
-    expect(find.text('전체 지도로'), findsOneWidget);
-    expect(find.text('담양군 랭킹'), findsOneWidget);
-
-    await tester.tap(find.text('전체 지도로'));
-    expect(backCalled, isTrue);
   });
 }

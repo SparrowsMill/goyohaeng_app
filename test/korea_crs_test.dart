@@ -22,6 +22,19 @@ void main() {
     });
   });
 
+  test('Epsg5179.fromLatLng round-trips toLatLng within a metre', () {
+    for (final xy in const [
+      Offset(955018.98, 1950397.56),
+      Offset(1143421.94, 1691662.07),
+      Offset(911879.61, 1488496.48),
+      Offset(1070630.60, 1969823.14),
+    ]) {
+      final back = Epsg5179.fromLatLng(Epsg5179.toLatLng(xy));
+      expect(back.dx, closeTo(xy.dx, 1.0), reason: 'x');
+      expect(back.dy, closeTo(xy.dy, 1.0), reason: 'y');
+    }
+  });
+
   test('every 시도/시군구 label projects inside the Korean bbox', () async {
     final geo = await KoreaGeo.load();
     await geo.ensureSigungu();
