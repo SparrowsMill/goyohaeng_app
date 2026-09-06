@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
-import '../../data/mock_map_regions.dart' show gapIndexColor;
-import '../../data/mock_region_ranking.dart';
 import '../../data/mock_user.dart';
 import '../../data/mock_visits.dart';
 import '../../theme/app_colors.dart';
@@ -14,7 +12,6 @@ import '../../widgets/app_bottom_nav_bar.dart';
 import '../../widgets/mini_korea_map.dart';
 import '../account/account_center_screen.dart';
 import '../map/map_screen.dart';
-import '../place/place_info_screen.dart';
 
 /// Mill home ("방앗간") screen — the app's main landing tab. `_TopBar` (logo +
 /// notifications) is persistent, like the bottom nav. `_MillHeader` below it
@@ -429,7 +426,10 @@ class _StatItem extends StatelessWidget {
 
 /// The home mini-map card — a 시도-level slice of the vector map cropped to the
 /// user's location (갭지수 colours + "you are here" dot), an "지도 열기" hint,
-/// and a short list of already-visited spots. The whole map area opens `<지도>`.
+
+/// The home mini-map card — the live `<지도>` vector map cropped to the user's
+/// location (갭지수 colours + "you are here" dot). A compact "방문 TOP 3"
+/// panel sits in the top-left corner with the "지도 열기" button beside it.
 class _HomeMapCard extends StatelessWidget {
   const _HomeMapCard();
 
@@ -437,173 +437,168 @@ class _HomeMapCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       clipBehavior: Clip.antiAlias,
+      height: 200,
       decoration: BoxDecoration(
         color: AppColors.surface,
         border: Border.all(color: AppColors.border),
         borderRadius: BorderRadius.circular(AppRadius.card),
         boxShadow: AppShadows.card,
       ),
-      child: Column(
+      child: Stack(
+        fit: StackFit.expand,
         children: [
-          SizedBox(
-            height: 172,
-            child: Stack(
-              fit: StackFit.expand,
+          const MiniKoreaMap(),
+          Positioned(
+            top: AppSpacing.sm,
+            left: AppSpacing.sm,
+            right: AppSpacing.sm,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const MiniKoreaMap(),
-                Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const MapScreen()),
-                    ),
+                const Flexible(child: _TopVisitedPanel()),
+                const SizedBox(width: AppSpacing.sm),
+                _OpenMapButton(
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const MapScreen()),
                   ),
-                ),
-                const Positioned(
-                  right: AppSpacing.sm,
-                  bottom: AppSpacing.sm,
-                  child: _OpenMapPill(),
                 ),
               ],
             ),
           ),
-          const Divider(height: 1, color: AppColors.border),
-          const Padding(
-            padding: EdgeInsets.all(AppSpacing.md),
-            child: _VisitedList(),
-          ),
         ],
       ),
     );
   }
 }
 
-/// "지도 열기 ›" affordance pinned to the mini-map corner (not itself a button —
-/// the whole map area is tappable).
-class _OpenMapPill extends StatelessWidget {
-  const _OpenMapPill();
+/// Compact "방문 많은 지역 TOP 3" card — 이미 방문한 스팟 / 전체 관광스팟, per
+/// 도, in a corner of the mini-map frame.
+class _TopVisitedPanel extends StatelessWidget {
+  const _TopVisitedPanel();
 
   @override
   Widget build(BuildContext context) {
+    final top = topVisitedRegions;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: 6),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [AppColors.primary, AppColors.secondaryAccent],
-        ),
-        borderRadius: BorderRadius.circular(AppRadius.pill),
+        color: AppColors.surface.withValues(alpha: 0.93),
+        borderRadius: BorderRadius.circular(AppRadius.smallButton),
+        border: Border.all(color: AppColors.border),
         boxShadow: AppShadows.card,
       ),
-      child: Row(
+      child: Column(
         mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '지도 열기',
-            style: AppTextStyles.caption.copyWith(
-              color: AppColors.textOnPrimaryButton,
-              fontWeight: FontWeight.w700,
-            ),
+            '방문 많은 지역 TOP 3',
+            style: AppTextStyles.caption.copyWith(fontWeight: FontWeight.w700),
           ),
-          const Icon(
-            Symbols.chevron_right_rounded,
-            size: 14,
-            color: AppColors.textOnPrimaryButton,
-          ),
+          const SizedBox(height: 4),
+          for (var i = 0; i < top.length; i++) ...[
+            if (i != 0) const SizedBox(height: 3),
+            _TopVisitedRow(rank: i + 1, region: top[i]),
+          ],
         ],
       ),
     );
   }
 }
 
-/// The "다녀온 곳" mini-list inside the home map card.
-class _VisitedList extends StatelessWidget {
-  const _VisitedList();
+class _TopVisitedRow extends StatelessWidget {
+  const _TopVisitedRow({required this.rank, required this.region});
+
+  final int rank;
+  final RegionVisitStat region;
 
   @override
   Widget build(BuildContext context) {
-    final spots = mockVisitedSpots;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return Row(
       children: [
-        Row(
-          children: [
-            const Icon(
-              Symbols.where_to_vote_rounded,
-              size: 16,
-              color: AppColors.success,
-              fill: 1,
+        SizedBox(
+          width: 14,
+          height: 14,
+          child: DecoratedBox(
+            decoration: const BoxDecoration(
+              color: AppColors.primary,
+              shape: BoxShape.circle,
             ),
-            const SizedBox(width: AppSpacing.xs),
-            Text(
-              '다녀온 관광 스팟 ${spots.length}곳',
-              style:
-                  AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.w700),
+            child: Center(
+              child: Text(
+                '$rank',
+                style: AppTextStyles.caption.copyWith(
+                  color: AppColors.textOnPrimaryButton,
+                  fontWeight: FontWeight.w700,
+                  height: 1,
+                  fontSize: 9,
+                ),
+              ),
             ),
-          ],
+          ),
         ),
-        const SizedBox(height: AppSpacing.sm),
-        if (spots.isEmpty)
-          Text(
-            '아직 다녀온 곳이 없어요.',
-            style: AppTextStyles.caption,
-          )
-        else
-          for (final spot in spots.take(4)) ...[
-            _VisitedRow(spot: spot),
-            if (spot != spots.take(4).last)
-              const SizedBox(height: AppSpacing.xs),
-          ],
+        const SizedBox(width: AppSpacing.xs),
+        Expanded(
+          child: Text(
+            region.name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: AppTextStyles.bodySmall.copyWith(fontWeight: FontWeight.w600),
+          ),
+        ),
+        const SizedBox(width: AppSpacing.xs),
+        Text(
+          '${region.visited}/${region.total}',
+          style: AppTextStyles.caption.copyWith(
+            color: AppColors.success,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
       ],
     );
   }
 }
 
-class _VisitedRow extends StatelessWidget {
-  const _VisitedRow({required this.spot});
+/// "지도 열기 ›" gradient pill beside the TOP 3 panel — opens `<지도>`.
+class _OpenMapButton extends StatelessWidget {
+  const _OpenMapButton({required this.onTap});
 
-  final MockTouristSpot spot;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final region = spot.address.split(' ').take(2).join(' ');
     return Material(
       color: Colors.transparent,
-      borderRadius: BorderRadius.circular(AppRadius.smallButton),
+      borderRadius: BorderRadius.circular(AppRadius.pill),
       child: InkWell(
-        borderRadius: BorderRadius.circular(AppRadius.smallButton),
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => PlaceInfoScreen(spot: spot)),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 4),
-          child: Row(
-            children: [
-              Container(
-                width: 3,
-                height: 24,
-                decoration: BoxDecoration(
-                  color: gapIndexColor(spot.gapIndex),
-                  borderRadius: BorderRadius.circular(2),
+        borderRadius: BorderRadius.circular(AppRadius.pill),
+        onTap: onTap,
+        child: Ink(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [AppColors.primary, AppColors.secondaryAccent],
+            ),
+            borderRadius: BorderRadius.all(Radius.circular(AppRadius.pill)),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(AppSpacing.sm, 6, AppSpacing.xs, 6),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '지도 열기',
+                  style: AppTextStyles.caption.copyWith(
+                    color: AppColors.textOnPrimaryButton,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
-              ),
-              const SizedBox(width: AppSpacing.sm),
-              Expanded(
-                child: Text(
-                  spot.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTextStyles.bodySmall
-                      .copyWith(fontWeight: FontWeight.w600),
+                const Icon(
+                  Symbols.chevron_right_rounded,
+                  size: 14,
+                  color: AppColors.textOnPrimaryButton,
                 ),
-              ),
-              const SizedBox(width: AppSpacing.sm),
-              Text(
-                region,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: AppTextStyles.caption,
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

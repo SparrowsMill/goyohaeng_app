@@ -1,20 +1,36 @@
-import 'mock_region_ranking.dart';
-
-/// Names of the mock 관광 스팟 the signed-in user has already visited
-/// (방문 인증 완료). Placeholder until a real visit history exists.
+/// 이미 방문한 스팟 / 전체 관광스팟, 도(시도) 단위 — placeholder until a real
+/// visit history exists.
 ///
-/// * TODO(backend): 방문 기록 API 연동
-const _visitedNames = {
-  '전주 경기전',
-  '담양 죽녹원',
-  '순천만 국가정원',
-  '여수 해상케이블카',
-  '군산 초원사진관',
-};
+/// * TODO(backend): 방문 기록 API 연동 (지역별 방문/전체 스팟 수)
+class RegionVisitStat {
+  const RegionVisitStat({
+    required this.name,
+    required this.visited,
+    required this.total,
+  });
 
-/// The user's already-visited spots (mock), in [mockRegionRankings] order.
-List<MockTouristSpot> get mockVisitedSpots => [
-      for (final list in mockRegionRankings.values)
-        for (final spot in list)
-          if (_visitedNames.contains(spot.name)) spot,
-    ];
+  final String name;
+  final int visited;
+  final int total;
+
+  double get ratio => total == 0 ? 0 : visited / total;
+}
+
+const _regionVisits = <RegionVisitStat>[
+  RegionVisitStat(name: '경상남도', visited: 4, total: 7),
+  RegionVisitStat(name: '전라북도', visited: 3, total: 8),
+  RegionVisitStat(name: '서울', visited: 3, total: 5),
+  RegionVisitStat(name: '경기도', visited: 2, total: 6),
+  RegionVisitStat(name: '충청남도', visited: 2, total: 5),
+  RegionVisitStat(name: '제주도', visited: 2, total: 3),
+  RegionVisitStat(name: '전라남도', visited: 1, total: 6),
+  RegionVisitStat(name: '강원도', visited: 1, total: 5),
+  RegionVisitStat(name: '충청북도', visited: 1, total: 4),
+  RegionVisitStat(name: '경상북도', visited: 1, total: 6),
+];
+
+/// The 3 도 with the most visited 관광 스팟, most first.
+List<RegionVisitStat> get topVisitedRegions => ([..._regionVisits]
+      ..sort((a, b) => b.visited.compareTo(a.visited)))
+    .take(3)
+    .toList();
