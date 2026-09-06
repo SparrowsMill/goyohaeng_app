@@ -9,12 +9,15 @@ import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
 import '../../widgets/app_bottom_nav_bar.dart';
 import '../../widgets/gap_index_info_dialog.dart';
+import '../map/region_spot_map.dart';
 import '../place/place_info_screen.dart';
 
 /// `<지역별 랭킹 페이지>` (user_flow §6) — the tourist spots in one region,
-/// ranked by 갭지수. Reached by tapping a region on `<지도>`. Category filter
-/// + 갭지수 asc/desc sort (default: 전체 · 내림차순); the chosen filter/sort
-/// should persist across visits.
+/// ranked by 갭지수. Reached by tapping a 시군구/구 on `<지도>`. The top ~40%
+/// is a real tile map (`RegionSpotMap`) and the rest is the ranked list; tap a
+/// card to drop/highlight its pin on the map, tap again (or the pin) to open
+/// `<장소 정보 페이지>`. Category filter + 갭지수 asc/desc sort (default: 전체 ·
+/// 내림차순); the chosen filter/sort should persist across visits.
 ///
 /// * TODO(backend): 필터·정렬 설정 영속화 (user_flow §6 "다음 방문 시에도 유지")
 class RegionRankingScreen extends StatefulWidget {
@@ -36,6 +39,10 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
   SpotCategory? _category;
   bool _descending = true;
 
+  /// The spot highlighted on the map. Tapping a selected spot (card or pin)
+  /// again opens its `<장소 정보 페이지>`.
+  MockTouristSpot? _selected;
+
   List<MockTouristSpot> get _visibleSpots {
     final spots = rankingForRegion(widget.regionKey)
         .where((s) => _category == null || s.category == _category)
@@ -52,9 +59,20 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
     );
   }
 
+  /// Card or pin tap: select it (map flies there), or — if already selected /
+  /// has no coordinates — open its detail page.
+  void _select(MockTouristSpot spot) {
+    if (spot == _selected || !spot.hasLocation) {
+      _openSpot(spot);
+    } else {
+      setState(() => _selected = spot);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final spots = _visibleSpots;
+    final hasMap = spots.any((s) => s.hasLocation);
 
     return Scaffold(
       backgroundColor: AppColors.appBackground,
@@ -63,61 +81,85 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
           onPressed: () => Navigator.of(context).maybePop(),
           icon: const Icon(Symbols.arrow_back_rounded),
         ),
-        title: const Text('관광스팟 랭킹'),
+        title: Text('${widget.regionName} 관광스팟'),
       ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(
-          AppSpacing.xl,
-          AppSpacing.lg,
-          AppSpacing.xl,
-          AppSpacing.xxl,
-        ),
+      body: Column(
         children: [
-          _Header(regionName: widget.regionName),
-          const SizedBox(height: AppSpacing.xl),
-          _CategoryFilter(
-            selected: _category,
-            onChanged: (value) => setState(() => _category = value),
-          ),
-          const SizedBox(height: AppSpacing.md),
-          Row(
-            children: [
-              Expanded(
-                child: _SortDropdown(
-                  descending: _descending,
-                  onChanged: (value) => setState(() => _descending = value),
+          if (hasMap)
+            SizedBox(
+              height: MediaQuery.sizeOf(context).height * 0.42,
+              child: RegionSpotMap(
+                key: ValueKey('spotmap_${widget.regionKey}'),
+                regionCode: widget.regionKey,
+                spots: spots,
+                selected: _selected,
+                onMarkerTap: _select,
+              ),
+            ),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.xl,
+                AppSpacing.lg,
+                AppSpacing.xl,
+                AppSpacing.xxl,
+              ),
+              children: [
+                if (!hasMap) ...[
+                  _Header(regionName: widget.regionName),
+                  const SizedBox(height: AppSpacing.xl),
+                ],
+                _CategoryFilter(
+                  selected: _category,
+                  onChanged: (value) => setState(() => _category = value),
                 ),
-              ),
-              const SizedBox(width: AppSpacing.sm),
-              const GapIndexInfoButton(),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.xs),
-          Text(
-            '선택한 필터와 정렬은 다음에도 유지돼요',
-            style: AppTextStyles.caption,
-          ),
-          const SizedBox(height: AppSpacing.lg),
-          if (spots.isEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: AppSpacing.huge),
-              child: Center(
-                child: Text(
-                  '해당하는 관광 스팟이 아직 없어요.',
-                  style: AppTextStyles.bodyMedium
-                      .copyWith(color: AppColors.textSecondary),
+                const SizedBox(height: AppSpacing.md),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _SortDropdown(
+                        descending: _descending,
+                        onChanged: (value) =>
+                            setState(() => _descending = value),
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                    const GapIndexInfoButton(),
+                  ],
                 ),
-              ),
-            )
-          else
-            for (var i = 0; i < spots.length; i++) ...[
-              if (i != 0) const SizedBox(height: AppSpacing.md),
-              _RankingCard(
-                rank: i + 1,
-                spot: spots[i],
-                onTap: () => _openSpot(spots[i]),
-              ),
-            ],
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  hasMap
+                      ? '목록에서 장소를 누르면 지도에 표시돼요 · 한 번 더 누르면 상세'
+                      : '선택한 필터와 정렬은 다음에도 유지돼요',
+                  style: AppTextStyles.caption,
+                ),
+                const SizedBox(height: AppSpacing.lg),
+                if (spots.isEmpty)
+                  Padding(
+                    padding:
+                        const EdgeInsets.symmetric(vertical: AppSpacing.huge),
+                    child: Center(
+                      child: Text(
+                        '해당하는 관광 스팟이 아직 없어요.',
+                        style: AppTextStyles.bodyMedium
+                            .copyWith(color: AppColors.textSecondary),
+                      ),
+                    ),
+                  )
+                else
+                  for (var i = 0; i < spots.length; i++) ...[
+                    if (i != 0) const SizedBox(height: AppSpacing.md),
+                    _RankingCard(
+                      rank: i + 1,
+                      spot: spots[i],
+                      selected: spots[i] == _selected,
+                      onTap: () => _select(spots[i]),
+                    ),
+                  ],
+              ],
+            ),
+          ),
         ],
       ),
       bottomNavigationBar: AppBottomNavBar(
@@ -292,16 +334,18 @@ class _RankingCard extends StatelessWidget {
     required this.rank,
     required this.spot,
     required this.onTap,
+    this.selected = false,
   });
 
   final int rank;
   final MockTouristSpot spot;
   final VoidCallback onTap;
+  final bool selected;
 
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: AppColors.surface,
+      color: selected ? AppColors.surfaceSelected : AppColors.surface,
       borderRadius: BorderRadius.circular(AppRadius.card),
       child: InkWell(
         borderRadius: BorderRadius.circular(AppRadius.card),
@@ -309,7 +353,10 @@ class _RankingCard extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.all(AppSpacing.lg),
           decoration: BoxDecoration(
-            border: Border.all(color: AppColors.border),
+            border: Border.all(
+              color: selected ? AppColors.primary : AppColors.border,
+              width: selected ? 2 : 1,
+            ),
             borderRadius: BorderRadius.circular(AppRadius.card),
           ),
           child: Column(

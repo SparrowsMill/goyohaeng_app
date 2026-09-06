@@ -5,7 +5,7 @@
 /// APP(모바일)로, "활용 API"에 WMTS/TMS API를 포함해서 신청. APP 키는
 /// Referer(도메인) 검증을 하지 않는다 (확인됨 2026-09-07).
 ///
-/// 빈 값이면 타일 없이 지역 외곽선 + 스팟 핀만 (`RegionDetailMap` 폴백).
+/// 빈 값이면 타일 없이 지역 외곽선 + 스팟 핀만 (`RegionSpotMap` 폴백).
 /// 다른 키로 빌드하려면 `--dart-define=VWORLD_API_KEY=...`.
 const String vworldApiKey = String.fromEnvironment(
   'VWORLD_API_KEY',

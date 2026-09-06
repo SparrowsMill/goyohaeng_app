@@ -13,7 +13,7 @@ import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
 import '../../widgets/app_bottom_nav_bar.dart';
 import '../../widgets/gap_index_info_dialog.dart';
-import 'region_detail_map.dart';
+import '../ranking/region_ranking_screen.dart';
 
 /// `<지도>` (user_flow §6) — the whole country as a continuously zoomable
 /// vector map drawn from `assets/maps/` GeoJSON. Reached via the "지도 열기"
@@ -24,21 +24,11 @@ import 'region_detail_map.dart';
 ///   - 시도 탭 : 그 시도의 시·군·자치구로 펼침 (수원·성남·청주·창원 등
 ///     여러 구를 가진 시는 하나로 묶어서 표시) + 카메라 이동
 ///   - 묶인 시 탭 : 그 시의 구로 다시 펼침
-///   - 군·자치구·구 탭 : 실제 타일 지도([RegionDetailMap])로 크로스페이드,
-///     그 위에 스팟 핀 → 탭 시 `<장소 정보 페이지>`
+///   - 군·자치구·구 탭 : `<지역별 랭킹>` (목록 + 실제 타일 지도 반반)
 ///
 /// "갭지수란?" opens the explainer; the bottom-right pill steps out one level.
-class MapScreen extends StatefulWidget {
+class MapScreen extends StatelessWidget {
   const MapScreen({super.key});
-
-  @override
-  State<MapScreen> createState() => _MapScreenState();
-}
-
-class _MapScreenState extends State<MapScreen> {
-  /// The leaf 시군구/구 the user drilled into — `null` shows the vector map,
-  /// set cross-fades in [RegionDetailMap] (real tiles + spot pins) for it.
-  ({String code, String name})? _detail;
 
   @override
   Widget build(BuildContext context) {
@@ -52,7 +42,7 @@ class _MapScreenState extends State<MapScreen> {
         title: const Text('지도'),
         actions: const [_NotificationBell()],
       ),
-      body: _detail == null ? _buildVectorBody() : _buildDetailBody(_detail!),
+      body: _buildVectorBody(context),
       bottomNavigationBar: AppBottomNavBar(
         currentIndex: 1,
         onTap: (index) {
@@ -65,7 +55,7 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
-  Widget _header({String? subtitle}) {
+  static Widget _header({String? subtitle}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -98,7 +88,7 @@ class _MapScreenState extends State<MapScreen> {
 
   /// Nationwide → 시도 → 시군구 → 구 vector drill-down. Scrollable as a small-
   /// screen safety net; `_KoreaMap` navigates by tap so it doesn't need pan.
-  Widget _buildVectorBody() {
+  Widget _buildVectorBody(BuildContext context) {
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(
         AppSpacing.xl,
@@ -119,54 +109,20 @@ class _MapScreenState extends State<MapScreen> {
           ),
           const SizedBox(height: AppSpacing.lg),
           _KoreaMap(
-            onEnterRegion: (code, name) =>
-                setState(() => _detail = (code: code, name: name)),
+            onEnterRegion: (code, name) => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => RegionRankingScreen(
+                  regionKey: code,
+                  regionName: name,
+                ),
+              ),
+            ),
           ),
           const SizedBox(height: AppSpacing.sm),
           Text('지역을 누르면 시·군·구까지 펼쳐져요',
               style: AppTextStyles.caption),
         ],
       ),
-    );
-  }
-
-  /// One 구/군 open on the real tile map. Deliberately **not** scrollable so
-  /// `flutter_map` wins every pan/zoom gesture; the map fills the space.
-  Widget _buildDetailBody(({String code, String name}) detail) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(
-            AppSpacing.xl,
-            AppSpacing.lg,
-            AppSpacing.xl,
-            AppSpacing.md,
-          ),
-          child: _header(),
-        ),
-        Expanded(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
-            child: RegionDetailMap(
-              key: ValueKey('detail_${detail.code}'),
-              regionCode: detail.code,
-              regionName: detail.name,
-              onBack: () => setState(() => _detail = null),
-            ),
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(
-            AppSpacing.xl,
-            AppSpacing.sm,
-            AppSpacing.xl,
-            AppSpacing.lg,
-          ),
-          child: Text('지도의 장소를 눌러 자세히 살펴보세요',
-              style: AppTextStyles.caption),
-        ),
-      ],
     );
   }
 }

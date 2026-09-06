@@ -5,7 +5,8 @@ import 'package:goyohaeng_app/data/korea_map_geo.dart';
 import 'package:goyohaeng_app/data/mock_map_regions.dart';
 import 'package:goyohaeng_app/data/mock_region_ranking.dart';
 import 'package:goyohaeng_app/screens/map/map_screen.dart';
-import 'package:goyohaeng_app/screens/map/region_detail_map.dart';
+import 'package:goyohaeng_app/screens/map/region_spot_map.dart';
+import 'package:goyohaeng_app/screens/ranking/region_ranking_screen.dart';
 import 'package:goyohaeng_app/theme/app_theme.dart';
 
 void main() {
@@ -107,7 +108,7 @@ void main() {
     );
   });
 
-  testWidgets('drilling 시도 → 군 cross-fades to the region tile map',
+  testWidgets('drilling 시도 → 군 opens <지역별 랭킹> (list + map)',
       (tester) async {
     tester.view.physicalSize = const Size(390, 800);
     tester.view.devicePixelRatio = 1;
@@ -134,31 +135,48 @@ void main() {
     await tester.tapAt(screenFor(damyang)); // focus 전남
     await tester.runAsync(() async {});
     await tester.pumpAndSettle();
-    expect(find.byType(RegionDetailMap), findsNothing);
+    expect(find.byType(RegionRankingScreen), findsNothing);
 
-    await tester.tapAt(screenFor(damyang)); // open 담양군 → tile map
+    await tester.tapAt(screenFor(damyang)); // open 담양군
     await tester.runAsync(() async {});
     await tester.pumpAndSettle();
 
-    expect(find.byType(RegionDetailMap), findsOneWidget);
-    expect(find.text('뒤로'), findsOneWidget);
+    expect(find.byType(RegionRankingScreen), findsOneWidget);
+    expect(find.byType(RegionSpotMap), findsOneWidget);
+    expect(find.text('담양 죽녹원'), findsWidgets); // a ranking card
   });
 
-  testWidgets('RegionDetailMap builds (no tile key) and "뒤로" calls onBack',
+  testWidgets('RegionSpotMap: selecting a spot flies the camera to it',
       (tester) async {
+    tester.view.physicalSize = const Size(390, 700);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
     await tester.runAsync(() async {
       final g = await KoreaGeo.load();
       await g.ensureSigungu();
     });
-    var back = false;
+
+    final controller = MapController();
+    final spots = rankingForRegion('36310').where((s) => s.hasLocation).toList();
+    MockTouristSpot? selected;
+    late StateSetter setOuter;
+
     await tester.pumpWidget(
       MaterialApp(
         theme: AppTheme.light,
         home: Scaffold(
-          body: RegionDetailMap(
-            regionCode: '36310',
-            regionName: '담양군',
-            onBack: () => back = true,
+          body: StatefulBuilder(
+            builder: (context, setState) {
+              setOuter = setState;
+              return RegionSpotMap(
+                regionCode: '36310',
+                spots: spots,
+                selected: selected,
+                onMarkerTap: (s) {},
+                mapController: controller,
+              );
+            },
           ),
         ),
       ),
@@ -166,12 +184,17 @@ void main() {
     await tester.runAsync(() async {});
     await tester.pumpAndSettle();
 
-    expect(find.text('담양군 랭킹'), findsOneWidget);
-    await tester.tap(find.text('뒤로'));
-    expect(back, isTrue);
+    final before = controller.camera.center;
+    setOuter(() => selected = spots.last);
+    await tester.pump();
+    await tester.pump();
+
+    expect(controller.camera.center, isNot(before));
+    expect(controller.camera.center.latitude,
+        moreOrLessEquals(spots.last.lat!, epsilon: 0.02));
   });
 
-  testWidgets('RegionDetailMap responds to a pinch (camera zoom changes)',
+  testWidgets('RegionSpotMap responds to a pinch (camera zoom changes)',
       (tester) async {
     tester.view.physicalSize = const Size(390, 700);
     tester.view.devicePixelRatio = 1;
@@ -187,10 +210,11 @@ void main() {
       MaterialApp(
         theme: AppTheme.light,
         home: Scaffold(
-          body: RegionDetailMap(
+          body: RegionSpotMap(
             regionCode: '36310',
-            regionName: '담양군',
-            onBack: () {},
+            spots: rankingForRegion('36310'),
+            selected: null,
+            onMarkerTap: (_) {},
             mapController: controller,
           ),
         ),
@@ -255,7 +279,7 @@ void main() {
     await tester.runAsync(() async {});
     await tester.pumpAndSettle();
 
-    expect(find.byType(RegionDetailMap), findsNothing); // still on the vector map
+    expect(find.byType(RegionRankingScreen), findsNothing); // still the vector map
     expect(find.text('뒤로'), findsOneWidget); // the step-out pill switched
   });
 }
