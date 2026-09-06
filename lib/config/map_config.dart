@@ -13,9 +13,9 @@ const String vworldApiKey = String.fromEnvironment(
 );
 
 /// VWorld WMTS 레이어: `Base` / `midnight` / `white` / `Hybrid` (`.png`),
-/// `Satellite` (`.jpeg`). `white` = 최소한의 옅은 지도로 수채화 톤과 가장
-/// 덜 부딪힌다.
-const String vworldTileLayer = 'white';
+/// `Satellite` (`.jpeg`). `Base` = 도로·지명·건물이 다 나오는 일반 지도
+/// (줌인 시 실제 장소 확인용). 더 옅게 가려면 `white`.
+const String vworldTileLayer = 'Base';
 
 /// The XYZ (`{z}/{y}/{x}`) tile URL template `flutter_map` needs. Empty when
 /// no key is configured.
