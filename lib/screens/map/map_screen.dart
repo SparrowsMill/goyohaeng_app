@@ -4,10 +4,8 @@ import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
-import '../../data/korea_crs.dart';
 import '../../data/korea_map_geo.dart';
 import '../../data/mock_map_regions.dart';
-import '../../data/mock_region_ranking.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_motion.dart';
 import '../../theme/app_radius.dart';
@@ -15,7 +13,7 @@ import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
 import '../../widgets/app_bottom_nav_bar.dart';
 import '../../widgets/gap_index_info_dialog.dart';
-import '../place/place_info_screen.dart';
+import 'region_detail_map.dart';
 
 /// `<지도>` (user_flow §6) — the whole country as a continuously zoomable
 /// vector map drawn from `assets/maps/` GeoJSON. Reached via the "지도 열기"
@@ -26,19 +24,21 @@ import '../place/place_info_screen.dart';
 ///   - 시도 탭 : 그 시도의 시·군·자치구로 펼침 (수원·성남·청주·창원 등
 ///     여러 구를 가진 시는 하나로 묶어서 표시) + 카메라 이동
 ///   - 묶인 시 탭 : 그 시의 구로 다시 펼침
-///   - 군·자치구·구 탭 : 실제 지도(네이버맵)로 크로스페이드 ([RegionNaverMap])
-///
-///   - 장소 탭 : `<장소 정보 페이지>`
+///   - 군·자치구·구 탭 : 실제 타일 지도([RegionDetailMap])로 크로스페이드,
+///     그 위에 스팟 핀 → 탭 시 `<장소 정보 페이지>`
 ///
 /// "갭지수란?" opens the explainer; the bottom-right pill steps out one level.
-class MapScreen extends StatelessWidget {
+class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
 
-  void _openSpot(BuildContext context, MockTouristSpot spot) {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => PlaceInfoScreen(spot: spot)),
-    );
-  }
+  @override
+  State<MapScreen> createState() => _MapScreenState();
+}
+
+class _MapScreenState extends State<MapScreen> {
+  /// The leaf 시군구/구 the user drilled into — `null` shows the vector map,
+  /// set cross-fades in [RegionDetailMap] (real tiles + spot pins) for it.
+  ({String code, String name})? _detail;
 
   @override
   Widget build(BuildContext context) {
@@ -94,10 +94,30 @@ class MapScreen extends StatelessWidget {
               child: GapIndexInfoButton(),
             ),
             const SizedBox(height: AppSpacing.lg),
-            _KoreaMap(onSpotTap: (spot) => _openSpot(context, spot)),
+            AnimatedSwitcher(
+              duration: AppMotion.modalTransition,
+              switchInCurve: AppMotion.curve,
+              switchOutCurve: AppMotion.curve,
+              transitionBuilder: (child, animation) =>
+                  FadeTransition(opacity: animation, child: child),
+              child: _detail == null
+                  ? _KoreaMap(
+                      key: const ValueKey('vector'),
+                      onEnterRegion: (code, name) => setState(
+                          () => _detail = (code: code, name: name)),
+                    )
+                  : RegionDetailMap(
+                      key: ValueKey('detail_${_detail!.code}'),
+                      regionCode: _detail!.code,
+                      regionName: _detail!.name,
+                      onBack: () => setState(() => _detail = null),
+                    ),
+            ),
             const SizedBox(height: AppSpacing.sm),
             Text(
-              '지역을 누르면 시·군·구, 그리고 숨은 장소까지 살펴볼 수 있어요',
+              _detail == null
+                  ? '지역을 누르면 시·군·구까지 펼쳐져요'
+                  : '지도의 장소를 눌러 자세히 살펴보세요',
               style: AppTextStyles.caption,
             ),
           ],
@@ -190,18 +210,16 @@ const _sidoShortName = <String, String>{
 };
 
 class _KoreaMap extends StatefulWidget {
-  const _KoreaMap({required this.onSpotTap});
+  const _KoreaMap({super.key, required this.onEnterRegion});
 
-  /// Called when the user taps a spot pin at the deepest drill level.
-  final void Function(MockTouristSpot spot) onSpotTap;
+  /// Called with a 시군구/구 code + name when the user taps a leaf region
+  /// (a 군, a 자치구, or a 구 within a drilled 시) — `MapScreen` then swaps in
+  /// the real tile map for it.
+  final void Function(String regionCode, String regionName) onEnterRegion;
 
   @override
   State<_KoreaMap> createState() => _KoreaMapState();
 }
-
-/// A tourist spot placed on the vector map (its lat/lng forward-projected to
-/// the map's source CRS, then to scene space).
-typedef _Pin = ({MockTouristSpot spot, Offset scene});
 
 class _KoreaMapState extends State<_KoreaMap>
     with SingleTickerProviderStateMixin {
@@ -212,14 +230,11 @@ class _KoreaMapState extends State<_KoreaMap>
   final ValueNotifier<double> _scale = ValueNotifier<double>(1);
   final ValueNotifier<Rect> _viewport = ValueNotifier<Rect>(Rect.zero);
 
-  /// Drill state, outermost → innermost:
-  /// - `_focusedSido` (2-digit) expands one 시도 into its units ([_units]);
-  /// - `_focusedGroup` (4-digit prefix) expands one multi-구 시 into its 구;
-  /// - `_focusedLeaf` (5-digit) opens a single 군/자치구/구, showing its spot
-  ///   pins ([_pins]); tapping a pin calls `onSpotTap`.
+  /// Drill state: `_focusedSido` (2-digit) expands one 시도 into its units
+  /// ([_units]); `_focusedGroup` (4-digit prefix) then expands one multi-구 시
+  /// into its 구. Tapping a leaf (a 군, a 자치구, or a 구) calls `onEnterRegion`.
   final ValueNotifier<String?> _focusedSido = ValueNotifier<String?>(null);
   final ValueNotifier<String?> _focusedGroup = ValueNotifier<String?>(null);
-  final ValueNotifier<String?> _focusedLeaf = ValueNotifier<String?>(null);
 
   KoreaGeo? _geo;
   bool _sigunguRequested = false;
@@ -246,10 +261,6 @@ class _KoreaMapState extends State<_KoreaMap>
   List<_MapUnit> _units = const [];
   String? _unitsKey;
 
-  /// Spot pins for [_focusedLeaf], in scene space. Rebuilt with [_pinsKey].
-  List<_Pin> _pins = const [];
-  String? _pinsKey;
-
   @override
   void initState() {
     super.initState();
@@ -275,7 +286,6 @@ class _KoreaMapState extends State<_KoreaMap>
     _viewport.dispose();
     _focusedSido.dispose();
     _focusedGroup.dispose();
-    _focusedLeaf.dispose();
     super.dispose();
   }
 
@@ -329,7 +339,6 @@ class _KoreaMapState extends State<_KoreaMap>
     // paths changed — force the derived caches to rebuild
     _focusOutlineKey = null;
     _unitsKey = null;
-    _pinsKey = null;
   }
 
   // ── interaction ───────────────────────────────────────────────────────────
@@ -381,78 +390,20 @@ class _KoreaMapState extends State<_KoreaMap>
     _zoomToSceneRect(unit.path.getBounds());
   }
 
-  /// Open a single 군/자치구/구: show its spot pins and zoom in tight.
-  void _focusLeaf(String code, {Rect? sceneBounds}) {
-    setState(() => _focusedLeaf.value = code);
-    _pinsKey = null;
-    final r = _sceneBoundsOf(code);
-    if (sceneBounds != null) {
-      _zoomToSceneRect(sceneBounds);
-    } else if (r != null) {
-      _zoomToSceneRect(r);
-    }
-  }
-
-  Rect? _sceneBoundsOf(String sigunguId) {
-    final p = _sigunguPaths[sigunguId];
-    return p == null || p.getBounds().isEmpty ? null : p.getBounds();
-  }
-
-  /// Step out one level: 장소 → 시/구, 구 → 시도, 시도 → 전국.
+  /// Step out one level: 구 → 시도, 시도 → 전국.
   void _popFocus() {
-    if (_focusedLeaf.value != null) {
-      setState(() => _focusedLeaf.value = null);
-      final group = _focusedGroup.value;
-      if (group != null) {
-        for (final u in _units) {
-          if (u.key == group) {
-            _zoomToSceneRect(u.path.getBounds());
-            break;
-          }
-        }
-      } else {
-        _zoomToFocusedSido();
-      }
-      return;
-    }
     if (_focusedGroup.value != null) {
       setState(() => _focusedGroup.value = null);
-      _zoomToFocusedSido();
+      for (final r in _geo?.sido ?? const <GeoRegion>[]) {
+        if (r.id == _focusedSido.value) {
+          _zoomToRegion(r);
+          break;
+        }
+      }
       return;
     }
     setState(() => _focusedSido.value = null);
     _animateTo(Matrix4.identity());
-  }
-
-  void _zoomToFocusedSido() {
-    for (final r in _geo?.sido ?? const <GeoRegion>[]) {
-      if (r.id == _focusedSido.value) {
-        _zoomToRegion(r);
-        break;
-      }
-    }
-  }
-
-  /// (Re)builds [_pins] for [_focusedLeaf] if stale.
-  void _ensurePins() {
-    final proj = _projector;
-    final leaf = _focusedLeaf.value;
-    final key = leaf == null ? null : '$leaf@$_boxSize';
-    if (key == _pinsKey) return;
-    _pinsKey = key;
-
-    if (leaf == null || proj == null) {
-      _pins = const [];
-      return;
-    }
-    _pins = [
-      for (final spot in rankingForRegion(leaf))
-        if (spot.hasLocation)
-          (
-            spot: spot,
-            scene: proj(Epsg5179.fromLatLng(LatLng(spot.lat!, spot.lng!))),
-          ),
-    ];
   }
 
   /// (Re)builds [_units] for the focused 시도 + layout if stale. Each 군/자치구
@@ -551,34 +502,13 @@ class _KoreaMapState extends State<_KoreaMap>
     if (geo == null) return;
     final sido = _focusedSido.value;
     final group = _focusedGroup.value;
-    final leaf = _focusedLeaf.value;
-
-    // ── Level 3: a single 군/자치구/구 open with its spot pins ───────────────
-    if (leaf != null) {
-      final hit = 16 / _scale.value; // ~16 px catch radius, in scene units
-      _Pin? nearest;
-      var best = double.infinity;
-      for (final pin in _pins) {
-        final d = (pin.scene - scenePos).distance;
-        if (d < hit && d < best) {
-          best = d;
-          nearest = pin;
-        }
-      }
-      if (nearest != null) {
-        widget.onSpotTap(nearest.spot);
-      } else {
-        _popFocus(); // tapped away from any pin → back out
-      }
-      return;
-    }
 
     // ── Level 2: drilled into a multi-구 시 ──────────────────────────────────
     if (group != null) {
       for (final r in geo.sigungu) {
         if (!r.id.startsWith(group)) continue;
         if (_sigunguPaths[r.id]?.contains(scenePos) ?? false) {
-          _focusLeaf(r.id); // a 구 → its spot pins
+          widget.onEnterRegion(r.id, r.title); // a 구 → real tile map
           return;
         }
       }
@@ -593,7 +523,7 @@ class _KoreaMapState extends State<_KoreaMap>
         if (u.isDrillable) {
           _focusGroup(u); // 수원시 등 → show its 구
         } else {
-          _focusLeaf(u.leafId, sceneBounds: u.path.getBounds()); // 군/자치구
+          widget.onEnterRegion(u.leafId, u.title); // 군/자치구 → real tile map
         }
         return;
       }
@@ -637,7 +567,6 @@ class _KoreaMapState extends State<_KoreaMap>
                 _rebuildPaths(geo, size);
                 _ensureFocusOutline();
                 _ensureUnits();
-                _ensurePins();
                 if (_viewport.value == Rect.zero) {
                   _viewport.value = Offset.zero & size;
                 }
@@ -663,10 +592,8 @@ class _KoreaMapState extends State<_KoreaMap>
                               viewport: _viewport,
                               focusedSido: _focusedSido,
                               focusedGroup: _focusedGroup,
-                              focusedLeaf: _focusedLeaf,
                               focusOutline: _focusOutline,
                               units: _units,
-                              pins: _pins,
                             ),
                           ),
                         ),
@@ -678,7 +605,6 @@ class _KoreaMapState extends State<_KoreaMap>
                           scale: _scale,
                           focusedSido: _focusedSido,
                           focusedGroup: _focusedGroup,
-                          focusedLeaf: _focusedLeaf,
                           onTap: _popFocus,
                         ),
                       ),
@@ -698,24 +624,20 @@ class _ResetViewButton extends StatelessWidget {
     required this.scale,
     required this.focusedSido,
     required this.focusedGroup,
-    required this.focusedLeaf,
     required this.onTap,
   });
 
   final ValueListenable<double> scale;
   final ValueListenable<String?> focusedSido;
   final ValueListenable<String?> focusedGroup;
-  final ValueListenable<String?> focusedLeaf;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation:
-          Listenable.merge([scale, focusedSido, focusedGroup, focusedLeaf]),
+      animation: Listenable.merge([scale, focusedSido, focusedGroup]),
       builder: (context, child) {
-        final drilled =
-            focusedGroup.value != null || focusedLeaf.value != null;
+        final drilled = focusedGroup.value != null;
         final visible =
             scale.value > 1.02 || focusedSido.value != null || drilled;
         return AnimatedOpacity(
@@ -796,9 +718,9 @@ class _MapUnit {
 }
 
 /// Paints the 17 시도, then per drill level: the focused 시도's [units]
-/// (L1), one opened 시's 구 (L2), or one 군/자치구/구 with its spot [pins]
-/// (L3). Strokes / text sizes are divided by the live zoom so they keep a
-/// constant on-screen weight.
+/// (L1) or one opened 시's 구 (L2), each filled by its 갭지수 colour. Strokes
+/// / text sizes are divided by the live zoom so they keep a constant
+/// on-screen weight.
 class _KoreaMapPainter extends CustomPainter {
   _KoreaMapPainter({
     required this.geo,
@@ -809,13 +731,11 @@ class _KoreaMapPainter extends CustomPainter {
     required this.viewport,
     required this.focusedSido,
     required this.focusedGroup,
-    required this.focusedLeaf,
     required this.focusOutline,
     required this.units,
-    required this.pins,
   }) : super(
-          repaint: Listenable.merge(
-              [scale, viewport, focusedSido, focusedGroup, focusedLeaf]),
+          repaint:
+              Listenable.merge([scale, viewport, focusedSido, focusedGroup]),
         );
 
   final KoreaGeo geo;
@@ -826,7 +746,6 @@ class _KoreaMapPainter extends CustomPainter {
   final ValueListenable<Rect> viewport;
   final ValueListenable<String?> focusedSido;
   final ValueListenable<String?> focusedGroup;
-  final ValueListenable<String?> focusedLeaf;
 
   /// Union of the focused 시도's 시군구 — drawn as that province's outline so
   /// it hugs the 시군구 fills. `null` when nothing is focused / not ready yet.
@@ -835,16 +754,12 @@ class _KoreaMapPainter extends CustomPainter {
   /// The focused 시도's tappable units (see [_MapUnit]).
   final List<_MapUnit> units;
 
-  /// Spot pins for the open 군/자치구/구 ([focusedLeaf]).
-  final List<_Pin> pins;
-
   @override
   void paint(Canvas canvas, Size size) {
     final z = scale.value.clamp(1.0, 12.0);
     final view = viewport.value;
     final focused = focusedSido.value;
     final group = focusedGroup.value;
-    final leaf = focusedLeaf.value;
 
     canvas.drawShadow(
       focused != null && focusOutline != null ? focusOutline! : countryOutline,
@@ -874,15 +789,7 @@ class _KoreaMapPainter extends CustomPainter {
       canvas.drawPath(path, Paint()..color = gapIndexColor(stats.avgGapIndex));
     }
 
-    final leafPath = leaf == null ? null : sigunguPaths[leaf];
-
-    if (leaf != null && leafPath != null) {
-      // Level 3 — a single 군/자치구/구 opened, the rest dimmed.
-      canvas.drawPath(
-        leafPath,
-        Paint()..color = gapIndexColor(statsForRegion(leaf).avgGapIndex),
-      );
-    } else if (focused != null && geo.sigunguReady) {
+    if (focused != null && geo.sigunguReady) {
       if (group == null) {
         // Level 1 — the 시도's units (군/자치구 solo, multi-구 시 merged).
         for (final u in units) {
@@ -916,9 +823,7 @@ class _KoreaMapPainter extends CustomPainter {
     // differently, so while a 시도 is focused only its own outline is drawn
     // (from [focusOutline]); other provinces' coarse edges are dropped rather
     // than left as stray white lines that miss the fills.
-    if (leaf != null && leafPath != null) {
-      canvas.drawPath(leafPath, sidoStroke);
-    } else if (focused == null) {
+    if (focused == null) {
       for (final path in sidoPaths.values) {
         canvas.drawPath(path, sidoStroke);
       }
@@ -934,58 +839,7 @@ class _KoreaMapPainter extends CustomPainter {
       }
     }
 
-    if (leaf != null) _paintPins(canvas, z, view);
-
-    _paintLabels(canvas, project, z, view, focused, group, leaf);
-  }
-
-  void _paintPins(Canvas canvas, double z, Rect view) {
-    final r = 5 / z; // constant ~5 px on screen
-    final fill = Paint()..color = AppColors.secondaryAccent;
-    final glow = Paint()
-      ..color = AppColors.secondaryAccent.withValues(alpha: 0.18);
-    final ring = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2 / z
-      ..color = AppColors.surface;
-
-    for (final pin in pins) {
-      if (!view.contains(pin.scene)) continue;
-      canvas.drawCircle(pin.scene, r * 1.9, glow);
-      canvas.drawCircle(pin.scene, r, fill);
-      canvas.drawCircle(pin.scene, r, ring);
-    }
-    // Labels in a second pass, skipping any that would collide with one
-    // already placed (spots can sit very close together).
-    final placed = <Rect>[];
-    for (final pin in pins) {
-      if (!view.contains(pin.scene)) continue;
-      final box = _measureLabel(pin.spot.name, 11 / z)
-          .shift(pin.scene.translate(0, -r * 3.4));
-      if (placed.any(box.overlaps)) continue;
-      placed.add(box);
-      _drawLabel(
-        canvas,
-        text: pin.spot.name,
-        center: pin.scene.translate(0, -r * 3.4),
-        gap: pin.spot.gapIndex,
-        fontPx: 11 / z,
-        region: Path()..addRect(view),
-        enforceFit: false,
-      );
-    }
-  }
-
-  /// Bounding box (centred on the origin) of [text] laid out at [fontPx].
-  Rect _measureLabel(String text, double fontPx) {
-    final tp = TextPainter(
-      text: TextSpan(
-          text: text,
-          style: TextStyle(fontSize: fontPx, fontWeight: FontWeight.w700)),
-      textDirection: TextDirection.ltr,
-    )..layout();
-    return Rect.fromCenter(
-        center: Offset.zero, width: tp.width, height: tp.height);
+    _paintLabels(canvas, project, z, view, focused, group);
   }
 
   void _paintLabels(
@@ -995,10 +849,7 @@ class _KoreaMapPainter extends CustomPainter {
     Rect view,
     String? focused,
     String? group,
-    String? leaf,
   ) {
-    // At the deepest level only the pin labels show (drawn in _paintPins).
-    if (leaf != null) return;
 
     // 시도 labels — every 시도 but the focused one.
     for (final label in geo.sidoLabels) {
@@ -1155,8 +1006,6 @@ class _KoreaMapPainter extends CustomPainter {
       old.countryOutline != countryOutline ||
       old.focusedSido != focusedSido ||
       old.focusedGroup != focusedGroup ||
-      old.focusedLeaf != focusedLeaf ||
       old.focusOutline != focusOutline ||
-      !identical(old.units, units) ||
-      !identical(old.pins, pins);
+      !identical(old.units, units);
 }

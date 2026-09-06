@@ -3,9 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:goyohaeng_app/data/korea_map_geo.dart';
 import 'package:goyohaeng_app/data/mock_map_regions.dart';
 import 'package:goyohaeng_app/data/mock_region_ranking.dart';
-import 'package:goyohaeng_app/data/korea_crs.dart';
 import 'package:goyohaeng_app/screens/map/map_screen.dart';
-import 'package:goyohaeng_app/screens/place/place_info_screen.dart';
+import 'package:goyohaeng_app/screens/map/region_detail_map.dart';
 import 'package:goyohaeng_app/theme/app_theme.dart';
 
 void main() {
@@ -107,7 +106,7 @@ void main() {
     );
   });
 
-  testWidgets('drilling 시도 → 군 → spot pin opens <장소 정보 페이지>',
+  testWidgets('drilling 시도 → 군 cross-fades to the region tile map',
       (tester) async {
     tester.view.physicalSize = const Size(390, 800);
     tester.view.devicePixelRatio = 1;
@@ -128,26 +127,47 @@ void main() {
     Offset screenFor(Offset raw) =>
         MatrixUtils.transformPoint(tc().value, proj(raw)) + box.topLeft;
 
-    // 담양군 (36310) has spots with coords. Its label point sits inside it.
+    // 담양군 (36310)의 라벨 지점은 그 안에 있다.
     final damyang = geo.sigunguLabels.firstWhere((l) => l.id == '36310').point;
 
     await tester.tapAt(screenFor(damyang)); // focus 전남
     await tester.runAsync(() async {});
     await tester.pumpAndSettle();
+    expect(find.byType(RegionDetailMap), findsNothing);
 
-    await tester.tapAt(screenFor(damyang)); // open 담양군 → spot pins
+    await tester.tapAt(screenFor(damyang)); // open 담양군 → tile map
     await tester.runAsync(() async {});
     await tester.pumpAndSettle();
-    expect(find.text('뒤로'), findsOneWidget);
-    expect(find.byType(PlaceInfoScreen), findsNothing);
 
-    // Tap 담양 죽녹원's pin (its lat/lng, forward-projected).
-    final spot = rankingForRegion('36310').firstWhere((s) => s.hasLocation);
-    final pinRaw = Epsg5179.fromLatLng(LatLng(spot.lat!, spot.lng!));
-    await tester.tapAt(screenFor(pinRaw));
+    expect(find.byType(RegionDetailMap), findsOneWidget);
+    expect(find.text('뒤로'), findsOneWidget);
+  });
+
+  testWidgets('RegionDetailMap builds (no tile key) and "뒤로" calls onBack',
+      (tester) async {
+    await tester.runAsync(() async {
+      final g = await KoreaGeo.load();
+      await g.ensureSigungu();
+    });
+    var back = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light,
+        home: Scaffold(
+          body: RegionDetailMap(
+            regionCode: '36310',
+            regionName: '담양군',
+            onBack: () => back = true,
+          ),
+        ),
+      ),
+    );
+    await tester.runAsync(() async {});
     await tester.pumpAndSettle();
 
-    expect(find.byType(PlaceInfoScreen), findsOneWidget);
+    expect(find.text('담양군 랭킹'), findsOneWidget);
+    await tester.tap(find.text('뒤로'));
+    expect(back, isTrue);
   });
 
   testWidgets('tapping a multi-구 시 opens its 구 (one more level)',
@@ -184,7 +204,7 @@ void main() {
     await tester.runAsync(() async {});
     await tester.pumpAndSettle();
 
-    expect(find.byType(PlaceInfoScreen), findsNothing); // still on the vector map
+    expect(find.byType(RegionDetailMap), findsNothing); // still on the vector map
     expect(find.text('뒤로'), findsOneWidget); // the step-out pill switched
   });
 }

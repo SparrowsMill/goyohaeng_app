@@ -45,6 +45,11 @@ dependencies:
   # 길찾기(네이버 지도 앱/웹) · 전화 · 홈페이지 딥링크 — <장소 정보 페이지>.
   url_launcher: ^6.3.2
 
+  # <지도> 구/군 진입 시 실제 타일 지도 (VWorld 타일). 벤더 SDK 없음, 전
+  # 플랫폼. 시도→시군구→구 드릴다운은 여전히 GeoJSON 벡터.
+  flutter_map: ^8.3.2
+  latlong2: ^0.9.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

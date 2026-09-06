@@ -17,8 +17,8 @@ void main() {
   test('Epsg5179.toLatLng matches reference values within ~1 m', () {
     cases.forEach((name, c) {
       final got = Epsg5179.toLatLng(c.$1);
-      expect(got.lat, closeTo(c.$2.lat, 1e-5), reason: '$name lat');
-      expect(got.lng, closeTo(c.$2.lng, 1e-5), reason: '$name lng');
+      expect(got.latitude, closeTo(c.$2.latitude, 1e-5), reason: '$name lat');
+      expect(got.longitude, closeTo(c.$2.longitude, 1e-5), reason: '$name lng');
     });
   });
 
@@ -41,8 +41,8 @@ void main() {
 
     for (final label in [...geo.sidoLabels, ...geo.sigunguLabels]) {
       final ll = label.latLng;
-      expect(ll.lat, inInclusiveRange(33.0, 39.0), reason: '${label.title} lat');
-      expect(ll.lng, inInclusiveRange(124.0, 132.0),
+      expect(ll.latitude, inInclusiveRange(33.0, 39.0), reason: '${label.title} lat');
+      expect(ll.longitude, inInclusiveRange(124.0, 132.0),
           reason: '${label.title} lng');
     }
   });
@@ -62,13 +62,13 @@ void main() {
     );
 
     final b = seoul.latLngBounds;
-    expect(b.southwest.lat, lessThan(b.northeast.lat));
-    expect(b.southwest.lng, lessThan(b.northeast.lng));
+    expect(b.southwest.latitude, lessThan(b.northeast.latitude));
+    expect(b.southwest.longitude, lessThan(b.northeast.longitude));
 
     final c = seoul.centerLatLng;
-    expect(c.lat, inInclusiveRange(b.southwest.lat, b.northeast.lat));
-    expect(c.lng, inInclusiveRange(b.southwest.lng, b.northeast.lng));
-    expect(c.lat, closeTo(37.55, 0.15));
-    expect(c.lng, closeTo(126.99, 0.15));
+    expect(c.latitude, inInclusiveRange(b.southwest.latitude, b.northeast.latitude));
+    expect(c.longitude, inInclusiveRange(b.southwest.longitude, b.northeast.longitude));
+    expect(c.latitude, closeTo(37.55, 0.15));
+    expect(c.longitude, closeTo(126.99, 0.15));
   });
 }

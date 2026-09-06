@@ -1,35 +1,23 @@
 import 'dart:math' as math;
 import 'dart:ui' show Offset, Rect;
 
+import 'package:latlong2/latlong.dart' show LatLng;
+
 import 'korea_map_geo.dart' show GeoRegion, GeoLabel;
 
-/// A WGS84 geographic coordinate (EPSG:4326), in degrees.
-///
-/// A plain value type — kept lightweight for map math and any future map-SDK
-/// / deep-link boundary.
-class LatLng {
-  const LatLng(this.lat, this.lng);
+export 'package:latlong2/latlong.dart' show LatLng;
 
-  final double lat;
-  final double lng;
-
-  @override
-  String toString() =>
-      'LatLng(${lat.toStringAsFixed(6)}, ${lng.toStringAsFixed(6)})';
-}
-
-/// Inverse projection for the CRS the `assets/maps/` GeoJSON is stored in:
+/// Projection for the CRS the `assets/maps/` GeoJSON is stored in:
 /// **EPSG:5179** (Korea 2000 / Unified CS) — a Transverse Mercator on GRS80.
 ///
 /// proj4 string:
 /// `+proj=tmerc +lat_0=38 +lon_0=127.5 +k=0.9996 +x_0=1000000 +y_0=2000000`
 /// `+ellps=GRS80 +units=m +no_defs`
 ///
-/// Only the inverse (projected metres → lat/lng) is implemented — that is all
-/// the real-map stage needs (camera targets, marker positions). The standard
-/// Snyder inverse-TM series is accurate to well under a metre across the
-/// Korean peninsula, far tighter than any camera use needs, so pulling in a
-/// full projection package (`proj4dart`) would only add a dependency.
+/// Hand-rolled Snyder Transverse Mercator, both directions ([toLatLng] /
+/// [fromLatLng]), accurate to well under a metre across the Korean peninsula
+/// — far tighter than any map use needs. (`flutter_map` bundles `proj4dart`,
+/// but wiring EPSG:5179 through it is more code than this.)
 class Epsg5179 {
   Epsg5179._();
 
@@ -105,8 +93,8 @@ class Epsg5179 {
   /// forward of [toLatLng], for placing lat/lng data (tourist-spot markers) on
   /// the vector map. Standard Snyder forward Transverse Mercator.
   static Offset fromLatLng(LatLng ll) {
-    final phi = _deg2rad(ll.lat);
-    final lam = _deg2rad(ll.lng);
+    final phi = _deg2rad(ll.latitude);
+    final lam = _deg2rad(ll.longitude);
 
     final sinPhi = math.sin(phi);
     final cosPhi = math.cos(phi);
@@ -166,13 +154,13 @@ LatLngBounds latLngBoundsOfCrsRect(Rect crsBounds) {
     Epsg5179.toLatLng(crsBounds.bottomLeft),
     Epsg5179.toLatLng(crsBounds.bottomRight),
   ];
-  var minLat = corners.first.lat, maxLat = corners.first.lat;
-  var minLng = corners.first.lng, maxLng = corners.first.lng;
+  var minLat = corners.first.latitude, maxLat = corners.first.latitude;
+  var minLng = corners.first.longitude, maxLng = corners.first.longitude;
   for (final c in corners.skip(1)) {
-    minLat = math.min(minLat, c.lat);
-    maxLat = math.max(maxLat, c.lat);
-    minLng = math.min(minLng, c.lng);
-    maxLng = math.max(maxLng, c.lng);
+    minLat = math.min(minLat, c.latitude);
+    maxLat = math.max(maxLat, c.latitude);
+    minLng = math.min(minLng, c.longitude);
+    maxLng = math.max(maxLng, c.longitude);
   }
   return (
     southwest: LatLng(minLat, minLng),
