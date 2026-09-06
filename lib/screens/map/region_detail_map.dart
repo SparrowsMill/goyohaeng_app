@@ -126,7 +126,7 @@ class _RegionDetailMapState extends State<RegionDetailMap> {
       options: MapOptions(
         backgroundColor: AppColors.appBackground,
         minZoom: 6,
-        maxZoom: 18,
+        maxZoom: 19,
         initialCameraFit: allPoints.isEmpty
             ? null
             : CameraFit.bounds(
@@ -139,7 +139,6 @@ class _RegionDetailMapState extends State<RegionDetailMap> {
           TileLayer(
             urlTemplate: vworldTileUrl,
             userAgentPackageName: 'com.goyohaeng',
-            maxZoom: 18,
           ),
         if (rings.isNotEmpty)
           PolygonLayer(
