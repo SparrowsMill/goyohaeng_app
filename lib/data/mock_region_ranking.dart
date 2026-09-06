@@ -56,11 +56,22 @@ class MockTouristSpot {
     this.visitState = VisitState.notVisited,
     this.storeBenefit,
     this.ingredientCount = 1,
+    this.lat,
+    this.lng,
   });
 
   final String name;
   final SpotCategory category;
   final int gapIndex;
+
+  /// WGS84 위치 — `<지도>` 시군구 진입 시 네이버맵 마커로 찍는다. `null`이면
+  /// 마커를 생성하지 않는다.
+  /// * TODO(backend): 현재 값은 주소 기반 근사치. 장소 API 연동 시 교체.
+  final double? lat;
+  final double? lng;
+
+  /// 마커를 찍을 수 있는지 — [lat], [lng]가 모두 있는 경우.
+  bool get hasLocation => lat != null && lng != null;
 
   /// 방문 인증 가능 여부 (admin 토글에 의존 — user_flow §6).
   final bool visitVerifiable;
@@ -123,6 +134,8 @@ const mockRegionRankings = <String, List<MockTouristSpot>>{
   '36310': [
     MockTouristSpot(
       name: '담양 죽녹원',
+      lat: 35.322,
+      lng: 126.985,
       category: SpotCategory.activity,
       gapIndex: 89,
       visitVerifiable: true,
@@ -143,6 +156,8 @@ const mockRegionRankings = <String, List<MockTouristSpot>>{
     ),
     MockTouristSpot(
       name: '담양 소쇄원',
+      lat: 35.2108,
+      lng: 126.9636,
       category: SpotCategory.activity,
       gapIndex: 84,
       visitVerifiable: false,
@@ -161,6 +176,8 @@ const mockRegionRankings = <String, List<MockTouristSpot>>{
     ),
     MockTouristSpot(
       name: '담양 메타세쿼이아길',
+      lat: 35.3084,
+      lng: 126.968,
       category: SpotCategory.activity,
       gapIndex: 71,
       visitVerifiable: true,
@@ -178,6 +195,8 @@ const mockRegionRankings = <String, List<MockTouristSpot>>{
     ),
     MockTouristSpot(
       name: '담양 관방제림',
+      lat: 35.3236,
+      lng: 126.9878,
       category: SpotCategory.activity,
       gapIndex: 66,
       visitVerifiable: true,
@@ -195,6 +214,8 @@ const mockRegionRankings = <String, List<MockTouristSpot>>{
   '36030': [
     MockTouristSpot(
       name: '순천만 국가정원',
+      lat: 34.9312,
+      lng: 127.5068,
       category: SpotCategory.activity,
       gapIndex: 82,
       visitVerifiable: true,
@@ -217,6 +238,8 @@ const mockRegionRankings = <String, List<MockTouristSpot>>{
   '36360': [
     MockTouristSpot(
       name: '보성 녹차밭',
+      lat: 34.7178,
+      lng: 127.0808,
       category: SpotCategory.cafe,
       gapIndex: 76,
       visitVerifiable: true,
@@ -238,6 +261,8 @@ const mockRegionRankings = <String, List<MockTouristSpot>>{
   '36020': [
     MockTouristSpot(
       name: '여수 해상케이블카',
+      lat: 34.7419,
+      lng: 127.748,
       category: SpotCategory.activity,
       gapIndex: 68,
       visitVerifiable: false,
@@ -260,6 +285,8 @@ const mockRegionRankings = <String, List<MockTouristSpot>>{
   '35011': [
     MockTouristSpot(
       name: '전주 한옥마을',
+      lat: 35.815,
+      lng: 127.153,
       category: SpotCategory.restaurant,
       gapIndex: 61,
       visitVerifiable: true,
@@ -281,6 +308,8 @@ const mockRegionRankings = <String, List<MockTouristSpot>>{
   '35020': [
     MockTouristSpot(
       name: '군산 초원사진관',
+      lat: 35.9839,
+      lng: 126.7114,
       category: SpotCategory.activity,
       gapIndex: 54,
       visitVerifiable: true,
@@ -301,6 +330,8 @@ const mockRegionRankings = <String, List<MockTouristSpot>>{
   '36010': [
     MockTouristSpot(
       name: '목포 근대역사관',
+      lat: 34.7893,
+      lng: 126.379,
       category: SpotCategory.cafe,
       gapIndex: 47,
       visitVerifiable: false,

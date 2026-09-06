@@ -13,7 +13,7 @@ import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
 import '../../widgets/app_bottom_nav_bar.dart';
 import '../../widgets/gap_index_info_dialog.dart';
-import '../ranking/region_ranking_screen.dart';
+import 'region_naver_map.dart';
 
 /// `<지도>` (user_flow §6) — the whole country as a continuously zoomable
 /// vector map drawn from `assets/maps/` GeoJSON. Reached via the "지도 열기"
@@ -26,19 +26,17 @@ import '../ranking/region_ranking_screen.dart';
 ///     추후 실제 지도 SDK 크로스페이드)
 ///
 /// The "갭지수란?" button opens the explainer; "전체 보기" resets the zoom.
-class MapScreen extends StatelessWidget {
+class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
 
-  void _openRanking(BuildContext context, String regionCode, String regionName) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => RegionRankingScreen(
-          regionKey: regionCode,
-          regionName: regionName,
-        ),
-      ),
-    );
-  }
+  @override
+  State<MapScreen> createState() => _MapScreenState();
+}
+
+class _MapScreenState extends State<MapScreen> {
+  /// The 시군구 the user has drilled into — `null` shows the vector map, set
+  /// shows [RegionNaverMap] for that region (the two cross-fade).
+  ({String code, String name})? _detail;
 
   @override
   Widget build(BuildContext context) {
@@ -94,12 +92,30 @@ class MapScreen extends StatelessWidget {
               child: GapIndexInfoButton(),
             ),
             const SizedBox(height: AppSpacing.lg),
-            _KoreaMap(
-              onEnterDetail: (code, name) => _openRanking(context, code, name),
+            AnimatedSwitcher(
+              duration: AppMotion.modalTransition,
+              switchInCurve: AppMotion.curve,
+              switchOutCurve: AppMotion.curve,
+              transitionBuilder: (child, animation) =>
+                  FadeTransition(opacity: animation, child: child),
+              child: _detail == null
+                  ? _KoreaMap(
+                      key: const ValueKey('vector'),
+                      onEnterDetail: (code, name) =>
+                          setState(() => _detail = (code: code, name: name)),
+                    )
+                  : RegionNaverMap(
+                      key: ValueKey('region_${_detail!.code}'),
+                      regionCode: _detail!.code,
+                      regionName: _detail!.name,
+                      onBack: () => setState(() => _detail = null),
+                    ),
             ),
             const SizedBox(height: AppSpacing.sm),
             Text(
-              '지도를 확대하면 시·군·구까지 살펴볼 수 있어요',
+              _detail == null
+                  ? '지도를 확대하면 시·군·구까지 살펴볼 수 있어요'
+                  : '지도의 장소를 눌러 자세히 살펴보세요',
               style: AppTextStyles.caption,
             ),
           ],
@@ -195,7 +211,7 @@ const double _kDetailScale = 7.0;
 const double _kSigunguLabelFull = 4.2;
 
 class _KoreaMap extends StatefulWidget {
-  const _KoreaMap({required this.onEnterDetail});
+  const _KoreaMap({super.key, required this.onEnterDetail});
 
   /// Called with a 시군구 code + name when the user drills in far enough.
   final void Function(String regionCode, String regionName) onEnterDetail;

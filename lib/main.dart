@@ -28,6 +28,7 @@ Future<void> _initNaverMap() async {
       onAuthFailed: (ex) =>
           debugPrint('NaverMap auth failed (${ex.runtimeType}): $ex'),
     );
+    naverMapInitialized = true;
   } catch (e, s) {
     debugPrint('NaverMap init skipped after error: $e\n$s');
   }

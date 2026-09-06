@@ -9,3 +9,8 @@ const String naverMapClientId = String.fromEnvironment(
   'NAVER_MAP_CLIENT_ID',
   defaultValue: 'hpco1eguuv',
 );
+
+/// Set to `true` by `main()` once `FlutterNaverMap().init()` has succeeded —
+/// only ever happens on Android/iOS. The `<지도>` screen reads this to decide
+/// between the real NAVER map and a fallback (desktop/web previews, tests).
+bool naverMapInitialized = false;

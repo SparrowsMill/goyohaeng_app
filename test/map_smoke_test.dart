@@ -4,6 +4,7 @@ import 'package:goyohaeng_app/data/korea_map_geo.dart';
 import 'package:goyohaeng_app/data/mock_map_regions.dart';
 import 'package:goyohaeng_app/data/mock_region_ranking.dart';
 import 'package:goyohaeng_app/screens/map/map_screen.dart';
+import 'package:goyohaeng_app/screens/map/region_naver_map.dart';
 import 'package:goyohaeng_app/theme/app_theme.dart';
 
 void main() {
@@ -103,5 +104,31 @@ void main() {
       controller.value.getMaxScaleOnAxis(),
       moreOrLessEquals(1, epsilon: 0.01),
     );
+  });
+
+  testWidgets('RegionNaverMap shows the off-device fallback + working controls',
+      (tester) async {
+    var backCalled = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light,
+        home: Scaffold(
+          body: RegionNaverMap(
+            regionCode: '36310',
+            regionName: '담양군',
+            onBack: () => backCalled = true,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // NAVER SDK isn't initialised in tests → fallback, not a NaverMap.
+    expect(find.textContaining('지도 미리보기'), findsOneWidget);
+    expect(find.text('전체 지도로'), findsOneWidget);
+    expect(find.text('담양군 랭킹'), findsOneWidget);
+
+    await tester.tap(find.text('전체 지도로'));
+    expect(backCalled, isTrue);
   });
 }
