@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:material_symbols_icons/symbols.dart';
 
 import '../../config/map_config.dart';
-import '../../data/favorites.dart';
 import '../../data/korea_crs.dart' show Epsg5179;
 import '../../data/korea_map_geo.dart';
 import '../../data/mock_map_regions.dart' show gapIndexColor;
@@ -12,9 +10,8 @@ import '../../data/mock_region_ranking.dart';
 import '../../data/user_location.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_spacing.dart';
-import '../../theme/app_text_styles.dart';
-import '../../widgets/favorites_sheet.dart';
 import '../../widgets/my_location_button.dart';
+import '../../widgets/spot_pin.dart';
 
 /// The map half of `<지역별 랭킹>`: a real slippy map (VWorld tiles when
 /// [vworldApiKey] is set, else just the region outline) with a pin per located
@@ -51,65 +48,6 @@ class _RegionSpotMapState extends State<RegionSpotMap> {
   /// The device's position, once "내 위치" has been tapped.
   LatLng? _myLocation;
   bool _locating = false;
-
-  /// "즐겨찾기" toggle — also drops every favorited spot's star pin on the map.
-  bool _showFavorites = false;
-
-  @override
-  void initState() {
-    super.initState();
-    Favorites.instance.addListener(_onFavoritesChanged);
-  }
-
-  @override
-  void dispose() {
-    Favorites.instance.removeListener(_onFavoritesChanged);
-    super.dispose();
-  }
-
-  void _onFavoritesChanged() {
-    if (mounted) setState(() {});
-  }
-
-  /// Favorited spots to pin: this region's list already covers its own, so
-  /// only add favorites from *other* regions (deduped by name) when the
-  /// toggle is on.
-  List<MockTouristSpot> get _extraFavorites {
-    if (!_showFavorites) return const [];
-    final shown = {for (final s in _located) s.name};
-    return [
-      for (final f in Favorites.instance.locatedSpots())
-        if (!shown.contains(f.spot.name)) f.spot,
-    ];
-  }
-
-  void _toggleFavorites() {
-    if (_showFavorites) {
-      setState(() => _showFavorites = false);
-      return;
-    }
-    setState(() => _showFavorites = true);
-
-    // Frame the region's spots together with every favorite.
-    final pts = <LatLng>[
-      for (final s in _located) LatLng(s.lat!, s.lng!),
-      for (final s in _extraFavorites) LatLng(s.lat!, s.lng!),
-    ];
-    if (_ready && pts.length > 1) {
-      _map.fitCamera(
-        CameraFit.bounds(
-          bounds: LatLngBounds.fromPoints(pts),
-          padding: const EdgeInsets.all(AppSpacing.xxl),
-        ),
-      );
-    } else if (_ready && pts.length == 1) {
-      _map.move(pts.single, 13);
-    }
-
-    showFavoritesSheet(context).then((_) {
-      if (mounted) setState(() => _showFavorites = false);
-    });
-  }
 
   Future<void> _goToMyLocation() async {
     if (_locating) return;
@@ -174,22 +112,9 @@ class _RegionSpotMapState extends State<RegionSpotMap> {
             Positioned(
               left: AppSpacing.sm,
               bottom: AppSpacing.sm,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  MapToggleButton(
-                    icon: Symbols.star_rounded,
-                    label: '즐겨찾기',
-                    active: _showFavorites,
-                    onTap: _toggleFavorites,
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-                  MyLocationButton(
-                    onTap: _goToMyLocation,
-                    busy: _locating,
-                  ),
-                ],
+              child: MyLocationButton(
+                onTap: _goToMyLocation,
+                busy: _locating,
               ),
             ),
           ],
@@ -251,8 +176,6 @@ class _RegionSpotMapState extends State<RegionSpotMap> {
           ),
         MarkerLayer(
           markers: [
-            // Favorites pinned from other regions (toggle on) sit underneath.
-            for (final spot in _extraFavorites) _marker(spot, selected: false),
             for (final spot in located)
               if (spot != widget.selected)
                 _marker(spot, selected: false),
@@ -283,86 +206,12 @@ class _RegionSpotMapState extends State<RegionSpotMap> {
       height: selected ? 68 : 34,
       // The pin's tip sits on the geo point; name/label grow upward.
       alignment: Alignment.bottomCenter,
-      child: _SpotPin(
+      child: SpotPin(
         label: spot.name,
         color: gapIndexColor(spot.gapIndex),
         selected: selected,
-        // Star pins only while the 즐겨찾기 overlay is on; otherwise every
-        // spot is a normal gap-coloured pin.
-        favorite: _showFavorites && Favorites.instance.contains(spot.name),
+        favorite: false,
         onTap: () => widget.onMarkerTap(spot),
-      ),
-    );
-  }
-}
-
-/// A map pin tinted by the spot's 갭지수 colour, with its name above;
-/// enlarged + filled-label when selected.
-class _SpotPin extends StatelessWidget {
-  const _SpotPin({
-    required this.label,
-    required this.color,
-    required this.selected,
-    required this.favorite,
-    required this.onTap,
-  });
-
-  final String label;
-  final Color color;
-  final bool selected;
-
-  /// Favorited spots use a star glyph instead of the teardrop pin.
-  final bool favorite;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    // Favorites are always the amber star; other pins keep their 갭지수 tint.
-    final pinColor = favorite ? AppColors.secondaryAccent : color;
-    final onColor =
-        ThemeData.estimateBrightnessForColor(pinColor) == Brightness.dark
-            ? AppColors.surface
-            : AppColors.textPrimary;
-    final size = selected ? 36.0 : 26.0;
-    final glyph =
-        favorite ? Symbols.star_rounded : Symbols.location_on_rounded;
-    // A white-edged pin for contrast on light tiles.
-    final pin = Stack(
-      alignment: Alignment.center,
-      children: [
-        Icon(glyph, size: size + 4, color: AppColors.surface, fill: 1),
-        Icon(glyph, size: size, color: pinColor, fill: 1),
-      ],
-    );
-
-    return GestureDetector(
-      // deferToChild (default): only the chip/icon absorb taps so the map
-      // still gets pan/zoom gestures that start near a pin.
-      onTap: onTap,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Only the selected pin carries its name — keeps a cluster readable.
-          if (selected) ...[
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(
-                color: pinColor,
-                borderRadius: BorderRadius.circular(999),
-                border: Border.all(color: pinColor),
-              ),
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: AppTextStyles.caption
-                    .copyWith(color: onColor, fontWeight: FontWeight.w600),
-              ),
-            ),
-            const SizedBox(height: 1),
-          ],
-          pin,
-        ],
       ),
     );
   }

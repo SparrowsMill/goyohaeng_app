@@ -4,7 +4,6 @@ import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
-import '../../data/favorites.dart';
 import '../../data/korea_crs.dart' show Epsg5179, LatLng;
 import '../../data/korea_map_geo.dart';
 import '../../data/mock_map_regions.dart';
@@ -15,9 +14,9 @@ import '../../theme/app_radius.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
 import '../../widgets/app_bottom_nav_bar.dart';
-import '../../widgets/favorites_sheet.dart';
 import '../../widgets/gap_index_info_dialog.dart';
 import '../../widgets/my_location_button.dart';
+import '../favorites/favorites_screen.dart';
 import '../ranking/region_ranking_screen.dart';
 import 'place_search_screen.dart';
 
@@ -289,17 +288,9 @@ class _KoreaMapState extends State<_KoreaMap>
   bool _locating = false;
   final ValueNotifier<Offset?> _myPoint = ValueNotifier<Offset?>(null);
 
-  /// "즐겨찾기 적용하기": overlays star pins for every favorited spot and adds a
-  /// "★ N" line to each region's label. Projected favorite points, kept in
-  /// sync by the layout builder.
-  bool _showFavorites = false;
-  final ValueNotifier<List<Offset>> _favPoints =
-      ValueNotifier<List<Offset>>(const []);
-
   @override
   void initState() {
     super.initState();
-    Favorites.instance.addListener(_onFavoritesChanged);
     _animController = AnimationController(
       vsync: this,
       duration: AppMotion.pageTransition,
@@ -315,7 +306,6 @@ class _KoreaMapState extends State<_KoreaMap>
 
   @override
   void dispose() {
-    Favorites.instance.removeListener(_onFavoritesChanged);
     _tc.removeListener(_onTransform);
     _tc.dispose();
     _animController.dispose();
@@ -324,25 +314,14 @@ class _KoreaMapState extends State<_KoreaMap>
     _focusedSido.dispose();
     _focusedGroup.dispose();
     _myPoint.dispose();
-    _favPoints.dispose();
     super.dispose();
   }
 
-  void _onFavoritesChanged() {
-    if (mounted) setState(() {}); // refresh the star pins
-  }
-
-  /// "즐겨찾기": light up the star-pin overlay and slide up the half-screen
-  /// favorites list. Dismissing the list clears the overlay again.
-  void _toggleFavorites() {
-    if (_showFavorites) {
-      setState(() => _showFavorites = false);
-      return;
-    }
-    setState(() => _showFavorites = true);
-    showFavoritesSheet(context).then((_) {
-      if (mounted) setState(() => _showFavorites = false);
-    });
+  /// "즐겨찾기": open the dedicated `<즐겨찾기>` map + list screen.
+  void _openFavorites() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const FavoritesScreen()),
+    );
   }
 
   /// "내 위치": locate the device, drop the dot, and zoom the map to it.
@@ -666,21 +645,14 @@ class _KoreaMapState extends State<_KoreaMap>
                 if (_viewport.value == Rect.zero) {
                   _viewport.value = Offset.zero & size;
                 }
-                // Keep the "내 위치" dot and the 즐겨찾기 star pins glued to
-                // their lat/lng across layout changes (the projector depends
-                // on the box size).
-                final project = MapProjector(bounds: geo.bounds, size: size);
+                // Keep the "내 위치" dot glued to its lat/lng across layout
+                // changes (the projector depends on the box size).
                 final here = _myLatLng;
-                _myPoint.value =
-                    here == null ? null : project(Epsg5179.fromLatLng(here));
-                _favPoints.value = _showFavorites
-                    ? [
-                        for (final f in Favorites.instance.locatedSpots())
-                          project(Epsg5179.fromLatLng(
-                            LatLng(f.spot.lat!, f.spot.lng!),
-                          )),
-                      ]
-                    : const [];
+                _myPoint.value = here == null
+                    ? null
+                    : MapProjector(bounds: geo.bounds, size: size)(
+                        Epsg5179.fromLatLng(here),
+                      );
 
                 return ClipRect(
                   child: Stack(
@@ -706,8 +678,6 @@ class _KoreaMapState extends State<_KoreaMap>
                               focusOutline: _focusOutline,
                               units: _units,
                               myPoint: _myPoint,
-                              showFavorites: _showFavorites,
-                              favPoints: _favPoints,
                             ),
                           ),
                         ),
@@ -722,8 +692,8 @@ class _KoreaMapState extends State<_KoreaMap>
                             MapToggleButton(
                               icon: Symbols.star_rounded,
                               label: '즐겨찾기',
-                              active: _showFavorites,
-                              onTap: _toggleFavorites,
+                              active: false,
+                              onTap: _openFavorites,
                             ),
                             const SizedBox(height: AppSpacing.sm),
                             MyLocationButton(
@@ -869,11 +839,9 @@ class _KoreaMapPainter extends CustomPainter {
     required this.focusOutline,
     required this.units,
     required this.myPoint,
-    required this.showFavorites,
-    required this.favPoints,
   }) : super(
           repaint: Listenable.merge(
-              [scale, viewport, focusedSido, focusedGroup, myPoint, favPoints]),
+              [scale, viewport, focusedSido, focusedGroup, myPoint]),
         );
 
   final KoreaGeo geo;
@@ -894,12 +862,6 @@ class _KoreaMapPainter extends CustomPainter {
 
   /// Scene-space position of the device ("내 위치"), or `null` if not located.
   final ValueListenable<Offset?> myPoint;
-
-  /// "즐겨찾기 적용하기" — draw star pins + "★ N" region counts.
-  final bool showFavorites;
-
-  /// Scene-space positions of every favorited located spot.
-  final ValueListenable<List<Offset>> favPoints;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -987,36 +949,7 @@ class _KoreaMapPainter extends CustomPainter {
     }
 
     _paintLabels(canvas, project, z, view, focused, group);
-    _paintFavorites(canvas, z, view);
     _paintMyLocation(canvas, z, view);
-  }
-
-  /// Amber star pins for every favorited spot (constant on-screen size ÷ z,
-  /// white edge for contrast), matching the star pins on the real tile map.
-  void _paintFavorites(Canvas canvas, double z, Rect view) {
-    if (!showFavorites) return;
-    final pts = favPoints.value;
-    if (pts.isEmpty) return;
-    final r = 7 / z;
-    final edge = Paint()..color = AppColors.surface;
-    final fill = Paint()..color = AppColors.secondaryAccent;
-    for (final p in pts) {
-      if (!view.contains(p)) continue;
-      canvas.drawPath(_starPath(p, r + 2.4 / z), edge);
-      canvas.drawPath(_starPath(p, r), fill);
-    }
-  }
-
-  Path _starPath(Offset c, double rOuter) {
-    final rInner = rOuter * 0.42;
-    final path = Path();
-    for (var i = 0; i < 10; i++) {
-      final radius = i.isEven ? rOuter : rInner;
-      final a = -math.pi / 2 + i * math.pi / 5;
-      final pt = Offset(c.dx + math.cos(a) * radius, c.dy + math.sin(a) * radius);
-      i == 0 ? path.moveTo(pt.dx, pt.dy) : path.lineTo(pt.dx, pt.dy);
-    }
-    return path..close();
   }
 
   /// The "you are here" dot — constant on-screen size (÷ z), with a white ring
@@ -1200,7 +1133,5 @@ class _KoreaMapPainter extends CustomPainter {
       old.focusedGroup != focusedGroup ||
       old.focusOutline != focusOutline ||
       old.myPoint != myPoint ||
-      old.showFavorites != showFavorites ||
-      old.favPoints != favPoints ||
       !identical(old.units, units);
 }
