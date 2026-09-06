@@ -287,7 +287,9 @@ class _RegionSpotMapState extends State<RegionSpotMap> {
         label: spot.name,
         color: gapIndexColor(spot.gapIndex),
         selected: selected,
-        favorite: Favorites.instance.contains(spot.name),
+        // Star pins only while the 즐겨찾기 overlay is on; otherwise every
+        // spot is a normal gap-coloured pin.
+        favorite: _showFavorites && Favorites.instance.contains(spot.name),
         onTap: () => widget.onMarkerTap(spot),
       ),
     );
@@ -315,19 +317,21 @@ class _SpotPin extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Favorites are always the amber star; other pins keep their 갭지수 tint.
+    final pinColor = favorite ? AppColors.secondaryAccent : color;
     final onColor =
-        ThemeData.estimateBrightnessForColor(color) == Brightness.dark
+        ThemeData.estimateBrightnessForColor(pinColor) == Brightness.dark
             ? AppColors.surface
             : AppColors.textPrimary;
     final size = selected ? 36.0 : 26.0;
     final glyph =
         favorite ? Symbols.star_rounded : Symbols.location_on_rounded;
-    // A gap-index-tinted pin with a white edge for contrast on light tiles.
+    // A white-edged pin for contrast on light tiles.
     final pin = Stack(
       alignment: Alignment.center,
       children: [
         Icon(glyph, size: size + 4, color: AppColors.surface, fill: 1),
-        Icon(glyph, size: size, color: color, fill: 1),
+        Icon(glyph, size: size, color: pinColor, fill: 1),
       ],
     );
 
@@ -343,9 +347,9 @@ class _SpotPin extends StatelessWidget {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
               decoration: BoxDecoration(
-                color: color,
+                color: pinColor,
                 borderRadius: BorderRadius.circular(999),
-                border: Border.all(color: color),
+                border: Border.all(color: pinColor),
               ),
               child: Text(
                 label,

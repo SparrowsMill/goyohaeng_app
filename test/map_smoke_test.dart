@@ -597,7 +597,7 @@ void main() {
       expect(Favorites.instance.contains('담양 소쇄원'), isTrue);
     });
 
-    testWidgets('RegionSpotMap: 즐겨찾기된 스팟은 별 핀으로', (tester) async {
+    testWidgets('RegionSpotMap: 즐겨찾기 토글 켜야 별 핀, 꺼져 있으면 기본 핀', (tester) async {
       tester.view.physicalSize = const Size(390, 700);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
@@ -623,8 +623,16 @@ void main() {
       await tester.runAsync(() async {});
       await tester.pumpAndSettle();
 
-      // 담양 죽녹원은 seed 즐겨찾기 → 별 글리프가 지도에 있다.
-      expect(find.byIcon(Symbols.star_rounded), findsWidgets);
+      final starInMap = find.descendant(
+        of: find.byType(FlutterMap),
+        matching: find.byIcon(Symbols.star_rounded),
+      );
+      // 토글 꺼짐(기본) → 담양 죽녹원이 seed 즐겨찾기여도 별 아님.
+      expect(starInMap, findsNothing);
+
+      await tester.tap(find.text('즐겨찾기'));
+      await tester.pumpAndSettle();
+      expect(starInMap, findsWidgets); // 이제 별 핀
     });
 
     testWidgets('벡터 지도: 즐겨찾기 버튼 → 반쪽 목록 + 별로 해제', (tester) async {
@@ -673,6 +681,26 @@ void main() {
       await tester.tap(find.text('전주 경기전'));
       await tester.pumpAndSettle();
       expect(find.byType(PlaceInfoScreen), findsOneWidget);
+    });
+
+    testWidgets('즐겨찾기 목록: 시/군/구로 필터링', (tester) async {
+      tester.view.physicalSize = const Size(390, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+
+      await pumpMapScreen(tester);
+      await tester.tap(find.text('즐겨찾기'));
+      await tester.pumpAndSettle();
+
+      // seed 3곳: 담양군 · 보성군 · 전주시.
+      expect(find.text('담양 죽녹원'), findsOneWidget);
+      expect(find.text('보성 녹차밭'), findsOneWidget);
+
+      await tester.tap(find.text('담양군')); // filter chip
+      await tester.pumpAndSettle();
+      expect(find.text('담양 죽녹원'), findsOneWidget);
+      expect(find.text('보성 녹차밭'), findsNothing);
+      expect(find.text('전주 경기전'), findsNothing);
     });
   });
 }

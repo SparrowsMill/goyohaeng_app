@@ -329,34 +329,19 @@ class _KoreaMapState extends State<_KoreaMap>
   }
 
   void _onFavoritesChanged() {
-    if (!mounted) return;
-    setState(() {
-      _unitsKey = null; // unit favorite counts are stale
-    });
+    if (mounted) setState(() {}); // refresh the star pins
   }
 
-  /// "즐겨찾기": light up the favorites overlay (star pins + "★ N" counts) and
-  /// slide up the half-screen favorites list. Dismissing the list clears the
-  /// overlay again.
+  /// "즐겨찾기": light up the star-pin overlay and slide up the half-screen
+  /// favorites list. Dismissing the list clears the overlay again.
   void _toggleFavorites() {
     if (_showFavorites) {
-      setState(() {
-        _showFavorites = false;
-        _unitsKey = null;
-      });
+      setState(() => _showFavorites = false);
       return;
     }
-    setState(() {
-      _showFavorites = true;
-      _unitsKey = null;
-    });
+    setState(() => _showFavorites = true);
     showFavoritesSheet(context).then((_) {
-      if (mounted) {
-        setState(() {
-          _showFavorites = false;
-          _unitsKey = null;
-        });
-      }
+      if (mounted) setState(() => _showFavorites = false);
     });
   }
 
@@ -543,7 +528,6 @@ class _KoreaMapState extends State<_KoreaMap>
           path: path,
           labelPoint: proj(labelPoint[r.id] ?? r.bounds.center),
           gapIndex: statsForRegion(r.id).avgGapIndex,
-          favoriteCount: Favorites.instance.countForRegion(r.id),
           memberCount: 1,
         ));
         return;
@@ -571,7 +555,6 @@ class _KoreaMapState extends State<_KoreaMap>
         path: union,
         labelPoint: proj(Offset(lx / count, ly / count)),
         gapIndex: (gapSum / count).round(),
-        favoriteCount: Favorites.instance.countForRegion(prefix),
         memberCount: members.length,
       ));
     });
@@ -849,7 +832,6 @@ class _MapUnit {
     required this.path,
     required this.labelPoint,
     required this.gapIndex,
-    required this.favoriteCount,
     required this.memberCount,
   });
 
@@ -865,10 +847,6 @@ class _MapUnit {
   final Offset labelPoint;
 
   final int gapIndex;
-
-  /// Favorited spots inside this unit (see [Favorites.countForRegion]).
-  final int favoriteCount;
-
   final int memberCount;
 
   bool get isDrillable => memberCount > 1;
@@ -1078,10 +1056,7 @@ class _KoreaMapPainter extends CustomPainter {
       if (focused == null) {
         // Province names anchor the country view — always shown (short form);
         // the 갭지수 subtitle is added only when it actually fits.
-        final favN =
-            showFavorites ? Favorites.instance.countForRegion(label.id) : 0;
-        final sub = '갭지수 ${stats.avgGapIndex} · 스팟 ${stats.spotCount}'
-            '${favN > 0 ? ' · ★$favN' : ''}';
+        final sub = '갭지수 ${stats.avgGapIndex} · 스팟 ${stats.spotCount}';
         final drewFull = _drawLabel(canvas,
             text: name,
             center: p,
@@ -1122,9 +1097,6 @@ class _KoreaMapPainter extends CustomPainter {
           gap: u.gapIndex,
           fontPx: 12 / z,
           region: u.path,
-          subtitle: showFavorites && u.favoriteCount > 0
-              ? '★ ${u.favoriteCount}'
-              : null,
         );
       }
     } else if (geo.sigunguReady) {
@@ -1136,8 +1108,6 @@ class _KoreaMapPainter extends CustomPainter {
         final p = project(label.point);
         if (!view.contains(p)) continue;
         final stats = statsForRegion(label.id);
-        final favN =
-            showFavorites ? Favorites.instance.countForRegion(label.id) : 0;
         _drawLabel(
           canvas,
           text: label.title.split(' ').last,
@@ -1145,7 +1115,6 @@ class _KoreaMapPainter extends CustomPainter {
           gap: stats.avgGapIndex,
           fontPx: 12 / z,
           region: region,
-          subtitle: favN > 0 ? '★ $favN' : null,
         );
       }
     }

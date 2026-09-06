@@ -11,8 +11,9 @@ import '../theme/app_spacing.dart';
 import '../theme/app_text_styles.dart';
 import 'favorite_star_button.dart';
 
-/// Slides up a half-screen list of every favorited place. Each row keeps its
-/// star so it can be removed in place; tapping a row opens `<장소 정보>`.
+/// Slides up a half-screen list of every favorited place, filterable by
+/// 시/군/구. Each row keeps its star so it can be removed in place; tapping a
+/// row opens `<장소 정보>`.
 Future<void> showFavoritesSheet(BuildContext context) {
   return showModalBottomSheet<void>(
     context: context,
@@ -25,8 +26,23 @@ Future<void> showFavoritesSheet(BuildContext context) {
   );
 }
 
-class _FavoritesSheet extends StatelessWidget {
+/// 시/군/구 name a spot belongs to — the 2nd address token ("담양군",
+/// "전주시"), used both as the filter chip label and its key.
+String _sigunguOf(MockTouristSpot spot) {
+  final parts = spot.address.split(' ');
+  return parts.length > 1 ? parts[1] : parts.first;
+}
+
+class _FavoritesSheet extends StatefulWidget {
   const _FavoritesSheet();
+
+  @override
+  State<_FavoritesSheet> createState() => _FavoritesSheetState();
+}
+
+class _FavoritesSheetState extends State<_FavoritesSheet> {
+  /// `null` == 전체.
+  String? _sigungu;
 
   @override
   Widget build(BuildContext context) {
@@ -35,7 +51,16 @@ class _FavoritesSheet extends StatelessWidget {
       child: AnimatedBuilder(
         animation: Favorites.instance,
         builder: (context, _) {
-          final spots = [for (final f in Favorites.instance.spots()) f.spot];
+          final all = [for (final f in Favorites.instance.spots()) f.spot];
+          final regions = <String>{for (final s in all) _sigunguOf(s)}.toList()
+            ..sort();
+          // A removal may have emptied the chosen region — fall back to 전체.
+          final active =
+              _sigungu != null && regions.contains(_sigungu) ? _sigungu : null;
+          final spots = active == null
+              ? all
+              : [for (final s in all) if (_sigunguOf(s) == active) s];
+
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -55,10 +80,16 @@ class _FavoritesSheet extends StatelessWidget {
                       color: AppColors.secondaryAccent,
                     ),
                     const SizedBox(width: AppSpacing.sm),
-                    Text('즐겨찾기 ${spots.length}곳', style: AppTextStyles.title),
+                    Text('즐겨찾기 ${all.length}곳', style: AppTextStyles.title),
                   ],
                 ),
               ),
+              if (regions.length > 1)
+                _SigunguFilter(
+                  regions: regions,
+                  selected: active,
+                  onChanged: (value) => setState(() => _sigungu = value),
+                ),
               const Divider(height: 1, color: AppColors.border),
               Expanded(
                 child: spots.isEmpty
@@ -93,6 +124,70 @@ class _FavoritesSheet extends StatelessWidget {
                       ),
               ),
             ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// Horizontally scrolling "전체 · 담양군 · 전주시 …" filter chips.
+class _SigunguFilter extends StatelessWidget {
+  const _SigunguFilter({
+    required this.regions,
+    required this.selected,
+    required this.onChanged,
+  });
+
+  final List<String> regions;
+  final String? selected;
+  final ValueChanged<String?> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final items = <({String label, String? value})>[
+      (label: '전체', value: null),
+      for (final r in regions) (label: r, value: r),
+    ];
+    return SizedBox(
+      height: 48,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.fromLTRB(
+          AppSpacing.xl,
+          AppSpacing.xs,
+          AppSpacing.xl,
+          AppSpacing.md,
+        ),
+        itemCount: items.length,
+        separatorBuilder: (_, _) => const SizedBox(width: AppSpacing.sm),
+        itemBuilder: (_, i) {
+          final on = selected == items[i].value;
+          return Material(
+            color: on ? AppColors.primary : AppColors.surface,
+            borderRadius: BorderRadius.circular(AppRadius.pill),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(AppRadius.pill),
+              onTap: () => onChanged(items[i].value),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(AppRadius.pill),
+                  border: Border.all(
+                    color: on ? AppColors.primary : AppColors.border,
+                  ),
+                ),
+                child: Text(
+                  items[i].label,
+                  style: AppTextStyles.buttonMedium.copyWith(
+                    color: on
+                        ? AppColors.textOnPrimaryButton
+                        : AppColors.primaryPressed,
+                  ),
+                ),
+              ),
+            ),
           );
         },
       ),
