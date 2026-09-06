@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../data/mock_map_regions.dart' show gapIndexColor;
 import '../../data/mock_region_ranking.dart';
@@ -24,14 +25,45 @@ import 'visit_unavailable_screen.dart';
 ///
 /// * TODO: 방문 인증 흐름 연결 (user_flow §6 — admin 토글에 따라 방문 인증
 ///   페이지 또는 방문 불가 페이지로 분기)
-/// * TODO: 길찾기·전화하기·홈페이지 — 외부 앱/브라우저 연동
 class PlaceInfoScreen extends StatelessWidget {
   const PlaceInfoScreen({super.key, required this.spot});
 
   final MockTouristSpot spot;
 
-  void _todo(BuildContext context, String message) {
+  void _snack(BuildContext context, String message) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  /// Tries each candidate URI in order (native app scheme first, web fallback
+  /// after); shows a snack bar if none open.
+  Future<void> _open(
+    BuildContext context,
+    List<Uri> candidates, {
+    required String failMessage,
+  }) async {
+    for (final uri in candidates) {
+      try {
+        if (await launchUrl(uri, mode: LaunchMode.externalApplication)) return;
+      } catch (_) {
+        // try the next candidate
+      }
+      if (!context.mounted) return;
+    }
+    if (context.mounted) _snack(context, failMessage);
+  }
+
+  /// 네이버 지도 앱(`nmap://`)으로, 실패하면 네이버 지도 웹으로 장소를 연다.
+  void _openDirections(BuildContext context) {
+    final name = Uri.encodeComponent(spot.name);
+    final app = spot.hasLocation
+        ? Uri.parse('nmap://place?lat=${spot.lat}&lng=${spot.lng}'
+            '&name=$name&appname=com.goyohaeng')
+        : Uri.parse('nmap://search?query=$name&appname=com.goyohaeng');
+    _open(
+      context,
+      [app, Uri.parse('https://map.naver.com/p/search/$name')],
+      failMessage: '${spot.name} 위치를 여는 데 실패했어요.',
+    );
   }
 
   @override
@@ -61,9 +93,7 @@ class PlaceInfoScreen extends StatelessWidget {
           const SizedBox(height: AppSpacing.xs),
           _CategoryLine(spot: spot),
           const SizedBox(height: AppSpacing.md),
-          _DirectionsButton(
-            onTap: () => _todo(context, '${spot.name} 길찾기는 지도 앱 연동 후 이용할 수 있어요.'),
-          ),
+          _DirectionsButton(onTap: () => _openDirections(context)),
           const SizedBox(height: AppSpacing.xl),
           _GapCard(spot: spot),
           const SizedBox(height: AppSpacing.lg),
@@ -87,15 +117,21 @@ class PlaceInfoScreen extends StatelessWidget {
             },
           ),
           const SizedBox(height: AppSpacing.lg),
-          _DetailCard(spot: spot, onDirections: () {
-            _todo(context, '${spot.name} 길찾기는 지도 앱 연동 후 이용할 수 있어요.');
-          }),
+          _DetailCard(spot: spot, onDirections: () => _openDirections(context)),
           if (hasContact) ...[
             const SizedBox(height: AppSpacing.xl),
             _ContactSection(
               spot: spot,
-              onCall: () => _todo(context, '전화 앱 연동 후 바로 걸 수 있어요.'),
-              onHomepage: () => _todo(context, '홈페이지는 브라우저 연동 후 열 수 있어요.'),
+              onCall: () => _open(
+                context,
+                [Uri(scheme: 'tel', path: spot.phone!.replaceAll(' ', ''))],
+                failMessage: '전화 앱을 여는 데 실패했어요.',
+              ),
+              onHomepage: () => _open(
+                context,
+                [Uri.parse(spot.homepage!)],
+                failMessage: '홈페이지를 여는 데 실패했어요.',
+              ),
             ),
           ],
           const SizedBox(height: AppSpacing.xl),

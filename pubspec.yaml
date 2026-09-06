@@ -42,6 +42,9 @@ dependencies:
   # instead of the built-in Icons class. See CLAUDE.md §6.
   material_symbols_icons: ^4.2960.0
 
+  # 길찾기(네이버 지도 앱/웹) · 전화 · 홈페이지 딥링크 — <장소 정보 페이지>.
+  url_launcher: ^6.3.2
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
