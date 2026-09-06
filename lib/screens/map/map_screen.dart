@@ -199,6 +199,15 @@ class _GapLegend extends StatelessWidget {
 // Vector map
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// Short 시도 names for on-map labels, keyed by the GeoJSON's 행정구역 코드
+/// (legacy 2-digit scheme). Falls back to the GeoJSON title if a code is new.
+const _sidoShortName = <String, String>{
+  '11': '서울', '21': '부산', '22': '대구', '23': '인천', '24': '광주',
+  '25': '대전', '26': '울산', '29': '세종', '31': '경기', '32': '강원',
+  '33': '충북', '34': '충남', '35': '전북', '36': '전남', '37': '경북',
+  '38': '경남', '39': '제주',
+};
+
 class _KoreaMap extends StatefulWidget {
   const _KoreaMap({super.key, required this.onEnterDetail});
 
@@ -843,20 +852,42 @@ class _KoreaMapPainter extends CustomPainter {
     // 시도 labels — every 시도 but the focused one.
     for (final label in geo.sidoLabels) {
       if (label.id == focused) continue;
+      final region = sidoPaths[label.id];
+      if (region == null) continue;
       final p = project(label.point);
       if (!view.contains(p)) continue;
       final stats = statsForRegion(label.id);
-      _drawLabel(
-        canvas,
-        text: label.title,
-        center: p,
-        gap: stats.avgGapIndex,
-        fontPx: 13 / z,
-        opacity: 1,
-        subtitle: focused == null
-            ? '갭지수 ${stats.avgGapIndex} · 스팟 ${stats.spotCount}'
-            : null,
-      );
+      final name = _sidoShortName[label.id] ?? label.title;
+
+      if (focused == null) {
+        // Province names anchor the country view — always shown (short form);
+        // the 갭지수 subtitle is added only when it actually fits.
+        final sub = '갭지수 ${stats.avgGapIndex} · 스팟 ${stats.spotCount}';
+        final drewFull = _drawLabel(canvas,
+            text: name,
+            center: p,
+            gap: stats.avgGapIndex,
+            fontPx: 13 / z,
+            region: region,
+            subtitle: sub);
+        if (!drewFull) {
+          _drawLabel(canvas,
+              text: name,
+              center: p,
+              gap: stats.avgGapIndex,
+              fontPx: 13 / z,
+              region: region,
+              enforceFit: false);
+        }
+      } else {
+        // Another 시도 is focused; these are just context — fit or hide.
+        _drawLabel(canvas,
+            text: name,
+            center: p,
+            gap: stats.avgGapIndex,
+            fontPx: 13 / z,
+            region: region);
+      }
     }
 
     if (focused == null) return;
@@ -871,13 +902,15 @@ class _KoreaMapPainter extends CustomPainter {
           center: u.labelPoint,
           gap: u.gapIndex,
           fontPx: 12 / z,
-          opacity: 1,
+          region: u.path,
         );
       }
     } else if (geo.sigunguReady) {
       // Level 2 — 구 names within the opened 시 ("장안구", not "수원시 장안구").
       for (final label in geo.sigunguLabels) {
         if (!label.id.startsWith(group)) continue;
+        final region = sigunguPaths[label.id];
+        if (region == null) continue;
         final p = project(label.point);
         if (!view.contains(p)) continue;
         final stats = statsForRegion(label.id);
@@ -887,27 +920,30 @@ class _KoreaMapPainter extends CustomPainter {
           center: p,
           gap: stats.avgGapIndex,
           fontPx: 12 / z,
-          opacity: 1,
+          region: region,
         );
       }
     }
   }
 
-  void _drawLabel(
+  /// Draws [text] centred at [center] — but only if the text box fits inside
+  /// [region] at the current scale, so labels appear as you zoom in rather
+  /// than overlapping when a region is too small. Returns whether it drew.
+  bool _drawLabel(
     Canvas canvas, {
     required String text,
     required Offset center,
     required int gap,
     required double fontPx,
-    required double opacity,
+    required Path region,
     String? subtitle,
+    bool enforceFit = true,
   }) {
     final onDark = ThemeData.estimateBrightnessForColor(gapIndexColor(gap)) ==
         Brightness.dark;
-    final fg = (onDark ? AppColors.surface : AppColors.textPrimary)
-        .withValues(alpha: opacity);
-    final halo = (onDark ? Colors.black : AppColors.surface)
-        .withValues(alpha: 0.55 * opacity);
+    final fg = onDark ? AppColors.surface : AppColors.textPrimary;
+    final halo =
+        (onDark ? Colors.black : AppColors.surface).withValues(alpha: 0.55);
 
     final builder = TextPainter(
       textAlign: TextAlign.center,
@@ -937,10 +973,27 @@ class _KoreaMapPainter extends CustomPainter {
       ],
     );
     builder.layout();
+
+    // Does a slightly padded text box, centred on the anchor, sit inside the
+    // region polygon? Check the four corners.
+    final box = Rect.fromCenter(
+      center: center,
+      width: builder.width * 1.15,
+      height: builder.height * 1.3,
+    );
+    if (enforceFit) {
+      final fits = region.contains(box.topLeft) &&
+          region.contains(box.topRight) &&
+          region.contains(box.bottomLeft) &&
+          region.contains(box.bottomRight);
+      if (!fits) return false;
+    }
+
     builder.paint(
       canvas,
       center - Offset(builder.width / 2, builder.height / 2),
     );
+    return true;
   }
 
   @override
