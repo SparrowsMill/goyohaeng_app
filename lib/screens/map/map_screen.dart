@@ -235,6 +235,11 @@ class _GapLegend extends StatelessWidget {
 // Vector map
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// Max pinch-zoom on the vector map. Needs to be well past the auto-fit zoom
+/// of the smallest 시도 (서울·대전·광주 …) so the user can still zoom into its
+/// 자치구 after focusing it.
+const double _kMaxScale = 40;
+
 /// Short 시도 names for on-map labels, keyed by the GeoJSON's 행정구역 코드
 /// (legacy 2-digit scheme). Falls back to the GeoJSON title if a code is new.
 const _sidoShortName = <String, String>{
@@ -389,7 +394,8 @@ class _KoreaMapState extends State<_KoreaMap>
     final w = _boxSize.width, h = _boxSize.height;
     // 12% breathing room around the region.
     final padded = rect.inflate(math.max(rect.width, rect.height) * 0.12);
-    final scale = math.min(w / padded.width, h / padded.height).clamp(1.0, 12.0);
+    final scale =
+        math.min(w / padded.width, h / padded.height).clamp(1.0, _kMaxScale);
     final tx = (w - padded.width * scale) / 2 - padded.left * scale;
     final ty = (h - padded.height * scale) / 2 - padded.top * scale;
     return Matrix4.identity()
@@ -612,7 +618,7 @@ class _KoreaMapState extends State<_KoreaMap>
                       InteractiveViewer(
                         transformationController: _tc,
                         minScale: 1,
-                        maxScale: 12,
+                        maxScale: _kMaxScale,
                         child: GestureDetector(
                           behavior: HitTestBehavior.opaque,
                           onTapUp: (d) => _handleTap(d.localPosition),
@@ -791,7 +797,7 @@ class _KoreaMapPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final z = scale.value.clamp(1.0, 12.0);
+    final z = scale.value.clamp(1.0, _kMaxScale);
     final view = viewport.value;
     final focused = focusedSido.value;
     final group = focusedGroup.value;
