@@ -33,7 +33,7 @@ void main() {
     await pumpHome(tester);
 
     expect(find.byType(MiniKoreaMap), findsOneWidget);
-    expect(find.text('방문 많은 지역 TOP 3'), findsOneWidget);
+    expect(find.text('방문 TOP 3'), findsOneWidget);
     expect(find.text('지도 열기'), findsOneWidget);
 
     final top = topVisitedRegions;

@@ -471,8 +471,8 @@ class _HomeMapCard extends StatelessWidget {
   }
 }
 
-/// Compact "방문 많은 지역 TOP 3" card — 이미 방문한 스팟 / 전체 관광스팟, per
-/// 도, in a corner of the mini-map frame.
+/// Compact "방문 TOP 3" card — 이미 방문한 스팟 / 전체 관광스팟, per 도,
+/// tucked into a corner of the mini-map frame. Hugs its content width.
 class _TopVisitedPanel extends StatelessWidget {
   const _TopVisitedPanel();
 
@@ -492,7 +492,7 @@ class _TopVisitedPanel extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '방문 많은 지역 TOP 3',
+            '방문 TOP 3',
             style: AppTextStyles.caption.copyWith(fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 4),
@@ -515,6 +515,7 @@ class _TopVisitedRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(
+      mainAxisSize: MainAxisSize.min,
       children: [
         SizedBox(
           width: 14,
@@ -538,15 +539,11 @@ class _TopVisitedRow extends StatelessWidget {
           ),
         ),
         const SizedBox(width: AppSpacing.xs),
-        Expanded(
-          child: Text(
-            region.name,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: AppTextStyles.bodySmall.copyWith(fontWeight: FontWeight.w600),
-          ),
+        Text(
+          region.name,
+          style: AppTextStyles.bodySmall.copyWith(fontWeight: FontWeight.w600),
         ),
-        const SizedBox(width: AppSpacing.xs),
+        const SizedBox(width: AppSpacing.sm),
         Text(
           '${region.visited}/${region.total}',
           style: AppTextStyles.caption.copyWith(
