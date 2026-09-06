@@ -422,18 +422,24 @@ void main() {
   });
 
   testWidgets('map search: 장소명 검색 → 핀 선택 + "자세히 보기" → 상세', (tester) async {
-    tester.view.physicalSize = const Size(390, 900);
+    const h = 900.0;
+    tester.view.physicalSize = const Size(390, h);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
 
-    await openSearch(tester, '오목대');
-    await tester.tap(find.text('전주 오목대').last);
+    // 전주 한옥마을 = 갭지수 40 → 완산구 5곳 중 랭킹 꼴찌(목록 맨 아래). 그래도
+    // 검색 진입 시 자동으로 스크롤돼 화면에 보여야 한다.
+    await openSearch(tester, '한옥마을');
+    await tester.tap(find.text('전주 한옥마을').last);
     await tester.runAsync(() async {});
     await tester.pumpAndSettle();
 
     expect(find.byType(RegionRankingScreen), findsOneWidget);
-    // Pre-selected → its "자세히 보기" button is already shown.
+    // Pre-selected → its "자세히 보기" button is already shown, and on-screen.
     expect(find.text('자세히 보기'), findsOneWidget);
+    expect(find.text('자세히 보기').hitTestable(), findsOneWidget);
+    expect(tester.getRect(find.text('자세히 보기')).bottom, lessThanOrEqualTo(h),
+        reason: '맨 아래 랭킹이어도 선택 카드가 화면 안에 보여야 함');
 
     await tester.ensureVisible(find.text('자세히 보기'));
     await tester.pumpAndSettle();

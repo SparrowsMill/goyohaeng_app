@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:material_symbols_icons/symbols.dart';
 
 import '../../data/mock_map_regions.dart' show gapIndexColor;
@@ -95,19 +96,29 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
     setState(() => _selected = _selected == spot ? null : spot);
   }
 
-  /// One-shot: bring the search-selected card into view after the first layout.
+  /// One-shot: bring the search-selected card into view. Retries across a few
+  /// frames because the card's element may not be laid out on the first one
+  /// (page-push transition, async map sizing).
   void _maybeAutoScroll() {
     if (_didAutoScroll || _selected == null) return;
     _didAutoScroll = true;
+    _revealSelectedCard(triesLeft: 5);
+  }
+
+  void _revealSelectedCard({required int triesLeft}) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
       final ctx = _selectedCardKey.currentContext;
-      if (ctx != null && mounted) {
-        Scrollable.ensureVisible(
-          ctx,
-          alignment: 0.15,
-          duration: const Duration(milliseconds: 300),
-        );
+      if (ctx == null) {
+        if (triesLeft > 0) _revealSelectedCard(triesLeft: triesLeft - 1);
+        return;
       }
+      Scrollable.ensureVisible(
+        ctx,
+        alignment: 0.15,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOutCubic,
+      );
     });
   }
 
@@ -160,6 +171,10 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
   Widget _buildList(List<MockTouristSpot> spots, {required bool hasPins}) {
     return ListView(
       controller: _listController,
+      // The list is short (a handful of spots); build every card up front so a
+      // search-selected one that sits off-screen still has a laid-out element
+      // for [_maybeAutoScroll] to reveal.
+      scrollCacheExtent: const ScrollCacheExtent.pixels(3000),
       padding: const EdgeInsets.fromLTRB(
         AppSpacing.xl,
         AppSpacing.lg,
