@@ -72,9 +72,7 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
   @override
   Widget build(BuildContext context) {
     final spots = _visibleSpots;
-    final hasMap = spots.any((s) => s.hasLocation);
-
-    final list = _buildList(spots, hasMap: hasMap);
+    final hasPins = spots.any((s) => s.hasLocation);
 
     return Scaffold(
       backgroundColor: AppColors.appBackground,
@@ -85,25 +83,23 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
         ),
         title: Text('${widget.regionName} 관광스팟'),
       ),
-      body: hasMap
-          // Top: the tile map; bottom: the ranked list.
-          ? Column(
-              children: [
-                SizedBox(
-                  height: MediaQuery.sizeOf(context).height * 0.42,
-                  child: RegionSpotMap(
-                    key: ValueKey('spotmap_${widget.regionKey}'),
-                    regionCode: widget.regionKey,
-                    spots: spots,
-                    selected: _selected,
-                    onMarkerTap: _select,
-                  ),
-                ),
-                const Divider(height: 1, color: AppColors.border),
-                Expanded(child: list),
-              ],
-            )
-          : list,
+      // Top: the region on the real map (pins for located spots); bottom list.
+      body: Column(
+        children: [
+          SizedBox(
+            height: MediaQuery.sizeOf(context).height * 0.42,
+            child: RegionSpotMap(
+              key: ValueKey('spotmap_${widget.regionKey}'),
+              regionCode: widget.regionKey,
+              spots: spots,
+              selected: _selected,
+              onMarkerTap: _select,
+            ),
+          ),
+          const Divider(height: 1, color: AppColors.border),
+          Expanded(child: _buildList(spots, hasPins: hasPins)),
+        ],
+      ),
       bottomNavigationBar: AppBottomNavBar(
         currentIndex: 2,
         onTap: (index) {
@@ -118,7 +114,7 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
     );
   }
 
-  Widget _buildList(List<MockTouristSpot> spots, {required bool hasMap}) {
+  Widget _buildList(List<MockTouristSpot> spots, {required bool hasPins}) {
     return ListView(
       padding: const EdgeInsets.fromLTRB(
         AppSpacing.xl,
@@ -127,10 +123,6 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
         AppSpacing.xxl,
       ),
       children: [
-        if (!hasMap) ...[
-          _Header(regionName: widget.regionName),
-          const SizedBox(height: AppSpacing.xl),
-        ],
         _CategoryFilter(
           selected: _category,
           onChanged: (value) => setState(() => _category = value),
@@ -150,7 +142,7 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
         ),
         const SizedBox(height: AppSpacing.xs),
         Text(
-          hasMap
+          hasPins
               ? '장소를 누르면 지도에 표시돼요 · 한 번 더 누르면 상세'
               : '선택한 필터와 정렬은 다음에도 유지돼요',
           style: AppTextStyles.caption,
@@ -177,47 +169,6 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
               onTap: () => _select(spots[i]),
             ),
           ],
-      ],
-    );
-  }
-}
-
-class _Header extends StatelessWidget {
-  const _Header({required this.regionName});
-
-  final String regionName;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('$regionName 관광스팟 랭킹', style: AppTextStyles.h1),
-              const SizedBox(height: AppSpacing.sm),
-              Text(
-                '갭지수로 발견하는 이 지역의 숨은 명소',
-                style: AppTextStyles.bodyMedium
-                    .copyWith(color: AppColors.textSecondary),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(width: AppSpacing.sm),
-        // * TODO(asset): assets/illustrations/rewards/ranking_trophy.png (트로피+월계수)
-        Image.asset(
-          'assets/illustrations/rewards/ranking_trophy.png',
-          width: 84,
-          height: 84,
-          errorBuilder: (context, error, stackTrace) => const Icon(
-            Symbols.emoji_events_rounded,
-            size: 56,
-            color: AppColors.secondaryAccent,
-          ),
-        ),
       ],
     );
   }
