@@ -4,8 +4,10 @@ import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
+import '../../data/korea_crs.dart' show Epsg5179, LatLng;
 import '../../data/korea_map_geo.dart';
 import '../../data/mock_map_regions.dart';
+import '../../data/user_location.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_motion.dart';
 import '../../theme/app_radius.dart';
@@ -13,6 +15,7 @@ import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
 import '../../widgets/app_bottom_nav_bar.dart';
 import '../../widgets/gap_index_info_dialog.dart';
+import '../../widgets/my_location_button.dart';
 import '../ranking/region_ranking_screen.dart';
 import 'place_search_screen.dart';
 
@@ -303,6 +306,12 @@ class _KoreaMapState extends State<_KoreaMap>
   List<_MapUnit> _units = const [];
   String? _unitsKey;
 
+  /// The device's position once "내 위치" is tapped, and its projected
+  /// scene-space point (kept in sync by the layout builder) for the painter.
+  LatLng? _myLatLng;
+  bool _locating = false;
+  final ValueNotifier<Offset?> _myPoint = ValueNotifier<Offset?>(null);
+
   @override
   void initState() {
     super.initState();
@@ -328,7 +337,37 @@ class _KoreaMapState extends State<_KoreaMap>
     _viewport.dispose();
     _focusedSido.dispose();
     _focusedGroup.dispose();
+    _myPoint.dispose();
     super.dispose();
+  }
+
+  /// "내 위치": locate the device, drop the dot, and zoom the map to it.
+  Future<void> _goToMyLocation() async {
+    if (_locating) return;
+    setState(() => _locating = true);
+    final here = await UserLocation.current();
+    if (!mounted) return;
+    setState(() {
+      _locating = false;
+      _myLatLng = here;
+    });
+    if (here == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('위치를 가져올 수 없어요. 위치 권한과 GPS를 확인해 주세요.')),
+      );
+      return;
+    }
+    final geo = _geo;
+    if (geo == null || _boxSize == Size.zero) return;
+    final project = MapProjector(bounds: geo.bounds, size: _boxSize);
+    final crs = Epsg5179.fromLatLng(here);
+    _myPoint.value = project(crs);
+    // Zoom to a ~30 km window around the point (clamped to the map's max zoom).
+    const half = 15000.0;
+    _zoomToSceneRect(Rect.fromPoints(
+      project(Offset(crs.dx - half, crs.dy - half)),
+      project(Offset(crs.dx + half, crs.dy + half)),
+    ));
   }
 
   void _onTransform() {
@@ -625,6 +664,14 @@ class _KoreaMapState extends State<_KoreaMap>
                 if (_viewport.value == Rect.zero) {
                   _viewport.value = Offset.zero & size;
                 }
+                // Keep the "내 위치" dot glued to its lat/lng across layout
+                // changes (the projector depends on the box size).
+                final here = _myLatLng;
+                _myPoint.value = here == null
+                    ? null
+                    : MapProjector(bounds: geo.bounds, size: size)(
+                        Epsg5179.fromLatLng(here),
+                      );
 
                 return ClipRect(
                   child: Stack(
@@ -649,8 +696,17 @@ class _KoreaMapState extends State<_KoreaMap>
                               focusedGroup: _focusedGroup,
                               focusOutline: _focusOutline,
                               units: _units,
+                              myPoint: _myPoint,
                             ),
                           ),
+                        ),
+                      ),
+                      Positioned(
+                        left: AppSpacing.sm,
+                        bottom: AppSpacing.sm,
+                        child: MyLocationButton(
+                          onTap: _goToMyLocation,
+                          busy: _locating,
                         ),
                       ),
                       Positioned(
@@ -788,9 +844,10 @@ class _KoreaMapPainter extends CustomPainter {
     required this.focusedGroup,
     required this.focusOutline,
     required this.units,
+    required this.myPoint,
   }) : super(
-          repaint:
-              Listenable.merge([scale, viewport, focusedSido, focusedGroup]),
+          repaint: Listenable.merge(
+              [scale, viewport, focusedSido, focusedGroup, myPoint]),
         );
 
   final KoreaGeo geo;
@@ -808,6 +865,9 @@ class _KoreaMapPainter extends CustomPainter {
 
   /// The focused 시도's tappable units (see [_MapUnit]).
   final List<_MapUnit> units;
+
+  /// Scene-space position of the device ("내 위치"), or `null` if not located.
+  final ValueListenable<Offset?> myPoint;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -895,6 +955,22 @@ class _KoreaMapPainter extends CustomPainter {
     }
 
     _paintLabels(canvas, project, z, view, focused, group);
+    _paintMyLocation(canvas, z, view);
+  }
+
+  /// The "you are here" dot — constant on-screen size (÷ z), with a white ring
+  /// and a soft halo, matching `MyLocationDot` on the real tile map.
+  void _paintMyLocation(Canvas canvas, double z, Rect view) {
+    final p = myPoint.value;
+    if (p == null || !view.contains(p)) return;
+    final r = 5.5 / z;
+    canvas.drawCircle(
+      p,
+      r * 2.6,
+      Paint()..color = AppColors.info.withValues(alpha: 0.18),
+    );
+    canvas.drawCircle(p, r + 2.4 / z, Paint()..color = AppColors.surface);
+    canvas.drawCircle(p, r, Paint()..color = AppColors.info);
   }
 
   void _paintLabels(
@@ -1062,5 +1138,6 @@ class _KoreaMapPainter extends CustomPainter {
       old.focusedSido != focusedSido ||
       old.focusedGroup != focusedGroup ||
       old.focusOutline != focusOutline ||
+      old.myPoint != myPoint ||
       !identical(old.units, units);
 }

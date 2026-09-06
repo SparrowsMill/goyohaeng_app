@@ -8,9 +8,11 @@ import '../../data/korea_crs.dart' show Epsg5179;
 import '../../data/korea_map_geo.dart';
 import '../../data/mock_map_regions.dart' show gapIndexColor;
 import '../../data/mock_region_ranking.dart';
+import '../../data/user_location.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
+import '../../widgets/my_location_button.dart';
 
 /// The map half of `<지역별 랭킹>`: a real slippy map (VWorld tiles when
 /// [vworldApiKey] is set, else just the region outline) with a pin per located
@@ -43,6 +45,31 @@ class _RegionSpotMapState extends State<RegionSpotMap> {
   late final Future<List<List<LatLng>>> _ringsFuture = _loadRings();
   late final MapController _map = widget.mapController ?? MapController();
   bool _ready = false;
+
+  /// The device's position, once "내 위치" has been tapped.
+  LatLng? _myLocation;
+  bool _locating = false;
+
+  Future<void> _goToMyLocation() async {
+    if (_locating) return;
+    setState(() => _locating = true);
+    final here = await UserLocation.current();
+    if (!mounted) return;
+    setState(() {
+      _locating = false;
+      _myLocation = here;
+    });
+    if (here == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('위치를 가져올 수 없어요. 위치 권한과 GPS를 확인해 주세요.')),
+      );
+      return;
+    }
+    if (_ready) {
+      final zoom = _map.camera.zoom;
+      _map.move(here, zoom < 15 ? 15 : zoom);
+    }
+  }
 
   List<MockTouristSpot> get _located =>
       widget.spots.where((s) => s.hasLocation).toList();
@@ -80,7 +107,19 @@ class _RegionSpotMapState extends State<RegionSpotMap> {
         if (rings == null) {
           return const ColoredBox(color: AppColors.appBackground);
         }
-        return _buildMap(rings);
+        return Stack(
+          children: [
+            _buildMap(rings),
+            Positioned(
+              left: AppSpacing.sm,
+              bottom: AppSpacing.sm,
+              child: MyLocationButton(
+                onTap: _goToMyLocation,
+                busy: _locating,
+              ),
+            ),
+          ],
+        );
       },
     );
   }
@@ -146,6 +185,17 @@ class _RegionSpotMapState extends State<RegionSpotMap> {
               _marker(widget.selected!, selected: true),
           ],
         ),
+        if (_myLocation != null)
+          MarkerLayer(
+            markers: [
+              Marker(
+                point: _myLocation!,
+                width: 28,
+                height: 28,
+                child: const MyLocationDot(),
+              ),
+            ],
+          ),
       ],
     );
   }

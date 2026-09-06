@@ -5,11 +5,15 @@ import 'package:goyohaeng_app/data/korea_map_geo.dart';
 import 'package:goyohaeng_app/data/mock_map_regions.dart';
 import 'package:goyohaeng_app/data/mock_region_ranking.dart';
 import 'package:goyohaeng_app/data/place_search.dart';
+import 'package:goyohaeng_app/data/user_location.dart';
 import 'package:goyohaeng_app/screens/map/map_screen.dart';
 import 'package:goyohaeng_app/screens/map/region_spot_map.dart';
 import 'package:goyohaeng_app/screens/place/place_info_screen.dart';
 import 'package:goyohaeng_app/screens/ranking/region_ranking_screen.dart';
 import 'package:goyohaeng_app/theme/app_theme.dart';
+import 'package:goyohaeng_app/widgets/my_location_button.dart';
+import 'package:latlong2/latlong.dart';
+import 'package:material_symbols_icons/symbols.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -436,5 +440,105 @@ void main() {
     await tester.tap(find.text('자세히 보기'));
     await tester.pumpAndSettle();
     expect(find.byType(PlaceInfoScreen), findsOneWidget);
+  });
+
+  group('내 위치', () {
+    final original = UserLocation.resolver;
+    tearDown(() => UserLocation.resolver = original);
+
+    testWidgets('MyLocationButton shows the crosshair + "내 위치"', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.light,
+          home: Scaffold(
+            body: MyLocationButton(onTap: () {}),
+          ),
+        ),
+      );
+      expect(find.text('내 위치'), findsOneWidget);
+      expect(find.byIcon(Symbols.my_location_rounded), findsOneWidget);
+    });
+
+    testWidgets('RegionSpotMap: "내 위치" 탭 → 카메라 이동 + 내 위치 점', (tester) async {
+      tester.view.physicalSize = const Size(390, 700);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+
+      await tester.runAsync(() async {
+        final g = await KoreaGeo.load();
+        await g.ensureSigungu();
+      });
+
+      const me = LatLng(35.324, 126.988); // 담양읍 근처
+      UserLocation.resolver = () async => me;
+
+      final controller = MapController();
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.light,
+          home: Scaffold(
+            body: RegionSpotMap(
+              regionCode: '36310',
+              spots: rankingForRegion('36310'),
+              selected: null,
+              onMarkerTap: (_) {},
+              mapController: controller,
+            ),
+          ),
+        ),
+      );
+      await tester.runAsync(() async {});
+      await tester.pumpAndSettle();
+
+      expect(find.byType(MyLocationDot), findsNothing);
+
+      await tester.tap(find.text('내 위치'));
+      await tester.pump();
+      await tester.pump();
+      await tester.pumpAndSettle();
+
+      expect(find.byType(MyLocationDot), findsOneWidget);
+      expect(controller.camera.center.latitude,
+          moreOrLessEquals(me.latitude, epsilon: 0.01));
+      expect(controller.camera.center.longitude,
+          moreOrLessEquals(me.longitude, epsilon: 0.01));
+    });
+
+    testWidgets('벡터 지도: "내 위치" 탭 → 지도가 그 지점으로 줌인', (tester) async {
+      tester.view.physicalSize = const Size(390, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+
+      UserLocation.resolver = () async => const LatLng(37.5665, 126.9780);
+
+      await pumpMapScreen(tester);
+      final controller = tester
+          .widget<InteractiveViewer>(find.byType(InteractiveViewer))
+          .transformationController!;
+      expect(controller.value, equals(Matrix4.identity()));
+
+      await tester.tap(find.text('내 위치'));
+      await tester.pump();
+      await tester.pump();
+      await tester.pumpAndSettle();
+
+      expect(controller.value, isNot(equals(Matrix4.identity())));
+      expect(controller.value.getMaxScaleOnAxis(), greaterThan(1.5));
+    });
+
+    testWidgets('위치를 못 가져오면 스낵바', (tester) async {
+      tester.view.physicalSize = const Size(390, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+
+      UserLocation.resolver = () async => null;
+
+      await pumpMapScreen(tester);
+      await tester.tap(find.text('내 위치'));
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.textContaining('위치를 가져올 수 없어요'), findsOneWidget);
+    });
   });
 }
