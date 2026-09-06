@@ -29,8 +29,19 @@ class UserLocation {
         return null;
       }
 
-      final position = await Geolocator.getCurrentPosition();
-      return LatLng(position.latitude, position.longitude);
+      try {
+        final position = await Geolocator.getCurrentPosition(
+          locationSettings: const LocationSettings(
+            timeLimit: Duration(seconds: 12),
+          ),
+        );
+        return LatLng(position.latitude, position.longitude);
+      } catch (_) {
+        // Emulators with no location set time out here — fall back to any
+        // cached fix before giving up.
+        final last = await Geolocator.getLastKnownPosition();
+        return last == null ? null : LatLng(last.latitude, last.longitude);
+      }
     } catch (_) {
       return null;
     }
