@@ -42,6 +42,10 @@ dependencies:
   # instead of the built-in Icons class. See CLAUDE.md §6.
   material_symbols_icons: ^4.2960.0
 
+  # <지도> real-map stage (Phase C): NAVER Mobile Dynamic Map. Android/iOS
+  # only — main.dart guards init() so desktop/web previews still launch.
+  flutter_naver_map: ^1.4.4
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
