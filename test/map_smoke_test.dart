@@ -7,7 +7,6 @@ import 'package:goyohaeng_app/data/favorites.dart';
 import 'package:goyohaeng_app/data/mock_region_ranking.dart';
 import 'package:goyohaeng_app/data/place_search.dart';
 import 'package:goyohaeng_app/data/user_location.dart';
-import 'package:goyohaeng_app/screens/favorites/favorites_screen.dart';
 import 'package:goyohaeng_app/screens/map/map_screen.dart';
 import 'package:goyohaeng_app/screens/map/region_spot_map.dart';
 import 'package:goyohaeng_app/screens/place/place_info_screen.dart';
@@ -15,7 +14,6 @@ import 'package:goyohaeng_app/screens/ranking/region_ranking_screen.dart';
 import 'package:goyohaeng_app/theme/app_theme.dart';
 import 'package:goyohaeng_app/widgets/favorite_star_button.dart';
 import 'package:goyohaeng_app/widgets/my_location_button.dart';
-import 'package:goyohaeng_app/widgets/spot_pin.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
@@ -599,7 +597,7 @@ void main() {
       expect(Favorites.instance.contains('담양 소쇄원'), isTrue);
     });
 
-    testWidgets('RegionSpotMap: 즐겨찾기여도 기본 핀 (별 아님)', (tester) async {
+    testWidgets('RegionSpotMap: 즐겨찾기 토글 켜야 별 핀, 꺼져 있으면 기본 핀', (tester) async {
       tester.view.physicalSize = const Size(390, 700);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
@@ -625,93 +623,76 @@ void main() {
       await tester.runAsync(() async {});
       await tester.pumpAndSettle();
 
-      // 담양 죽녹원이 seed 즐겨찾기여도 랭킹 지도에는 별 핀이 안 뜬다.
-      expect(
-        find.descendant(
-          of: find.byType(FlutterMap),
-          matching: find.byIcon(Symbols.star_rounded),
-        ),
-        findsNothing,
+      final starInMap = find.descendant(
+        of: find.byType(FlutterMap),
+        matching: find.byIcon(Symbols.star_rounded),
       );
-      // 즐겨찾기 버튼도 여기엔 없음 (전용 화면으로 이동).
-      expect(find.text('즐겨찾기'), findsNothing);
+      // 토글 꺼짐(기본) → 담양 죽녹원이 seed 즐겨찾기여도 별 아님.
+      expect(starInMap, findsNothing);
+
+      await tester.tap(find.text('즐겨찾기'));
+      await tester.pumpAndSettle();
+      expect(starInMap, findsWidgets); // 이제 별 핀
     });
 
-    Future<void> openFavorites(WidgetTester tester) async {
-      await tester.runAsync(() async {
-        final g = await KoreaGeo.load();
-        await g.ensureSigungu();
-      });
+    testWidgets('벡터 지도: 즐겨찾기 버튼 → 반쪽 목록 + 별로 해제', (tester) async {
+      tester.view.physicalSize = const Size(390, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+
+      await pumpMapScreen(tester);
+      expect(find.widgetWithText(MapToggleButton, '즐겨찾기'), findsOneWidget);
+
+      MapToggleButton btn() =>
+          tester.widget(find.widgetWithText(MapToggleButton, '즐겨찾기'));
+      expect(btn().active, isFalse);
+
+      await tester.tap(find.text('즐겨찾기'));
+      await tester.pumpAndSettle();
+
+      // Overlay on + the half-sheet listing the 3 seeded favorites.
+      expect(btn().active, isTrue);
+      expect(find.text('즐겨찾기 3곳'), findsOneWidget);
+      expect(find.text('담양 죽녹원'), findsOneWidget);
+
+      // The row keeps a star → unfavorite in place.
+      await tester.tap(find.byWidgetPredicate(
+        (w) => w is FavoriteStarButton && w.spotName == '담양 죽녹원',
+      ));
+      await tester.pumpAndSettle();
+      expect(Favorites.instance.contains('담양 죽녹원'), isFalse);
+      expect(find.text('즐겨찾기 2곳'), findsOneWidget);
+
+      // Dismiss the sheet → overlay clears.
+      await tester.tapAt(const Offset(195, 60));
+      await tester.pumpAndSettle();
+      expect(btn().active, isFalse);
+    });
+
+    testWidgets('즐겨찾기 목록에서 항목 탭 → <장소 정보>', (tester) async {
+      tester.view.physicalSize = const Size(390, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+
       await pumpMapScreen(tester);
       await tester.tap(find.text('즐겨찾기'));
-      await tester.runAsync(() async {});
       await tester.pumpAndSettle();
-    }
 
-    testWidgets('벡터 지도 즐겨찾기 버튼 → <즐겨찾기> 지도+목록', (tester) async {
+      await tester.tap(find.text('전주 경기전'));
+      await tester.pumpAndSettle();
+      expect(find.byType(PlaceInfoScreen), findsOneWidget);
+    });
+
+    testWidgets('즐겨찾기 목록: 시/군/구로 필터링', (tester) async {
       tester.view.physicalSize = const Size(390, 800);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
 
-      await openFavorites(tester);
-
-      expect(find.byType(FavoritesScreen), findsOneWidget);
-      expect(find.text('즐겨찾기 3곳'), findsOneWidget); // app bar
-      expect(find.text('담양 죽녹원'), findsOneWidget);
-      expect(find.byType(FlutterMap), findsOneWidget);
-    });
-
-    testWidgets('<즐겨찾기>: 항목 선택 → 그 별핀만, 활성화 → 전체, 해제 → 다시 그것만',
-        (tester) async {
-      tester.view.physicalSize = const Size(390, 800);
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.reset);
-
-      final controller = MapController();
-      await tester.runAsync(() async {
-        final g = await KoreaGeo.load();
-        await g.ensureSigungu();
-      });
-      await tester.pumpWidget(
-        MaterialApp(
-          theme: AppTheme.light,
-          home: FavoritesScreen(mapController: controller),
-        ),
-      );
-      await tester.runAsync(() async {});
-      await tester.pumpAndSettle();
-
-      Finder pins() => find.byType(SpotPin); // all star pins on this screen
-
-      // 항목 선택 → 그 하나만 별핀.
-      await tester.tap(find.text('담양 죽녹원'));
-      await tester.pumpAndSettle();
-      expect(pins(), findsOneWidget);
-      expect(
-        controller.camera.center.latitude,
-        moreOrLessEquals(35.32533, epsilon: 0.05),
-      );
-      // 선택 카드엔 "자세히 보기".
-      expect(find.text('자세히 보기'), findsOneWidget);
-
-      // "즐겨찾기" 활성화 → 즐겨찾기 3곳 전부 별핀.
+      await pumpMapScreen(tester);
       await tester.tap(find.text('즐겨찾기'));
       await tester.pumpAndSettle();
-      expect(pins(), findsNWidgets(3));
 
-      // 다시 끄면 아까 선택한 하나만.
-      await tester.tap(find.text('즐겨찾기'));
-      await tester.pumpAndSettle();
-      expect(pins(), findsOneWidget);
-    });
-
-    testWidgets('<즐겨찾기>: 시/군/구 필터 + 자세히 보기 → 상세', (tester) async {
-      tester.view.physicalSize = const Size(390, 900);
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.reset);
-
-      await openFavorites(tester);
-
+      // seed 3곳: 담양군 · 보성군 · 전주시.
       expect(find.text('담양 죽녹원'), findsOneWidget);
       expect(find.text('보성 녹차밭'), findsOneWidget);
 
@@ -719,12 +700,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('담양 죽녹원'), findsOneWidget);
       expect(find.text('보성 녹차밭'), findsNothing);
-
-      await tester.tap(find.text('담양 죽녹원'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('자세히 보기'));
-      await tester.pumpAndSettle();
-      expect(find.byType(PlaceInfoScreen), findsOneWidget);
+      expect(find.text('전주 경기전'), findsNothing);
     });
   });
 }

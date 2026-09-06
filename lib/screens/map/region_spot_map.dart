@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:material_symbols_icons/symbols.dart';
 
 import '../../config/map_config.dart';
+import '../../data/favorites.dart';
 import '../../data/korea_crs.dart' show Epsg5179;
 import '../../data/korea_map_geo.dart';
 import '../../data/mock_map_regions.dart' show gapIndexColor;
@@ -10,6 +12,7 @@ import '../../data/mock_region_ranking.dart';
 import '../../data/user_location.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_spacing.dart';
+import '../../widgets/favorites_sheet.dart';
 import '../../widgets/my_location_button.dart';
 import '../../widgets/spot_pin.dart';
 
@@ -48,6 +51,37 @@ class _RegionSpotMapState extends State<RegionSpotMap> {
   /// The device's position, once "내 위치" has been tapped.
   LatLng? _myLocation;
   bool _locating = false;
+
+  /// "즐겨찾기" toggle — this region's favorited spots become amber star pins
+  /// (in place, no camera change) and the favorites list slides up.
+  bool _showFavorites = false;
+
+  @override
+  void initState() {
+    super.initState();
+    Favorites.instance.addListener(_onFavoritesChanged);
+  }
+
+  @override
+  void dispose() {
+    Favorites.instance.removeListener(_onFavoritesChanged);
+    super.dispose();
+  }
+
+  void _onFavoritesChanged() {
+    if (mounted) setState(() {});
+  }
+
+  void _toggleFavorites() {
+    if (_showFavorites) {
+      setState(() => _showFavorites = false);
+      return;
+    }
+    setState(() => _showFavorites = true);
+    showFavoritesSheet(context).then((_) {
+      if (mounted) setState(() => _showFavorites = false);
+    });
+  }
 
   Future<void> _goToMyLocation() async {
     if (_locating) return;
@@ -112,9 +146,22 @@ class _RegionSpotMapState extends State<RegionSpotMap> {
             Positioned(
               left: AppSpacing.sm,
               bottom: AppSpacing.sm,
-              child: MyLocationButton(
-                onTap: _goToMyLocation,
-                busy: _locating,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  MapToggleButton(
+                    icon: Symbols.star_rounded,
+                    label: '즐겨찾기',
+                    active: _showFavorites,
+                    onTap: _toggleFavorites,
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  MyLocationButton(
+                    onTap: _goToMyLocation,
+                    busy: _locating,
+                  ),
+                ],
               ),
             ),
           ],
@@ -210,7 +257,9 @@ class _RegionSpotMapState extends State<RegionSpotMap> {
         label: spot.name,
         color: gapIndexColor(spot.gapIndex),
         selected: selected,
-        favorite: false,
+        // Star pin only while the 즐겨찾기 overlay is on; otherwise a normal
+        // gap-coloured pin.
+        favorite: _showFavorites && Favorites.instance.contains(spot.name),
         onTap: () => widget.onMarkerTap(spot),
       ),
     );
