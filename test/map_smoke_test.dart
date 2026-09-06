@@ -79,8 +79,8 @@ void main() {
     expect(find.byType(InteractiveViewer), findsOneWidget);
     expect(find.byType(CustomPaint), findsWidgets);
     // Labels are painted on the canvas (TextPainter), not widgets — so assert
-    // the map surface exists and the screen chrome rendered.
-    expect(find.text('어디로 떠나볼까요?'), findsOneWidget);
+    // the map surface exists and the fixed chrome rendered.
+    expect(find.text('지역명 · 장소명 검색'), findsOneWidget); // pinned search bar
     expect(find.text('전국 보기'), findsOneWidget); // present but faded/ignoring
   });
 

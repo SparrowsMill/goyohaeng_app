@@ -59,66 +59,44 @@ class MapScreen extends StatelessWidget {
     );
   }
 
-  static Widget _header({String? subtitle}) {
+  /// Nationwide → 시도 → 시군구 → 구 vector drill-down. The chrome (검색 바 +
+  /// 갭지수 범례/설명) is a fixed header — like the bottom nav — and the map
+  /// fills the rest of the screen, with its overlay buttons pinned to the
+  /// map's corners.
+  Widget _buildVectorBody(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            Text('어디로 떠나볼까요?', style: AppTextStyles.h2),
-            const SizedBox(width: AppSpacing.xs),
-            Image.asset(
-              'assets/illustrations/sparrow/sparrow_default.png',
-              width: 30,
-              height: 30,
-              errorBuilder: (context, error, stackTrace) =>
-                  const SizedBox(width: 30),
-            ),
-          ],
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.xl,
+            AppSpacing.md,
+            AppSpacing.xl,
+            AppSpacing.md,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _SearchBar(
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const PlaceSearchScreen(),
+                  ),
+                ),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              const Row(
+                children: [
+                  _GapLegend(),
+                  Spacer(),
+                  GapIndexInfoButton(),
+                ],
+              ),
+            ],
+          ),
         ),
-        if (subtitle != null) ...[
-          const SizedBox(height: AppSpacing.xs),
-          Text(
-            subtitle,
-            style: AppTextStyles.bodyMedium.copyWith(
-              color: AppColors.textSecondary,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-
-  /// Nationwide → 시도 → 시군구 → 구 vector drill-down. Scrollable as a small-
-  /// screen safety net; `_KoreaMap` navigates by tap so it doesn't need pan.
-  Widget _buildVectorBody(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.xl,
-        AppSpacing.lg,
-        AppSpacing.xl,
-        AppSpacing.xxl,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _header(subtitle: '지역별 갭지수와 숨은 관광 스팟을 둘러보세요'),
-          const SizedBox(height: AppSpacing.md),
-          _SearchBar(
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const PlaceSearchScreen()),
-            ),
-          ),
-          const SizedBox(height: AppSpacing.lg),
-          const Align(alignment: Alignment.centerRight, child: _GapLegend()),
-          const SizedBox(height: AppSpacing.sm),
-          const Align(
-            alignment: Alignment.centerRight,
-            child: GapIndexInfoButton(),
-          ),
-          const SizedBox(height: AppSpacing.lg),
-          _KoreaMap(
+        Expanded(
+          child: _KoreaMap(
             onEnterRegion: (code, name) => Navigator.of(context).push(
               MaterialPageRoute(
                 builder: (_) => RegionRankingScreen(
@@ -128,11 +106,8 @@ class MapScreen extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(height: AppSpacing.sm),
-          Text('지역을 누르면 시·군·구까지 펼쳐져요',
-              style: AppTextStyles.caption),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
@@ -634,10 +609,6 @@ class _KoreaMapState extends State<_KoreaMap>
 
   @override
   Widget build(BuildContext context) {
-    final geo = _geo;
-    final aspectRatio =
-        geo == null ? 0.92 : geo.bounds.width / geo.bounds.height;
-
     return PopScope(
       // Back steps out one drill level at a time; only leaves the screen once
       // we're at the nationwide view.
@@ -645,15 +616,17 @@ class _KoreaMapState extends State<_KoreaMap>
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop) _popFocus();
       },
-      child: _buildMap(context, geo, aspectRatio),
+      child: _buildMap(context, _geo),
     );
   }
 
-  Widget _buildMap(BuildContext context, KoreaGeo? geo, double aspectRatio) {
-    return AspectRatio(
-      aspectRatio: aspectRatio,
+  /// Fills whatever space the parent gives it — the projection is uniform-fit
+  /// so the map keeps its shape and the overlay buttons stay pinned to the
+  /// box's corners regardless of aspect ratio.
+  Widget _buildMap(BuildContext context, KoreaGeo? geo) {
+    return SizedBox.expand(
       child: geo == null
-          ? const SizedBox.expand()
+          ? null
           : LayoutBuilder(
               builder: (context, constraints) {
                 final size = constraints.biggest;

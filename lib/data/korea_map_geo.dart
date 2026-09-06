@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' as math;
 import 'dart:ui' show Offset, Rect, Size;
 
 import 'package:flutter/foundation.dart' show compute;
@@ -50,21 +51,39 @@ class GeoLabel {
   String get sidoId => id.length <= 2 ? id : id.substring(0, 2);
 }
 
-/// Maps raw source-CRS points into a target box, preserving aspect ratio and
-/// flipping the y axis (source y points north, screen y points down).
+/// Maps raw source-CRS points into a target box with a single uniform scale
+/// (no stretch) and centres the result, so the map keeps its shape whatever
+/// the box's aspect ratio is — any slack becomes a letterbox margin. The y
+/// axis is flipped (source y points north, screen y points down).
 class MapProjector {
-  MapProjector({required this.bounds, required this.size})
-      : _scaleX = size.width / bounds.width,
-        _scaleY = size.height / bounds.height;
+  MapProjector._(this.bounds, this.size, this._scale, this._dx, this._dy);
+
+  factory MapProjector({required Rect bounds, required Size size}) {
+    final scale = math.min(
+      size.width / bounds.width,
+      size.height / bounds.height,
+    );
+    return MapProjector._(
+      bounds,
+      size,
+      scale,
+      (size.width - bounds.width * scale) / 2,
+      (size.height - bounds.height * scale) / 2,
+    );
+  }
 
   final Rect bounds;
   final Size size;
-  final double _scaleX;
-  final double _scaleY;
+  final double _scale;
+  final double _dx;
+  final double _dy;
+
+  /// Pixels per source-CRS unit the map is drawn at.
+  double get scale => _scale;
 
   Offset call(Offset p) => Offset(
-        (p.dx - bounds.left) * _scaleX,
-        (bounds.bottom - p.dy) * _scaleY,
+        _dx + (p.dx - bounds.left) * _scale,
+        _dy + (bounds.bottom - p.dy) * _scale,
       );
 }
 
