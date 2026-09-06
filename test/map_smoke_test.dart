@@ -134,6 +134,46 @@ void main() {
     expect(find.text('전체 지도로'), findsOneWidget);
   });
 
+  testWidgets('tapping a multi-구 시 opens its 구 (one more level, not the map)',
+      (tester) async {
+    // A real phone viewport — the default 800×600 changes the map projection
+    // enough that the computed tap point misses the (tiny) 수원 shape.
+    tester.view.physicalSize = const Size(390, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    final geo = await tester.runAsync(() async {
+      final g = await KoreaGeo.load();
+      await g.ensureSigungu();
+      return g;
+    });
+    await pumpMapScreen(tester);
+
+    final box = tester.getRect(find.byType(InteractiveViewer));
+    final proj = MapProjector(bounds: geo!.bounds, size: box.size);
+    TransformationController tc() => tester
+        .widget<InteractiveViewer>(find.byType(InteractiveViewer))
+        .transformationController!;
+    Offset screenFor(Offset raw) =>
+        MatrixUtils.transformPoint(tc().value, proj(raw)) + box.topLeft;
+
+    // 수원시 (4 구, code prefix 3101) ≈ mean of its 구 label anchors.
+    final suwonGu = geo.sigunguLabels.where((l) => l.id.startsWith('3101'));
+    final suwon = suwonGu.fold(Offset.zero, (a, l) => a + l.point) /
+        suwonGu.length.toDouble();
+
+    await tester.tapAt(screenFor(suwon)); // focus 경기도
+    await tester.runAsync(() async {});
+    await tester.pumpAndSettle();
+
+    await tester.tapAt(screenFor(suwon)); // tap 수원 → drill to its 구
+    await tester.runAsync(() async {});
+    await tester.pumpAndSettle();
+
+    expect(find.byType(RegionNaverMap), findsNothing); // not the real map yet
+    expect(find.text('뒤로'), findsOneWidget); // the step-out pill switched
+  });
+
   testWidgets('RegionNaverMap shows the off-device fallback + working controls',
       (tester) async {
     var backCalled = false;
