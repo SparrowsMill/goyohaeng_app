@@ -175,7 +175,7 @@ class _RewardCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Image.asset(
-            'assets/illustrations/rewards/ingredient_rice.png',
+            'assets/illustrations/rewards/ingredient_rice_one.png',
             width: 52,
             height: 52,
             errorBuilder: (context, error, stackTrace) => const Icon(

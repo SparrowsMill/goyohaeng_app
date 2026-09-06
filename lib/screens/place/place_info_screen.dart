@@ -31,7 +31,9 @@ class PlaceInfoScreen extends StatelessWidget {
   final MockTouristSpot spot;
 
   void _todo(BuildContext context, String message) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -47,71 +49,103 @@ class PlaceInfoScreen extends StatelessWidget {
         ),
         title: const Text('장소 정보'),
       ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(
-          AppSpacing.xl,
-          AppSpacing.lg,
-          AppSpacing.xl,
-          AppSpacing.xxl,
-        ),
+      body: Stack(
         children: [
-          _VisitStatePill(state: spot.visitState),
-          const SizedBox(height: AppSpacing.md),
-          Text(spot.name, style: AppTextStyles.h1),
-          const SizedBox(height: AppSpacing.xs),
-          _CategoryLine(spot: spot),
-          const SizedBox(height: AppSpacing.md),
-          _DirectionsButton(
-            onTap: () => _todo(context, '${spot.name} 길찾기는 지도 앱 연동 후 이용할 수 있어요.'),
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: Image.asset(
+              'assets/illustrations/scenes/place_top_bg.png',
+              fit: BoxFit.fitWidth,
+              alignment: Alignment.topCenter,
+            ),
           ),
-          const SizedBox(height: AppSpacing.xl),
-          _GapCard(spot: spot),
-          const SizedBox(height: AppSpacing.lg),
-          _VisitCtaCard(
-            spot: spot,
-            // user_flow §6: 방문 인증 가능 → 방문 인증 페이지, 불가 → 방문 불가.
-            onVerify: () {
-              if (spot.visitVerifiable) {
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => VisitPrepareScreen(spot: spot),
+          ListView(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.xl,
+              AppSpacing.lg,
+              AppSpacing.xl,
+              AppSpacing.xxl,
+            ),
+            children: [
+              _VisitStatePill(state: spot.visitState),
+              const SizedBox(height: AppSpacing.md),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(child: Text(spot.name, style: AppTextStyles.h1)),
+                  const SizedBox(width: AppSpacing.sm),
+                  Image.asset(
+                    'assets/illustrations/scenes/place_info_bg.png',
+                    width: 210,
+                    fit: BoxFit.contain,
+                    alignment: Alignment.centerRight,
+                    errorBuilder: (context, error, stackTrace) =>
+                        const SizedBox(width: 210),
                   ),
-                );
-              } else {
-                Navigator.of(context).push(
+                ],
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              _CategoryLine(spot: spot),
+              const SizedBox(height: AppSpacing.md),
+              _DirectionsButton(
+                onTap: () =>
+                    _todo(context, '${spot.name} 길찾기는 지도 앱 연동 후 이용할 수 있어요.'),
+              ),
+              const SizedBox(height: AppSpacing.xl),
+              _GapCard(spot: spot),
+              const SizedBox(height: AppSpacing.lg),
+              _VisitCtaCard(
+                spot: spot,
+                // user_flow §6: 방문 인증 가능 → 방문 인증 페이지, 불가 → 방문 불가.
+                onVerify: () {
+                  if (spot.visitVerifiable) {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => VisitPrepareScreen(spot: spot),
+                      ),
+                    );
+                  } else {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => VisitUnavailableScreen(spot: spot),
+                      ),
+                    );
+                  }
+                },
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              _DetailCard(
+                spot: spot,
+                onDirections: () {
+                  _todo(context, '${spot.name} 길찾기는 지도 앱 연동 후 이용할 수 있어요.');
+                },
+              ),
+              if (hasContact) ...[
+                const SizedBox(height: AppSpacing.xl),
+                _ContactSection(
+                  spot: spot,
+                  onCall: () => _todo(context, '전화 앱 연동 후 바로 걸 수 있어요.'),
+                  onHomepage: () => _todo(context, '홈페이지는 브라우저 연동 후 열 수 있어요.'),
+                ),
+              ],
+              const SizedBox(height: AppSpacing.xl),
+              _TrendSection(
+                spot: spot,
+                onOpenTrend: () => Navigator.of(context).push(
                   MaterialPageRoute(
-                    builder: (_) => VisitUnavailableScreen(spot: spot),
+                    builder: (_) => TrendSummaryScreen(spot: spot),
                   ),
-                );
-              }
-            },
-          ),
-          const SizedBox(height: AppSpacing.lg),
-          _DetailCard(spot: spot, onDirections: () {
-            _todo(context, '${spot.name} 길찾기는 지도 앱 연동 후 이용할 수 있어요.');
-          }),
-          if (hasContact) ...[
-            const SizedBox(height: AppSpacing.xl),
-            _ContactSection(
-              spot: spot,
-              onCall: () => _todo(context, '전화 앱 연동 후 바로 걸 수 있어요.'),
-              onHomepage: () => _todo(context, '홈페이지는 브라우저 연동 후 열 수 있어요.'),
-            ),
-          ],
-          const SizedBox(height: AppSpacing.xl),
-          _TrendSection(
-            spot: spot,
-            onOpenTrend: () => Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => TrendSummaryScreen(spot: spot),
+                ),
+                onKeyword: (keyword) => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        TrendSummaryScreen(spot: spot, focusKeyword: keyword),
+                  ),
+                ),
               ),
-            ),
-            onKeyword: (keyword) => Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) =>
-                    TrendSummaryScreen(spot: spot, focusKeyword: keyword),
-              ),
-            ),
+            ],
           ),
         ],
       ),
@@ -161,8 +195,10 @@ class _VisitStatePill extends StatelessWidget {
             const SizedBox(width: AppSpacing.xs),
             Text(
               state.label,
-              style: AppTextStyles.caption
-                  .copyWith(color: color, fontWeight: FontWeight.w600),
+              style: AppTextStyles.caption.copyWith(
+                color: color,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ],
         ),
@@ -239,8 +275,9 @@ class _DirectionsButton extends StatelessWidget {
                 const SizedBox(width: AppSpacing.xs),
                 Text(
                   '길찾기',
-                  style: AppTextStyles.buttonMedium
-                      .copyWith(color: AppColors.primaryPressed),
+                  style: AppTextStyles.buttonMedium.copyWith(
+                    color: AppColors.primaryPressed,
+                  ),
                 ),
               ],
             ),
@@ -321,8 +358,10 @@ class _GapCard extends StatelessWidget {
               padding: const EdgeInsets.only(top: 2),
               child: Text(
                 spot.gapDescription,
-                style: AppTextStyles.bodySmall
-                    .copyWith(fontWeight: FontWeight.w600, height: 1.5),
+                style: AppTextStyles.bodySmall.copyWith(
+                  fontWeight: FontWeight.w600,
+                  height: 1.5,
+                ),
               ),
             ),
           ),
@@ -356,9 +395,10 @@ class _VisitCtaCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Image.asset(
-                'assets/branding/leaf_ornament.png',
+                'assets/illustrations/icon/visit_cta_icon.png',
                 width: 36,
                 height: 36,
+                fit: BoxFit.contain,
                 errorBuilder: (context, error, stackTrace) => const Icon(
                   Symbols.eco_rounded,
                   size: 28,
@@ -374,8 +414,9 @@ class _VisitCtaCard extends StatelessWidget {
                     const SizedBox(height: AppSpacing.xs),
                     Text(
                       '방문 인증을 완료하면 재료와 혜택을 받을 수 있어요',
-                      style: AppTextStyles.bodySmall
-                          .copyWith(color: AppColors.textSecondary),
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: AppColors.textSecondary,
+                      ),
                     ),
                   ],
                 ),
@@ -396,21 +437,21 @@ class _VisitCtaCard extends StatelessWidget {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-              Expanded(
-                child: _RewardBox(
-                  icon: Symbols.eco_rounded,
-                  label: ingredientLabel,
-                  active: spot.ingredient != null,
+                Expanded(
+                  child: _RewardBox(
+                    icon: Symbols.eco_rounded,
+                    label: ingredientLabel,
+                    active: spot.ingredient != null,
+                  ),
                 ),
-              ),
-              const SizedBox(width: AppSpacing.sm),
-              Expanded(
-                child: _RewardBox(
-                  icon: Symbols.redeem_rounded,
-                  label: benefitLabel,
-                  active: spot.storeBenefit != null,
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: _RewardBox(
+                    icon: Symbols.redeem_rounded,
+                    label: benefitLabel,
+                    active: spot.storeBenefit != null,
+                  ),
                 ),
-              ),
               ],
             ),
           ),
@@ -718,7 +759,9 @@ class _TrendSection extends StatelessWidget {
         const SizedBox(height: AppSpacing.xs),
         Text(
           '방문자들이 가장 많이 언급한 키워드예요.',
-          style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
+          style: AppTextStyles.bodySmall.copyWith(
+            color: AppColors.textSecondary,
+          ),
         ),
         const SizedBox(height: AppSpacing.md),
         Material(
@@ -741,8 +784,9 @@ class _TrendSection extends StatelessWidget {
                   const SizedBox(width: AppSpacing.sm),
                   Text(
                     '트렌드 요약',
-                    style: AppTextStyles.buttonMedium
-                        .copyWith(color: AppColors.primaryPressed),
+                    style: AppTextStyles.buttonMedium.copyWith(
+                      color: AppColors.primaryPressed,
+                    ),
                   ),
                 ],
               ),

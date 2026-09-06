@@ -57,10 +57,8 @@ class VisitUnavailableScreen extends StatelessWidget {
           AppSpacing.xxl,
         ),
         children: [
-          // * TODO(asset): assets/illustrations/scenes/visit_unavailable.png
-          //   (지도 든 참새 + "휴무" 팻말 수채화 장면)
           Image.asset(
-            'assets/illustrations/scenes/visit_unavailable.png',
+            'assets/illustrations/scenes/close_bg.png',
             height: 220,
             fit: BoxFit.contain,
             errorBuilder: (context, error, stackTrace) => Image.asset(

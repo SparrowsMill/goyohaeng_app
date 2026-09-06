@@ -11,6 +11,8 @@ import '../../theme/app_shadows.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
 import '../../widgets/app_bottom_nav_bar.dart';
+import 'visit_fail_screen.dart';
+import 'visit_reward_screen.dart';
 
 /// `<방문 인증 확인 페이지>` (user_flow §6) — the screen a visitor shows to a
 /// store employee. A random 6-digit code sits under the place name/address;
@@ -56,6 +58,7 @@ class _VisitVerificationScreenState extends State<VisitVerificationScreen> {
   late final DateTime _expiresAt;
   late Duration _remaining;
   Timer? _timer;
+  bool _navigated = false;
 
   @override
   void initState() {
@@ -79,7 +82,10 @@ class _VisitVerificationScreenState extends State<VisitVerificationScreen> {
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
       setState(() => _remaining = _computeRemaining());
-      if (_remaining == Duration.zero) _timer?.cancel();
+      if (_remaining == Duration.zero) {
+        _timer?.cancel();
+        _handleFailure();
+      }
     });
   }
 
@@ -92,6 +98,32 @@ class _VisitVerificationScreenState extends State<VisitVerificationScreen> {
   void dispose() {
     _timer?.cancel();
     super.dispose();
+  }
+
+  // 실제로는 매장 직원이 admin 쪽에서 인증번호를 확인하면 성공 처리된다
+  // (user_flow §6). 그 연동 전까지 테스트용으로 화면 하단 버튼으로 즉시
+  // 성공/실패 전환을 트리거할 수 있게 해둠 — 백엔드 연동 후 제거 대상.
+  void _handleSuccess() {
+    if (_navigated || !mounted) return;
+    _navigated = true;
+    _timer?.cancel();
+    _activeSessions.remove(widget.spot.name);
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (_) => VisitRewardScreen(spot: widget.spot)),
+    );
+  }
+
+  void _handleFailure() {
+    if (_navigated || !mounted) return;
+    _navigated = true;
+    _timer?.cancel();
+    _activeSessions.remove(widget.spot.name);
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(
+        builder: (_) =>
+            VisitFailScreen(spot: widget.spot, window: widget.window),
+      ),
+    );
   }
 
   String get _formattedCode => '${_code.substring(0, 3)} ${_code.substring(3)}';
@@ -129,8 +161,9 @@ class _VisitVerificationScreenState extends State<VisitVerificationScreen> {
           Text(
             spot.address,
             textAlign: TextAlign.center,
-            style: AppTextStyles.bodyMedium
-                .copyWith(color: AppColors.textSecondary),
+            style: AppTextStyles.bodyMedium.copyWith(
+              color: AppColors.textSecondary,
+            ),
           ),
           const SizedBox(height: AppSpacing.xl),
           _CodeCard(
@@ -142,6 +175,14 @@ class _VisitVerificationScreenState extends State<VisitVerificationScreen> {
           _RewardsCard(spot: spot),
           const SizedBox(height: AppSpacing.lg),
           const _StaffHintCard(),
+          const SizedBox(height: AppSpacing.xl),
+          // TODO(backend): 실제로는 매장 직원의 admin 확인으로 성공 처리되고
+          // 시간 초과로만 자동 실패 처리됨. 그 연동 전까지 QA용으로 즉시
+          // 전환할 수 있는 버튼 — 백엔드 연동 후 이 블록 통째로 제거.
+          _DebugTransitionRow(
+            onForceSuccess: _handleSuccess,
+            onForceFailure: _handleFailure,
+          ),
         ],
       ),
       bottomNavigationBar: AppBottomNavBar(
@@ -174,52 +215,86 @@ class _CodeCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.lg,
-        vertical: AppSpacing.xl,
-      ),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceSelected,
-        border: Border.all(color: AppColors.border),
-        borderRadius: BorderRadius.circular(AppRadius.largeCard),
-        boxShadow: AppShadows.card,
-      ),
-      child: Column(
-        children: [
-          Text(
-            '직원에게 이 번호를 보여주세요',
-            style: AppTextStyles.bodyMedium.copyWith(
-              color: AppColors.textPrimary,
-              fontWeight: FontWeight.w600,
-            ),
+    return Stack(
+      children: [
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.lg,
+            vertical: AppSpacing.xl,
           ),
-          const SizedBox(height: AppSpacing.md),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Text(
-              code,
-              style: AppTextStyles.verificationCode.copyWith(
-                fontSize: 52,
-                height: 1.1,
-                color: expired
-                    ? AppColors.textDisabled
-                    : AppColors.primaryPressed,
+          decoration: BoxDecoration(
+            color: AppColors.surfaceSelected,
+            borderRadius: BorderRadius.circular(AppRadius.largeCard),
+            boxShadow: AppShadows.card,
+          ),
+          child: _CodeCardContent(code: code, time: time, expired: expired),
+        ),
+        Positioned.fill(
+          child: IgnorePointer(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(AppRadius.largeCard),
+              child: Image.asset(
+                'assets/illustrations/icon/visit_number_icon.png',
+                fit: BoxFit.fill,
+                errorBuilder: (context, error, stackTrace) => const SizedBox(),
               ),
             ),
           ),
-          const SizedBox(height: AppSpacing.md),
-          Text(
-            '매장 직원이 인증번호를 확인하면\n방문 인증이 완료돼요.',
-            textAlign: TextAlign.center,
-            style: AppTextStyles.bodySmall
-                .copyWith(color: AppColors.textSecondary, height: 1.5),
+        ),
+      ],
+    );
+  }
+}
+
+class _CodeCardContent extends StatelessWidget {
+  const _CodeCardContent({
+    required this.code,
+    required this.time,
+    required this.expired,
+  });
+
+  final String code;
+  final String time;
+  final bool expired;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Text(
+          '직원에게 이 번호를 보여주세요',
+          style: AppTextStyles.bodyMedium.copyWith(
+            color: AppColors.textPrimary,
+            fontWeight: FontWeight.w600,
           ),
-          const SizedBox(height: AppSpacing.lg),
-          _CountdownPill(time: time, expired: expired),
-        ],
-      ),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            code,
+            style: AppTextStyles.verificationCode.copyWith(
+              fontSize: 40,
+              height: 1.0,
+              color: expired
+                  ? AppColors.textDisabled
+                  : AppColors.primaryPressed,
+            ),
+          ),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Text(
+          '매장 직원이 인증번호를 확인하면\n방문 인증이 완료돼요.',
+          textAlign: TextAlign.center,
+          style: AppTextStyles.bodySmall.copyWith(
+            color: AppColors.textSecondary,
+            height: 1.3,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.md),
+        _CountdownPill(time: time, expired: expired),
+      ],
     );
   }
 }
@@ -251,8 +326,9 @@ class _CountdownPill extends StatelessWidget {
           const SizedBox(width: AppSpacing.sm),
           Text(
             expired ? '인증 시간 만료' : '남은 시간',
-            style: AppTextStyles.bodyMedium
-                .copyWith(color: AppColors.textSecondary),
+            style: AppTextStyles.bodyMedium.copyWith(
+              color: AppColors.textSecondary,
+            ),
           ),
           if (!expired) ...[
             const SizedBox(width: AppSpacing.sm),
@@ -295,7 +371,8 @@ class _RewardsCard extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.lg),
           _RewardRow(
-            icon: Symbols.redeem_rounded,
+            assetPath: 'assets/illustrations/icon/reward_benefit_icon.png',
+            fallbackIcon: Symbols.redeem_rounded,
             iconColor: AppColors.secondaryAccent,
             label: '방문 혜택',
             value: spot.storeBenefit ?? '방문 혜택 없음',
@@ -303,7 +380,8 @@ class _RewardsCard extends StatelessWidget {
           ),
           const Divider(height: AppSpacing.xl, color: AppColors.divider),
           _RewardRow(
-            icon: Symbols.eco_rounded,
+            assetPath: 'assets/illustrations/icon/reward_ingredient_icon.png',
+            fallbackIcon: Symbols.eco_rounded,
             iconColor: AppColors.primary,
             label: '획득 가능한 재료',
             value: spot.ingredient == null
@@ -319,14 +397,16 @@ class _RewardsCard extends StatelessWidget {
 
 class _RewardRow extends StatelessWidget {
   const _RewardRow({
-    required this.icon,
+    required this.assetPath,
+    required this.fallbackIcon,
     required this.iconColor,
     required this.label,
     required this.value,
     required this.muted,
   });
 
-  final IconData icon;
+  final String assetPath;
+  final IconData fallbackIcon;
   final Color iconColor;
   final String label;
   final String value;
@@ -336,10 +416,21 @@ class _RewardRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        // * TODO(asset): 방문 혜택/재료 일러스트 — 준비 전까지 아이콘 사용
         SizedBox(
           width: 44,
-          child: Icon(icon, size: 32, color: muted ? AppColors.iconDisabled : iconColor),
+          height: 44,
+          child: Opacity(
+            opacity: muted ? 0.4 : 1.0,
+            child: Image.asset(
+              assetPath,
+              fit: BoxFit.contain,
+              errorBuilder: (context, error, stackTrace) => Icon(
+                fallbackIcon,
+                size: 32,
+                color: muted ? AppColors.iconDisabled : iconColor,
+              ),
+            ),
+          ),
         ),
         const SizedBox(width: AppSpacing.md),
         Expanded(
@@ -348,21 +439,76 @@ class _RewardRow extends StatelessWidget {
             children: [
               Text(
                 label,
-                style: AppTextStyles.bodyMedium
-                    .copyWith(color: AppColors.textSecondary),
+                style: AppTextStyles.bodyMedium.copyWith(
+                  color: AppColors.textSecondary,
+                ),
               ),
               const SizedBox(height: 2),
               Text(
                 value,
                 style: AppTextStyles.bodyLarge.copyWith(
                   fontWeight: FontWeight.w600,
-                  color: muted ? AppColors.textSecondary : AppColors.textPrimary,
+                  color: muted
+                      ? AppColors.textSecondary
+                      : AppColors.textPrimary,
                 ),
               ),
             ],
           ),
         ),
       ],
+    );
+  }
+}
+
+/// QA 전용 — 실제 대기 없이 성공/실패 화면 전환을 즉시 확인하기 위한 버튼.
+/// 매장 직원 admin 확인 연동이 붙으면 통째로 제거한다.
+class _DebugTransitionRow extends StatelessWidget {
+  const _DebugTransitionRow({
+    required this.onForceSuccess,
+    required this.onForceFailure,
+  });
+
+  final VoidCallback onForceSuccess;
+  final VoidCallback onForceFailure;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: AppColors.warningBackground,
+        borderRadius: BorderRadius.circular(AppRadius.card),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'QA 전용 — 실제 서비스에는 없는 버튼이에요',
+            textAlign: TextAlign.center,
+            style: AppTextStyles.caption.copyWith(color: AppColors.warning),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: onForceSuccess,
+                  child: const Text('바로 성공 처리'),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: onForceFailure,
+                  child: const Text('바로 실패 처리'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }
@@ -385,21 +531,27 @@ class _StaffHintCard extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          // * TODO(asset): assets/illustrations/scenes 계열 — 매장 데스크 일러스트
-          const SizedBox(
+          SizedBox(
             width: 52,
-            child: Icon(
-              Symbols.point_of_sale_rounded,
-              size: 36,
-              color: AppColors.primary,
+            height: 52,
+            child: Image.asset(
+              'assets/illustrations/icon/staff_desk_icon.png',
+              fit: BoxFit.contain,
+              errorBuilder: (context, error, stackTrace) => const Icon(
+                Symbols.point_of_sale_rounded,
+                size: 36,
+                color: AppColors.primary,
+              ),
             ),
           ),
           const SizedBox(width: AppSpacing.md),
           Expanded(
             child: Text(
               '이 화면을 매장 직원에게 보여주세요.\n직원 확인 후 방문 인증이 완료됩니다.',
-              style: AppTextStyles.bodySmall
-                  .copyWith(color: AppColors.textSecondary, height: 1.5),
+              style: AppTextStyles.bodySmall.copyWith(
+                color: AppColors.textSecondary,
+                height: 1.5,
+              ),
             ),
           ),
         ],

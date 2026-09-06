@@ -70,7 +70,8 @@ class _VisitPrepareScreenState extends State<VisitPrepareScreen> {
           _Header(spot: spot),
           const SizedBox(height: AppSpacing.xl),
           _RewardCard(
-            icon: Symbols.redeem_rounded,
+            assetPath: 'assets/illustrations/icon/reward_benefit_icon.png',
+            fallbackIcon: Symbols.redeem_rounded,
             iconColor: AppColors.secondaryAccent,
             label: '방문 혜택',
             value: spot.storeBenefit ?? '방문 혜택 없음',
@@ -79,7 +80,8 @@ class _VisitPrepareScreenState extends State<VisitPrepareScreen> {
           ),
           const SizedBox(height: AppSpacing.lg),
           _RewardCard(
-            icon: Symbols.eco_rounded,
+            assetPath: 'assets/illustrations/icon/reward_ingredient_icon.png',
+            fallbackIcon: Symbols.eco_rounded,
             iconColor: AppColors.primary,
             label: '획득 가능한 재료',
             value: spot.ingredient == null
@@ -109,10 +111,7 @@ class _VisitPrepareScreenState extends State<VisitPrepareScreen> {
             children: [
               _leaf(flip: true),
               const SizedBox(width: AppSpacing.xs),
-              Text(
-                '도착 후 장소에서 방문 인증을 완료해 주세요.',
-                style: AppTextStyles.caption,
-              ),
+              Text('도착 후 장소에서 방문 인증을 완료해 주세요.', style: AppTextStyles.caption),
               const SizedBox(width: AppSpacing.xs),
               _leaf(flip: false),
             ],
@@ -154,18 +153,18 @@ class _Header extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // * TODO(asset): 장소 대표 이미지 — 준비 전까지 아이콘 플레이스홀더
+        // 장소 대표 이미지 — 실사진 준비 전까지 자연/역사문화 2종 일러스트로 대체
         Container(
           width: 72,
           height: 72,
+          clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
             color: AppColors.surfaceSelected,
             borderRadius: BorderRadius.circular(AppRadius.card),
           ),
-          child: const Icon(
-            Symbols.forest_rounded,
-            size: 32,
-            color: AppColors.primary,
+          child: Image.asset(
+            'assets/illustrations/icon/place_icon.png',
+            fit: BoxFit.contain,
           ),
         ),
         const SizedBox(width: AppSpacing.md),
@@ -177,8 +176,9 @@ class _Header extends StatelessWidget {
               const SizedBox(height: AppSpacing.xs),
               Text(
                 '방문을 준비하면 아래 혜택을 받을 수 있어요',
-                style: AppTextStyles.bodyMedium
-                    .copyWith(color: AppColors.textSecondary),
+                style: AppTextStyles.bodyMedium.copyWith(
+                  color: AppColors.textSecondary,
+                ),
               ),
             ],
           ),
@@ -190,7 +190,8 @@ class _Header extends StatelessWidget {
 
 class _RewardCard extends StatelessWidget {
   const _RewardCard({
-    required this.icon,
+    required this.assetPath,
+    required this.fallbackIcon,
     required this.iconColor,
     required this.label,
     required this.value,
@@ -198,7 +199,8 @@ class _RewardCard extends StatelessWidget {
     required this.muted,
   });
 
-  final IconData icon;
+  final String assetPath;
+  final IconData fallbackIcon;
   final Color iconColor;
   final String label;
   final String value;
@@ -219,18 +221,25 @@ class _RewardCard extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // * TODO(asset): 방문 혜택/재료 일러스트 — 준비 전까지 아이콘 사용
           Container(
             width: 64,
             height: 64,
-            decoration: BoxDecoration(
+            clipBehavior: Clip.antiAlias,
+            decoration: const BoxDecoration(
               color: AppColors.surfaceSelected,
               shape: BoxShape.circle,
             ),
-            child: Icon(
-              icon,
-              size: 32,
-              color: muted ? AppColors.iconDisabled : iconColor,
+            child: Opacity(
+              opacity: muted ? 0.4 : 1.0,
+              child: Image.asset(
+                assetPath,
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) => Icon(
+                  fallbackIcon,
+                  size: 32,
+                  color: muted ? AppColors.iconDisabled : iconColor,
+                ),
+              ),
             ),
           ),
           const SizedBox(width: AppSpacing.md),
@@ -240,15 +249,17 @@ class _RewardCard extends StatelessWidget {
               children: [
                 Text(
                   label,
-                  style: AppTextStyles.bodyMedium
-                      .copyWith(color: AppColors.textSecondary),
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
                 ),
                 const SizedBox(height: 2),
                 Text(
                   value,
                   style: AppTextStyles.h3.copyWith(
-                    color:
-                        muted ? AppColors.textSecondary : AppColors.textPrimary,
+                    color: muted
+                        ? AppColors.textSecondary
+                        : AppColors.textPrimary,
                   ),
                 ),
                 const SizedBox(height: AppSpacing.sm),
@@ -300,8 +311,9 @@ class _ArrivalCard extends StatelessWidget {
           const SizedBox(height: AppSpacing.xs),
           Text(
             '도착 예정 시간을 알려주시면 방문 인증을 준비할게요.',
-            style: AppTextStyles.bodySmall
-                .copyWith(color: AppColors.textSecondary),
+            style: AppTextStyles.bodySmall.copyWith(
+              color: AppColors.textSecondary,
+            ),
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: AppSpacing.lg),
