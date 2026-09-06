@@ -126,6 +126,12 @@ class _RegionDetailMapState extends State<RegionDetailMap> {
         backgroundColor: AppColors.appBackground,
         minZoom: 6,
         maxZoom: 19,
+        // Let a real pinch that also drifts still be read as a zoom, and
+        // enable trackpad/scroll-wheel zoom on desktop.
+        interactionOptions: const InteractionOptions(
+          flags: InteractiveFlag.all,
+          enableMultiFingerGestureRace: true,
+        ),
         initialCameraFit: allPoints.isEmpty
             ? null
             : CameraFit.bounds(
@@ -181,8 +187,9 @@ class _SpotPin extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
+      // deferToChild (the default): only the chip/icon absorb taps, so the
+      // map still gets pan/zoom gestures that start near a pin.
       onTap: onTap,
-      behavior: HitTestBehavior.opaque,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
