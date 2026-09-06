@@ -73,10 +73,10 @@ void main() {
     // Labels are painted on the canvas (TextPainter), not widgets — so assert
     // the map surface exists and the screen chrome rendered.
     expect(find.text('어디로 떠나볼까요?'), findsOneWidget);
-    expect(find.text('전체 보기'), findsOneWidget); // present but faded/ignoring
+    expect(find.text('전국 보기'), findsOneWidget); // present but faded/ignoring
   });
 
-  testWidgets('tapping the map zooms in (transform leaves identity)',
+  testWidgets('tapping a 시도 focuses it; "전국 보기" clears the focus',
       (tester) async {
     await pumpMapScreen(tester);
 
@@ -95,15 +95,43 @@ void main() {
 
     expect(controller.value, isNot(equals(Matrix4.identity())));
 
-    // "전체 보기" restores the identity transform.
-    await tester.ensureVisible(find.text('전체 보기'));
+    // "전국 보기" restores the identity transform.
+    await tester.ensureVisible(find.text('전국 보기'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('전체 보기'));
+    await tester.tap(find.text('전국 보기'));
     await tester.pumpAndSettle();
     expect(
       controller.value.getMaxScaleOnAxis(),
       moreOrLessEquals(1, epsilon: 0.01),
     );
+  });
+
+  testWidgets('a 시군구 tap inside the focused 시도 crosses to the real map',
+      (tester) async {
+    // Warm both layers so the second tap lands on a ready 시군구 path.
+    await tester.runAsync(() async {
+      final geo = await KoreaGeo.load();
+      await geo.ensureSigungu();
+    });
+    await pumpMapScreen(tester);
+
+    final box = tester.getRect(find.byType(InteractiveViewer));
+    final gyeonggi = Offset(
+      box.left + box.width * 0.44,
+      box.top + box.height * 0.22,
+    );
+
+    await tester.tapAt(gyeonggi); // focus the 시도 there, camera zooms to it
+    await tester.runAsync(() async {});
+    await tester.pumpAndSettle();
+    expect(find.text('전국 보기'), findsOneWidget);
+
+    // Same screen point again — now well inside the focused 시도 → a 시군구.
+    await tester.tapAt(gyeonggi);
+    await tester.pumpAndSettle();
+
+    expect(find.byType(RegionNaverMap), findsOneWidget);
+    expect(find.text('전체 지도로'), findsOneWidget);
   });
 
   testWidgets('RegionNaverMap shows the off-device fallback + working controls',

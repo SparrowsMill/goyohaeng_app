@@ -19,13 +19,12 @@ import 'region_naver_map.dart';
 /// vector map drawn from `assets/maps/` GeoJSON. Reached via the "지도 열기"
 /// button under the mill-home TOP 3 list and the 지도 bottom-nav tab.
 ///
-/// Zoom levels of detail:
-///   - 낮은 배율 : 시도 17개만, 평균 갭지수 색으로 채움
-///   - 중간 배율 : 화면에 걸친 시도의 시군구 경계 + 시군구별 갭지수 색 추가
-///   - 높은 배율 / 시군구 탭 : 상세 진입 (지금은 `<지역별 랭킹>` 스탠드인,
-///     추후 실제 지도 SDK 크로스페이드)
+/// Drill-down (tap, not zoom):
+///   - 처음 : 시도 17개만, 평균 갭지수 색으로 채움
+///   - 시도 탭 : 그 시도 하나만 시군구로 펼침 + 카메라 이동
+///   - 시군구 탭 : 실제 지도(네이버맵)로 크로스페이드 ([RegionNaverMap])
 ///
-/// The "갭지수란?" button opens the explainer; "전체 보기" resets the zoom.
+/// The "갭지수란?" button opens the explainer; "전국 보기" clears the focus.
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
 
@@ -114,7 +113,7 @@ class _MapScreenState extends State<MapScreen> {
             const SizedBox(height: AppSpacing.sm),
             Text(
               _detail == null
-                  ? '지도를 확대하면 시·군·구까지 살펴볼 수 있어요'
+                  ? '도를 누르면 시·군·구가 펼쳐져요'
                   : '지도의 장소를 눌러 자세히 살펴보세요',
               style: AppTextStyles.caption,
             ),
@@ -198,18 +197,6 @@ class _GapLegend extends StatelessWidget {
 // Vector map
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Zoom past this (max-axis scale) to reveal 시군구 boundaries + labels.
-// TODO(tune): 실기기에서 조정.
-const double _kSigunguInScale = 2.6;
-
-/// Zoom past this — or tap a 시군구 while already this deep — to trigger the
-/// detail step (`onEnterDetail`).
-// TODO(tune): 실기기에서 조정.
-const double _kDetailScale = 7.0;
-
-/// 시군구 labels finish fading in by this scale.
-const double _kSigunguLabelFull = 4.2;
-
 class _KoreaMap extends StatefulWidget {
   const _KoreaMap({super.key, required this.onEnterDetail});
 
@@ -228,6 +215,11 @@ class _KoreaMapState extends State<_KoreaMap>
 
   final ValueNotifier<double> _scale = ValueNotifier<double>(1);
   final ValueNotifier<Rect> _viewport = ValueNotifier<Rect>(Rect.zero);
+
+  /// The 시도 the user has tapped into — `null` shows just 시도 nationwide,
+  /// set expands that one 시도 into its 시군구. Tapping a 시군구 while focused
+  /// drills to the real map (`onEnterDetail`).
+  final ValueNotifier<String?> _focusedSido = ValueNotifier<String?>(null);
 
   KoreaGeo? _geo;
   bool _sigunguRequested = false;
@@ -264,6 +256,7 @@ class _KoreaMapState extends State<_KoreaMap>
     _animController.dispose();
     _scale.dispose();
     _viewport.dispose();
+    _focusedSido.dispose();
     super.dispose();
   }
 
@@ -274,12 +267,11 @@ class _KoreaMapState extends State<_KoreaMap>
       final bottomRight = _tc.toScene(_boxSize.bottomRight(Offset.zero));
       _viewport.value = Rect.fromPoints(topLeft, bottomRight);
     }
-    _maybeLoadSigungu();
   }
 
-  void _maybeLoadSigungu() {
+  /// Kicks off the one-time lazy load of the 시군구 layer (first 시도 focus).
+  void _ensureSigungu() {
     if (_sigunguRequested || _geo == null) return;
-    if (_scale.value < _kSigunguInScale - 0.4) return;
     _sigunguRequested = true;
     _geo!.ensureSigungu().then((_) {
       if (mounted) {
@@ -347,32 +339,54 @@ class _KoreaMapState extends State<_KoreaMap>
     _animateTo(_matrixForSceneRect(sceneRect));
   }
 
+  /// Focus one 시도: expand it to 시군구 and zoom the camera to it.
+  void _focusSido(GeoRegion sido) {
+    _focusedSido.value = sido.id;
+    _ensureSigungu();
+    _zoomToRegion(sido);
+  }
+
+  /// Back to the nationwide 시도 view.
+  void _resetView() {
+    _focusedSido.value = null;
+    _animateTo(Matrix4.identity());
+  }
+
   void _handleTap(Offset scenePos) {
     final geo = _geo;
     if (geo == null) return;
-    final scale = _scale.value;
+    final focused = _focusedSido.value;
 
-    if (scale >= _kSigunguInScale && geo.sigunguReady) {
-      for (final r in geo.sigungu) {
-        if (_sigunguPaths[r.id]?.contains(scenePos) ?? false) {
-          if (scale >= _kDetailScale) {
+    if (focused != null) {
+      // Within the focused 시도: a 시군구 hit drills to the real map.
+      if (geo.sigunguReady) {
+        for (final r in geo.sigungu) {
+          if (r.sidoId != focused) continue;
+          if (_sigunguPaths[r.id]?.contains(scenePos) ?? false) {
             widget.onEnterDetail(r.id, r.title);
-          } else {
-            _zoomToRegion(r);
+            return;
           }
-          return;
         }
       }
+      // Still inside the focused 시도 but 시군구 not ready yet — ignore.
+      if (_sidoPaths[focused]?.contains(scenePos) ?? false) return;
     }
+
+    // A 시도 hit: focus it, or unfocus if it's the one already focused.
     for (final r in geo.sido) {
       if (_sidoPaths[r.id]?.contains(scenePos) ?? false) {
-        _zoomToRegion(r);
+        if (r.id == focused) {
+          _resetView();
+        } else {
+          _focusSido(r);
+        }
         return;
       }
     }
-  }
 
-  void _resetView() => _animateTo(Matrix4.identity());
+    // Tapped the sea / outside every 시도.
+    if (focused != null) _resetView();
+  }
 
   // ── build ─────────────────────────────────────────────────────────────────
 
@@ -414,6 +428,7 @@ class _KoreaMapState extends State<_KoreaMap>
                               countryOutline: _countryOutline,
                               scale: _scale,
                               viewport: _viewport,
+                              focusedSido: _focusedSido,
                             ),
                           ),
                         ),
@@ -423,6 +438,7 @@ class _KoreaMapState extends State<_KoreaMap>
                         bottom: AppSpacing.sm,
                         child: _ResetViewButton(
                           scale: _scale,
+                          focusedSido: _focusedSido,
                           onTap: _resetView,
                         ),
                       ),
@@ -435,19 +451,24 @@ class _KoreaMapState extends State<_KoreaMap>
   }
 }
 
-/// "전체 보기" pill — only visible once the user has zoomed in.
+/// "전국 보기" pill — visible once the user has focused a 시도 or zoomed in.
 class _ResetViewButton extends StatelessWidget {
-  const _ResetViewButton({required this.scale, required this.onTap});
+  const _ResetViewButton({
+    required this.scale,
+    required this.focusedSido,
+    required this.onTap,
+  });
 
   final ValueListenable<double> scale;
+  final ValueListenable<String?> focusedSido;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<double>(
-      valueListenable: scale,
-      builder: (context, value, child) {
-        final visible = value > 1.02;
+    return AnimatedBuilder(
+      animation: Listenable.merge([scale, focusedSido]),
+      builder: (context, child) {
+        final visible = scale.value > 1.02 || focusedSido.value != null;
         return AnimatedOpacity(
           opacity: visible ? 1 : 0,
           duration: AppMotion.standard,
@@ -476,7 +497,7 @@ class _ResetViewButton extends StatelessWidget {
                 ),
                 const SizedBox(width: AppSpacing.xs),
                 Text(
-                  '전체 보기',
+                  '전국 보기',
                   style: AppTextStyles.caption.copyWith(
                     color: AppColors.primary,
                     fontWeight: FontWeight.w600,
@@ -491,10 +512,10 @@ class _ResetViewButton extends StatelessWidget {
   }
 }
 
-/// Paints the 시도 (always) and, past [_kSigunguInScale], the 시군구 of every
-/// 시도 touching the viewport — each filled by its 갭지수 color. Place-name
-/// labels cross-fade between the two levels. All strokes / text sizes are
-/// divided by the live zoom so they hold a constant on-screen weight.
+/// Paints the 17 시도, and — once one is focused ([focusedSido]) — that 시도's
+/// 시군구 on top, each filled by its 갭지수 color. The focused 시도 shows its
+/// 시군구 place-names; the rest keep their 시도 name. All strokes / text sizes
+/// are divided by the live zoom so they hold a constant on-screen weight.
 class _KoreaMapPainter extends CustomPainter {
   _KoreaMapPainter({
     required this.geo,
@@ -503,7 +524,8 @@ class _KoreaMapPainter extends CustomPainter {
     required this.countryOutline,
     required this.scale,
     required this.viewport,
-  }) : super(repaint: Listenable.merge([scale, viewport]));
+    required this.focusedSido,
+  }) : super(repaint: Listenable.merge([scale, viewport, focusedSido]));
 
   final KoreaGeo geo;
   final Map<String, Path> sidoPaths;
@@ -511,11 +533,14 @@ class _KoreaMapPainter extends CustomPainter {
   final Path countryOutline;
   final ValueListenable<double> scale;
   final ValueListenable<Rect> viewport;
+  final ValueListenable<String?> focusedSido;
 
   @override
   void paint(Canvas canvas, Size size) {
     final z = scale.value.clamp(1.0, 12.0);
     final view = viewport.value;
+    final focused = focusedSido.value;
+    final showSigungu = focused != null && geo.sigunguReady;
 
     canvas.drawShadow(
       countryOutline,
@@ -525,7 +550,6 @@ class _KoreaMapPainter extends CustomPainter {
     );
 
     final project = MapProjector(bounds: geo.bounds, size: size);
-    final showSigungu = z >= _kSigunguInScale && geo.sigunguReady;
 
     final sidoStroke = Paint()
       ..style = PaintingStyle.stroke
@@ -541,7 +565,7 @@ class _KoreaMapPainter extends CustomPainter {
       canvas.drawPath(path, Paint()..color = gapIndexColor(stats.avgGapIndex));
     }
 
-    // 시군구 fills for 시도 overlapping the viewport.
+    // 시군구 fills for the focused 시도 only.
     if (showSigungu) {
       final sigunguStroke = Paint()
         ..style = PaintingStyle.stroke
@@ -549,13 +573,8 @@ class _KoreaMapPainter extends CustomPainter {
         ..strokeWidth = 0.9 / z
         ..color = AppColors.surface.withValues(alpha: 0.85);
 
-      final activeSido = <String>{
-        for (final s in geo.sido)
-          if (_sceneBounds(project, s.bounds).overlaps(view)) s.id,
-      };
-
       for (final r in geo.sigungu) {
-        if (!activeSido.contains(r.sidoId)) continue;
+        if (r.sidoId != focused) continue;
         final path = sigunguPaths[r.id];
         if (path == null) continue;
         final stats = statsForRegion(r.id);
@@ -569,7 +588,7 @@ class _KoreaMapPainter extends CustomPainter {
       canvas.drawPath(path, sidoStroke);
     }
 
-    _paintLabels(canvas, project, z, view, showSigungu);
+    _paintLabels(canvas, project, z, view, focused);
   }
 
   void _paintLabels(
@@ -577,46 +596,42 @@ class _KoreaMapPainter extends CustomPainter {
     MapProjector project,
     double z,
     Rect view,
-    bool showSigungu,
+    String? focused,
   ) {
-    // 시도 labels: full below the threshold, fading out approaching it.
-    final sidoOpacity = (1 - (z - _kSigunguInScale * 0.7) /
-            (_kSigunguInScale * 0.3))
-        .clamp(0.0, 1.0);
-    if (sidoOpacity > 0.02) {
-      for (final label in geo.sidoLabels) {
+    // 시도 labels — every 시도 but the focused one (that one shows 시군구).
+    for (final label in geo.sidoLabels) {
+      if (label.id == focused) continue;
+      final p = project(label.point);
+      if (!view.contains(p)) continue;
+      final stats = statsForRegion(label.id);
+      _drawLabel(
+        canvas,
+        text: label.title,
+        center: p,
+        gap: stats.avgGapIndex,
+        fontPx: 13 / z,
+        opacity: 1,
+        subtitle: focused == null
+            ? '갭지수 ${stats.avgGapIndex} · 스팟 ${stats.spotCount}'
+            : null,
+      );
+    }
+
+    // 시군구 labels for the focused 시도.
+    if (focused != null && geo.sigunguReady) {
+      for (final label in geo.sigunguLabels) {
+        if (label.sidoId != focused) continue;
+        final p = project(label.point);
+        if (!view.contains(p)) continue;
         final stats = statsForRegion(label.id);
         _drawLabel(
           canvas,
           text: label.title,
-          center: project(label.point),
+          center: p,
           gap: stats.avgGapIndex,
-          fontPx: 13 / z,
-          opacity: sidoOpacity,
-          subtitle: '갭지수 ${stats.avgGapIndex} · 스팟 ${stats.spotCount}',
+          fontPx: 12 / z,
+          opacity: 1,
         );
-      }
-    }
-
-    // 시군구 labels: fade in from the threshold.
-    if (showSigungu) {
-      final sgOpacity = ((z - _kSigunguInScale) /
-              (_kSigunguLabelFull - _kSigunguInScale))
-          .clamp(0.0, 1.0);
-      if (sgOpacity > 0.02) {
-        for (final label in geo.sigunguLabels) {
-          final p = project(label.point);
-          if (!view.contains(p)) continue;
-          final stats = statsForRegion(label.id);
-          _drawLabel(
-            canvas,
-            text: label.title,
-            center: p,
-            gap: stats.avgGapIndex,
-            fontPx: 11 / z,
-            opacity: sgOpacity,
-          );
-        }
       }
     }
   }
@@ -671,15 +686,11 @@ class _KoreaMapPainter extends CustomPainter {
     );
   }
 
-  Rect _sceneBounds(MapProjector project, Rect rawBounds) => Rect.fromPoints(
-        project(Offset(rawBounds.left, rawBounds.top)),
-        project(Offset(rawBounds.right, rawBounds.bottom)),
-      );
-
   @override
   bool shouldRepaint(_KoreaMapPainter old) =>
       old.geo != geo ||
       old.sidoPaths != sidoPaths ||
       old.sigunguPaths != sigunguPaths ||
-      old.countryOutline != countryOutline;
+      old.countryOutline != countryOutline ||
+      old.focusedSido != focusedSido;
 }
