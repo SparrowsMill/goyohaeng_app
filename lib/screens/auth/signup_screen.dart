@@ -181,7 +181,9 @@ class _SignupScreenState extends State<SignupScreen> {
       );
       return;
     }
-    // * TODO(backend): 회원가입 API 연동 필요
+    // * TODO(backend): 회원가입 API 연동 필요 (이름/생년월일/성별/전화번호/이메일/
+    //   SNS 플랫폼·아이디). 성공 시 세션 발급 후 <본인 방앗간>으로 이동 (user_flow §1).
+    // * TODO: SNS 플랫폼·아이디 입력 필드 미구현 (user_flow §1 "사용 SNS 플랫폼 및 아이디").
   }
 
   @override

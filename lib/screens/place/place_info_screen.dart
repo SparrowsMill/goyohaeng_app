@@ -26,6 +26,11 @@ import 'visit_unavailable_screen.dart';
 ///
 /// * TODO: 방문 인증 흐름 연결 (user_flow §6 — admin 토글에 따라 방문 인증
 ///   페이지 또는 방문 불가 페이지로 분기)
+/// * TODO(backend): 방문 상태(미방문/방문 인증 완료) 사용자별 조회 — 지금은
+///   항상 VisitState.notVisited.
+/// * TODO(backend): 영업 여부(businessStatus)·방문 인증 가능 여부 실시간 조회.
+/// * TODO(asset): 이 화면 배경 scenes/{name}.png 미납품 — 지금은 평면 #FAE7C0.
+/// * TODO(asset): 장소 대표 이미지 슬롯 없음 (상세 페이지 상단 사진).
 class PlaceInfoScreen extends StatelessWidget {
   const PlaceInfoScreen({super.key, required this.spot});
 

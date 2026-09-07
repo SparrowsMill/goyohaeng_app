@@ -119,6 +119,9 @@ class _AccountCenterScreenState extends State<AccountCenterScreen> {
                           icon: Symbols.person_rounded,
                           label: '프로필 관리',
                         ),
+                        // * TODO(backend): 프로필 수정 저장 API 연동 필요
+                        //   (이름·생년월일·성별). 현재 저장 버튼/요청 없음 — 화면 상태만 변경.
+                        // * TODO: SNS 정보 수정 UI 미구현 (user_flow §3 "SNS 정보 수정").
                         const SizedBox(height: AppSpacing.xl),
                         Row(
                           children: [
@@ -212,6 +215,8 @@ class _AccountCenterScreenState extends State<AccountCenterScreen> {
                         _LabeledRow(
                           label: '비밀번호 변경',
                           alignTop: true,
+                          // * TODO(backend): 비밀번호 변경 API 연동 필요 —
+                          //   현재 입력 필드만 있고 저장 버튼/요청 없음.
                           child: Column(
                             children: const [
                               AppPasswordField(hintText: '새 비밀번호'),
@@ -270,6 +275,9 @@ class _AccountCenterScreenState extends State<AccountCenterScreen> {
                           icon: Symbols.settings_rounded,
                           label: '설정',
                         ),
+                        // * TODO(backend): 알림 수신 설정 조회/저장 API 연동 필요
+                        //   (프로모션·인근 관광 추천·기록 글쓰기). 현재 로컬 상태만 유지.
+                        // * TODO(device): 실제 푸시 알림 권한 요청 / FCM 토큰 등록.
                         const SizedBox(height: AppSpacing.lg),
                         _SettingRow(
                           icon: Symbols.campaign_rounded,

@@ -17,6 +17,8 @@ class GoyohaengApp extends StatelessWidget {
       title: '고요행',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
+      // * TODO(backend): 자동 로그인 분기 필요 (user_flow §1) — 저장된 세션/토큰이
+      //   유효하면 LoginScreen 대신 바로 MillHomeScreen 으로 진입.
       home: const LoginScreen(),
       builder: (context, child) => PaperTextureOverlay(child: child),
     );

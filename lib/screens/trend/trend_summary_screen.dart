@@ -18,6 +18,7 @@ import '../../widgets/app_bottom_nav_bar.dart';
 ///
 /// * TODO(backend): 최초 확인 재료 지급 처리 — 지금은 항상 "처음 확인" 상태로 표시
 /// * TODO: 원문 보기 / SNS 검색 / 더 찾아보기 — 외부 브라우저·앱 연동
+/// * TODO(asset): 이 화면 배경 scenes/{name}.png 미납품 — 지금은 평면 #FAE7C0.
 class TrendSummaryScreen extends StatelessWidget {
   const TrendSummaryScreen({super.key, required this.spot, this.focusKeyword});
 
@@ -174,6 +175,7 @@ class _RewardCard extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
+          // * TODO(asset): ingredient_rice.png 미납품 — 지금은 아이콘 폴백.
           Image.asset(
             'assets/illustrations/rewards/ingredient_rice.png',
             width: 52,

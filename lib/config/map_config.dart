@@ -7,6 +7,9 @@
 ///
 /// 빈 값이면 타일 없이 지역 외곽선 + 스팟 핀만 (`RegionSpotMap` 폴백).
 /// 다른 키로 빌드하려면 `--dart-define=VWORLD_API_KEY=...`.
+///
+/// * TODO(infra): 운영 배포 시 VWorld 인증키를 소스에 하드코딩하지 말고
+///   빌드 시 `--dart-define` 또는 서버 발급 프록시로 주입.
 const String vworldApiKey = String.fromEnvironment(
   'VWORLD_API_KEY',
   defaultValue: '2756E41D-EB72-4620-A373-46F3EA819E7D',

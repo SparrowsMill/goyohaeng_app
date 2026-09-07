@@ -19,7 +19,11 @@ import '../../widgets/app_bottom_nav_bar.dart';
 /// time.
 ///
 /// * TODO(backend): 인증번호 발급/검증 API 연동 (지금은 로컬 랜덤 생성)
+/// * TODO(backend): 직원의 인증 완료를 실시간 수신 (폴링/푸시/소켓) — 지금은
+///   화면에서 성공을 감지할 방법이 없음.
 /// * TODO: 인증 성공 → `<방문 인증 보상 페이지>`, 시간 초과 → `<방문 인증 실패>`
+///   (두 화면 모두 미구현)
+/// * TODO(asset): 이 화면 배경 scenes/{name}.png 미납품 — 지금은 평면 #FAE7C0.
 class VisitVerificationScreen extends StatefulWidget {
   const VisitVerificationScreen({
     super.key,

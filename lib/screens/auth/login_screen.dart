@@ -58,6 +58,8 @@ class _LoginScreenState extends State<LoginScreen> {
                         height: 24,
                         width: 24,
                         child: Checkbox(
+                          // * TODO(backend): "로그인 상태 유지" 선택 시 세션/토큰
+                          //   영속화 필요 — 지금은 화면 상태만 바뀜.
                           value: _keepSignedIn,
                           activeColor: AppColors.primary,
                           shape: RoundedRectangleBorder(

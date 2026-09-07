@@ -29,6 +29,7 @@ import '../place/place_info_screen.dart';
 /// `<지도>`) starts filtered, and flipping it anywhere keeps map + list in sync.
 ///
 /// * TODO(backend): 필터·정렬 설정 영속화 (user_flow §6 "다음 방문 시에도 유지")
+/// * TODO(asset): 이 화면 배경 scenes/{name}.png 미납품 — 지금은 평면 #FAE7C0.
 class RegionRankingScreen extends StatefulWidget {
   const RegionRankingScreen({
     super.key,

@@ -17,6 +17,7 @@ import 'visit_verification_screen.dart';
 /// the verification screen.
 ///
 /// * TODO: 인증 실패 → `<방문 인증 실패>` 연결 (user_flow §6)
+/// * TODO(asset): 이 화면 배경 scenes/{name}.png 미납품 — 지금은 평면 #FAE7C0.
 class VisitPrepareScreen extends StatefulWidget {
   const VisitPrepareScreen({super.key, required this.spot});
 
@@ -36,6 +37,8 @@ class _VisitPrepareScreenState extends State<VisitPrepareScreen> {
   int _selected = 1;
 
   void _confirm() {
+    // * TODO(backend): 선택한 도착 예정 시간으로 방문 인증 세션 생성 요청 —
+    //   서버가 인증번호/만료시각을 발급하도록.
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => VisitVerificationScreen(

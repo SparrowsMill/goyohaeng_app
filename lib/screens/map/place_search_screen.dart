@@ -9,6 +9,8 @@ import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
 import '../ranking/region_ranking_screen.dart';
 
+/// * TODO(asset): 이 화면 배경 scenes/{name}.png 미납품 — 지금은 평면 #FAE7C0.
+///
 /// Full-screen search opened from the `<지도>` search bar. Matches 지역명 /
 /// 장소명; picking a result opens `<지역별 랭킹>` for that region. A place
 /// result also pre-selects its card there — its pin drops on the real map and

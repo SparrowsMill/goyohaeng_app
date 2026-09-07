@@ -4,6 +4,9 @@ import 'korea_map_geo.dart';
 import 'mock_map_regions.dart' show statsForRegion;
 import 'mock_region_ranking.dart';
 
+/// * TODO(backend): 지역·장소 검색 API 연동 — 지금은 GeoJSON 행정구역 +
+///   `mock_region_ranking.dart` 스팟으로 만든 인메모리 인덱스로만 매칭.
+///
 /// One hit from the `<지도>` search bar — either a region (시도/시군구) or a
 /// mock 관광 스팟. Both resolve to a [regionCode] that opens `<지역별 랭킹>`;
 /// a place hit also carries the [spot] so that screen can pre-select it

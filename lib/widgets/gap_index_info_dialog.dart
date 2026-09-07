@@ -64,11 +64,17 @@ class GapIndexInfoButton extends StatelessWidget {
 /// `<갭지수 설명 페이지>` — a centered modal. Scrolls between a pinned close
 /// button (top) and a pinned "확인" button (bottom).
 ///
+/// * TODO: 갭지수 정의·산출 공식 텍스트가 하드코딩 — 백엔드 실제 산출식과
+///   일치하는지 확정 후 필요 시 문구/공식 갱신 (또는 CMS로 분리).
+///
 /// Watercolor art below is placeholder — nothing renders until these files
 /// are supplied (asset request pending):
 ///   - assets/illustrations/map/map_gap_hero.png  (참새 + 지도 일러스트)
 ///   - assets/illustrations/map/map_gap_high.png  ("갭지수 높음" 카드)
 ///   - assets/illustrations/map/map_gap_low.png   ("갭지수 낮음" 카드)
+///
+/// * TODO(asset): 위 3개 파일 + `assets/illustrations/map/` 폴더 자체가
+///   `pubspec.yaml`의 assets 목록에 없음 — 파일 납품 시 폴더 등록도 함께 필요.
 class _GapIndexInfoDialog extends StatelessWidget {
   const _GapIndexInfoDialog();
 
