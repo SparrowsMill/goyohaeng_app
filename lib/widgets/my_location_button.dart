@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 
 import '../theme/app_colors.dart';
 import '../theme/app_radius.dart';
@@ -7,6 +8,45 @@ import '../theme/app_text_styles.dart';
 /// A deliberately vivid blue for the "you are here" marker — off the warm
 /// storybook palette on purpose so it never reads as a spot pin.
 const myLocationColor = Color(0xFF2E6BFF);
+
+/// A map-overlay button that recentres the camera on the device location.
+/// The blue "you are here" dot appears on its own when the screen opens; this
+/// button is for getting *back* to it after panning/zooming somewhere else.
+/// Shown only once a location is known.
+class MyLocationButton extends StatelessWidget {
+  const MyLocationButton({super.key, required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.surface,
+      elevation: 2,
+      borderRadius: BorderRadius.circular(AppRadius.iconContainer),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AppRadius.iconContainer),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Symbols.my_location_rounded,
+                  size: 24, color: AppColors.primary),
+              const SizedBox(height: 2),
+              Text(
+                '내 위치',
+                style: AppTextStyles.caption.copyWith(
+                    color: AppColors.primary, fontWeight: FontWeight.w600),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 /// A map-overlay toggle — an icon over a label. [active] fills the icon and
 /// switches to the amber accent + a selected surface, so it reads as "on".

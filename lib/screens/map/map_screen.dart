@@ -661,6 +661,13 @@ class _KoreaMapState extends State<_KoreaMap>
     ));
   }
 
+  /// Recentre on the device location (the "내 위치" button) — same ~44 km frame
+  /// as a favorite pick, drill stage unchanged. No-op until a fix is known.
+  void _goToMyLocation() {
+    final here = UserLocation.position.value;
+    if (here != null) _focusOnLatLng(here);
+  }
+
   /// Pan/zoom the camera to a favorited spot picked in the slide-up list —
   /// a fixed ~44 km frame around it, drill stage unchanged.
   void _focusOnLatLng(LatLng where) {
@@ -947,11 +954,21 @@ class _KoreaMapState extends State<_KoreaMap>
                         curve: AppMotion.curve,
                         left: AppSpacing.sm,
                         bottom: AppSpacing.sm + widget.overlayBottomInset,
-                        child: MapToggleButton(
-                          icon: Symbols.star_rounded,
-                          label: '즐겨찾기',
-                          active: widget.favoritesActive,
-                          onTap: widget.onToggleFavorites,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (UserLocation.position.value != null) ...[
+                              MyLocationButton(onTap: _goToMyLocation),
+                              const SizedBox(height: AppSpacing.sm),
+                            ],
+                            MapToggleButton(
+                              icon: Symbols.star_rounded,
+                              label: '즐겨찾기',
+                              active: widget.favoritesActive,
+                              onTap: widget.onToggleFavorites,
+                            ),
+                          ],
                         ),
                       ),
                       AnimatedPositioned(

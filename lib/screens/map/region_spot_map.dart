@@ -129,9 +129,27 @@ class _RegionSpotMapState extends State<RegionSpotMap> {
         }
         // The 즐겨찾기 toggle lives in the ranking list header below the map
         // (`_FavoritesOnlyChip`); this map just reflects the shared state.
-        return _buildMap(rings);
+        return Stack(
+          children: [
+            _buildMap(rings),
+            if (UserLocation.position.value != null)
+              Positioned(
+                left: AppSpacing.sm,
+                bottom: AppSpacing.sm,
+                child: MyLocationButton(onTap: _goToMyLocation),
+              ),
+          ],
+        );
       },
     );
+  }
+
+  /// Recentre the tile map on the device location ("내 위치" button).
+  void _goToMyLocation() {
+    final here = UserLocation.position.value;
+    if (!_ready || here == null) return;
+    final zoom = _map.camera.zoom;
+    _map.move(here, zoom < 14 ? 14 : zoom);
   }
 
   Widget _buildMap(List<List<LatLng>> rings) {
