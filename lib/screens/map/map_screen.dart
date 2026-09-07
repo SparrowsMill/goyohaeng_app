@@ -71,31 +71,96 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
-  /// Nationwide → 시도 → 시군구 → 구 vector drill-down. The chrome (검색 바 +
-  /// 갭지수 범례/설명) is a fixed header; the map fills the rest. Toggling
-  /// "즐겨찾기" slides a favorites list up over the map's lower half — the map
-  /// itself never resizes or moves.
+  /// Nationwide → 시도 → 시군구 → 구 vector drill-down. The map fills the whole
+  /// body; the chrome (검색 바 + 갭지수 범례/설명) is a **translucent overlay**
+  /// on its top, so the map stays visible behind it when dragged. "즐겨찾기"
+  /// slides a favorites list up over the map's lower half.
   Widget _buildVectorBody(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final panelHeight = constraints.maxHeight * 0.52;
+        return Stack(
+          children: [
+            Positioned.fill(
+              child: _KoreaMap(
+                favoritesActive: _favoritesOpen,
+                onToggleFavorites: () =>
+                    setState(() => _favoritesOpen = !_favoritesOpen),
+                overlayBottomInset: _favoritesOpen ? panelHeight : 0,
+                topInset: kMapChromeInset,
+                onEnterRegion: (code, name) => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => RegionRankingScreen(
+                      regionKey: code,
+                      regionName: name,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: _MapChrome(
+                onSearch: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const PlaceSearchScreen()),
+                ),
+              ),
+            ),
+            AnimatedPositioned(
+              duration: AppMotion.standard,
+              curve: AppMotion.curve,
+              left: 0,
+              right: 0,
+              height: panelHeight,
+              bottom: _favoritesOpen ? 0 : -panelHeight,
+              child: const _FavoritesPanel(),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// The search bar + 갭지수 범례/설명, laid over the top of the map. Its own
+/// background is a soft cream scrim that fades out downward — the search bar
+/// and pills stay readable, the map shows through faintly below.
+class _MapChrome extends StatelessWidget {
+  const _MapChrome({required this.onSearch});
+
+  final VoidCallback onSearch;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            AppColors.appBackground,
+            AppColors.appBackground.withValues(alpha: 0),
+          ],
+          stops: const [0.45, 1.0],
+        ),
+      ),
+      // Swallow taps on the empty scrim so they don't focus a 시도 behind it.
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () {},
+        child: Padding(
           padding: const EdgeInsets.fromLTRB(
             AppSpacing.xl,
             AppSpacing.md,
             AppSpacing.xl,
-            AppSpacing.md,
+            AppSpacing.xxl,
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _SearchBar(
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => const PlaceSearchScreen(),
-                  ),
-                ),
-              ),
+              _SearchBar(onTap: onSearch),
               const SizedBox(height: AppSpacing.md),
               const Row(
                 children: [
@@ -107,45 +172,7 @@ class _MapScreenState extends State<MapScreen> {
             ],
           ),
         ),
-        Expanded(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final panelHeight = constraints.maxHeight * 0.52;
-              return Stack(
-                children: [
-                  Positioned.fill(
-                    child: _KoreaMap(
-                      favoritesActive: _favoritesOpen,
-                      onToggleFavorites: () =>
-                          setState(() => _favoritesOpen = !_favoritesOpen),
-                      // Float the overlay buttons above the panel when up.
-                      overlayBottomInset: _favoritesOpen ? panelHeight : 0,
-                      onEnterRegion: (code, name) =>
-                          Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => RegionRankingScreen(
-                            regionKey: code,
-                            regionName: name,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                  AnimatedPositioned(
-                    duration: AppMotion.standard,
-                    curve: AppMotion.curve,
-                    left: 0,
-                    right: 0,
-                    height: panelHeight,
-                    bottom: _favoritesOpen ? 0 : -panelHeight,
-                    child: const _FavoritesPanel(),
-                  ),
-                ],
-              );
-            },
-          ),
-        ),
-      ],
+      ),
     );
   }
 }
@@ -303,9 +330,11 @@ const double kMapZoom = 1.2;
 /// gap between it and the bottom nav. **The knob for map top/bottom slack.**
 const double kMapPanMarginV = 44;
 
-/// Height (px) of the soft fade at the map's top & bottom edges — the map
-/// dissolves into the page background there instead of a hard clipped line.
-const double kMapEdgeFade = 44;
+/// Approx. height of the translucent chrome (검색 바 + 갭지수 범례) overlaid on
+/// the map's top. The map fills the whole body and is nudged down by this much
+/// so the country sits in the clear area below the chrome — but drags up
+/// behind it, faintly visible. **The knob for the chrome overlay height.**
+const double kMapChromeInset = 128;
 
 class _KoreaMap extends StatefulWidget {
   const _KoreaMap({
@@ -313,6 +342,7 @@ class _KoreaMap extends StatefulWidget {
     required this.favoritesActive,
     required this.onToggleFavorites,
     this.overlayBottomInset = 0,
+    this.topInset = 0,
   });
 
   /// Called with a 시군구/구 code + name when the user taps a leaf region
@@ -328,6 +358,11 @@ class _KoreaMap extends StatefulWidget {
   /// Lifts the bottom-corner overlay buttons this many px, so the favorites
   /// panel sliding up over the map doesn't cover them.
   final double overlayBottomInset;
+
+  /// Clear space at the top taken by the translucent chrome overlay — the
+  /// nationwide "home" view is nudged down by half this so the country sits
+  /// below the chrome (not hidden behind it).
+  final double topInset;
 
   @override
   State<_KoreaMap> createState() => _KoreaMapState();
@@ -501,11 +536,11 @@ class _KoreaMapState extends State<_KoreaMap>
   }
 
   /// The nationwide "home" transform — scale 1, the oversized map centred in
-  /// the viewport (so equal amounts of the E/W coast are cropped either side).
+  /// the clear area below the chrome overlay (E/W coast cropped either side).
   Matrix4 _homeMatrix() => Matrix4.identity()
     ..translateByDouble(
       -(_sceneSize.width - _boxSize.width) / 2,
-      -(_sceneSize.height - _boxSize.height) / 2,
+      -(_sceneSize.height - _boxSize.height) / 2 + widget.topInset / 2,
       0,
       1,
     );
@@ -761,24 +796,7 @@ class _KoreaMapState extends State<_KoreaMap>
                   child: Stack(
                     children: [
                       Positioned.fill(
-                        child: ShaderMask(
-                          blendMode: BlendMode.dstIn,
-                          shaderCallback: (rect) {
-                            final f =
-                                (kMapEdgeFade / rect.height).clamp(0.0, 0.45);
-                            return LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              colors: const [
-                                Colors.transparent,
-                                Colors.black,
-                                Colors.black,
-                                Colors.transparent,
-                              ],
-                              stops: [0.0, f, 1 - f, 1.0],
-                            ).createShader(rect);
-                          },
-                          child: InteractiveViewer(
+                        child: InteractiveViewer(
                           transformationController: _tc,
                           constrained: false,
                           minScale: 1,
@@ -809,7 +827,6 @@ class _KoreaMapState extends State<_KoreaMap>
                               ),
                             ),
                           ),
-                        ),
                         ),
                       ),
                       AnimatedPositioned(
