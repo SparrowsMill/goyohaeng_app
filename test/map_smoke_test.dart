@@ -659,8 +659,9 @@ void main() {
       expect(tester.getRect(find.byType(InteractiveViewer)), mapBefore);
     });
 
-    testWidgets('즐겨찾기 목록에서 항목 탭 → <장소 정보>', (tester) async {
-      tester.view.physicalSize = const Size(390, 800);
+    testWidgets('즐겨찾기 목록: 항목 탭 → 지도 집중, "자세히 보기" → <장소 정보>',
+        (tester) async {
+      tester.view.physicalSize = const Size(390, 900);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
 
@@ -668,7 +669,19 @@ void main() {
       await tester.tap(find.text('즐겨찾기'));
       await tester.pumpAndSettle();
 
+      final tc = tester
+          .widget<InteractiveViewer>(find.byType(InteractiveViewer))
+          .transformationController!;
+      final zoomBefore = tc.value.getMaxScaleOnAxis();
+
+      // 항목만 탭 → 정보 페이지로 가지 않고 지도만 그 위치로 확대·이동.
       await tester.tap(find.text('전주 경기전'));
+      await tester.pumpAndSettle();
+      expect(find.byType(PlaceInfoScreen), findsNothing);
+      expect(tc.value.getMaxScaleOnAxis(), greaterThan(zoomBefore + 0.5));
+      expect(find.text('자세히 보기'), findsOneWidget); // 선택 행에 버튼 등장
+
+      await tester.tap(find.text('자세히 보기'));
       await tester.pumpAndSettle();
       expect(find.byType(PlaceInfoScreen), findsOneWidget);
     });

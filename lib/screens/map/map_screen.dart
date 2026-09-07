@@ -8,6 +8,7 @@ import '../../data/favorites.dart';
 import '../../data/korea_crs.dart' show Epsg5179, LatLng;
 import '../../data/korea_map_geo.dart';
 import '../../data/mock_map_regions.dart';
+import '../../data/mock_region_ranking.dart' show MockTouristSpot;
 import '../../data/user_location.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_motion.dart';
@@ -19,6 +20,7 @@ import '../../widgets/app_bottom_nav_bar.dart';
 import '../../widgets/favorites_list.dart';
 import '../../widgets/gap_index_info_dialog.dart';
 import '../../widgets/my_location_button.dart';
+import '../place/place_info_screen.dart';
 import '../ranking/region_ranking_screen.dart';
 import 'place_search_screen.dart';
 
@@ -47,6 +49,20 @@ class _MapScreenState extends State<MapScreen> {
   /// lives in [Favorites.mapOverlayActive] so it carries across the vector ↔
   /// real-map 전환 (drilling into a region and stepping back).
   ValueNotifier<bool> get _favorites => Favorites.instance.mapOverlayActive;
+
+  /// A favorite tapped in the slide-up list — the vector map pans/zooms here.
+  /// [_favFocusTick] bumps on every tap so re-selecting the same spot still
+  /// re-centres the map.
+  LatLng? _favFocusPoint;
+  int _favFocusTick = 0;
+
+  void _focusFavorite(MockTouristSpot spot) {
+    if (spot.lat == null || spot.lng == null) return;
+    setState(() {
+      _favFocusPoint = LatLng(spot.lat!, spot.lng!);
+      _favFocusTick++;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -91,6 +107,8 @@ class _MapScreenState extends State<MapScreen> {
                   onToggleFavorites: () => _favorites.value = !favoritesOpen,
                   overlayBottomInset: favoritesOpen ? panelHeight : 0,
                   topInset: kMapChromeInset,
+                  focusPoint: _favFocusPoint,
+                  focusTick: _favFocusTick,
                   onEnterRegion: (code, name) => Navigator.of(context).push(
                     MaterialPageRoute(
                       builder: (_) => RegionRankingScreen(
@@ -118,7 +136,14 @@ class _MapScreenState extends State<MapScreen> {
                 right: 0,
                 height: panelHeight,
                 bottom: favoritesOpen ? 0 : -panelHeight,
-                child: const _FavoritesPanel(),
+                child: _FavoritesPanel(
+                  onFocusSpot: _focusFavorite,
+                  onOpenDetail: (spot) => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => PlaceInfoScreen(spot: spot),
+                    ),
+                  ),
+                ),
               ),
             ],
           ),
@@ -166,7 +191,13 @@ class _MapChrome extends StatelessWidget {
 /// The favorites list as a floating panel laid over the map's lower half —
 /// rounded top, top shadow, so it reads as sitting *on* the map.
 class _FavoritesPanel extends StatelessWidget {
-  const _FavoritesPanel();
+  const _FavoritesPanel({
+    required this.onFocusSpot,
+    required this.onOpenDetail,
+  });
+
+  final ValueChanged<MockTouristSpot> onFocusSpot;
+  final ValueChanged<MockTouristSpot> onOpenDetail;
 
   @override
   Widget build(BuildContext context) {
@@ -190,7 +221,12 @@ class _FavoritesPanel extends StatelessWidget {
             ),
           ),
           const SizedBox(height: AppSpacing.sm),
-          const Expanded(child: FavoritesList()),
+          Expanded(
+            child: FavoritesList(
+              onFocusSpot: onFocusSpot,
+              onOpenDetail: onOpenDetail,
+            ),
+          ),
         ],
       ),
     );
@@ -337,6 +373,11 @@ const double kMapChromeInset = 128;
 /// breathing room at the top (under the chrome) and bottom (over the nav bar).
 const double kMapMarginV = 20;
 
+/// Side length (≈ real metres) of the box the camera frames when a favorite is
+/// tapped in the slide-up list — a 시군구-ish zoom that shows the spot with some
+/// surrounding context, without advancing the drill stage.
+const double _kFavoriteFocusMetres = 44000;
+
 class _KoreaMap extends StatefulWidget {
   const _KoreaMap({
     required this.onEnterRegion,
@@ -344,6 +385,8 @@ class _KoreaMap extends StatefulWidget {
     required this.onToggleFavorites,
     this.overlayBottomInset = 0,
     this.topInset = 0,
+    this.focusPoint,
+    this.focusTick = 0,
   });
 
   /// Called with a 시군구/구 code + name when the user taps a leaf region
@@ -364,6 +407,12 @@ class _KoreaMap extends StatefulWidget {
   /// nationwide "home" view is nudged down by half this so the country sits
   /// below the chrome (not hidden behind it).
   final double topInset;
+
+  /// A favorite chosen in the slide-up list — the camera pans/zooms to it at
+  /// the current drill stage (no level change). Paired with [focusTick] which
+  /// bumps on every pick so re-choosing the same spot still re-centres.
+  final LatLng? focusPoint;
+  final int focusTick;
 
   @override
   State<_KoreaMap> createState() => _KoreaMapState();
@@ -456,6 +505,18 @@ class _KoreaMapState extends State<_KoreaMap>
     _myPoint.dispose();
     _favPoints.dispose();
     super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(_KoreaMap old) {
+    super.didUpdateWidget(old);
+    // A favorite was tapped in the slide-up list — fly there. Deferred a frame
+    // so a first pick right after layout still has a projector to work with.
+    if (widget.focusTick != old.focusTick && widget.focusPoint != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _focusOnLatLng(widget.focusPoint!);
+      });
+    }
   }
 
   void _onFavoritesChanged() {
@@ -552,8 +613,12 @@ class _KoreaMapState extends State<_KoreaMap>
       1,
     );
 
-  Matrix4 _matrixForSceneRect(Rect rect) {
-    final w = _boxSize.width, h = _boxSize.height;
+  /// A transform that frames [rect] (scene space). [bottomInset] shrinks the
+  /// area the region is centred in — used so a favorite tapped in the slide-up
+  /// list lands in the map band still visible above the panel, not behind it.
+  Matrix4 _matrixForSceneRect(Rect rect, {double bottomInset = 0}) {
+    final w = _boxSize.width;
+    final h = math.max(_boxSize.height - bottomInset, 1.0);
     // 12% breathing room around the region.
     final padded = rect.inflate(math.max(rect.width, rect.height) * 0.12);
     final scale =
@@ -565,8 +630,8 @@ class _KoreaMapState extends State<_KoreaMap>
       ..scaleByDouble(scale, scale, 1, 1);
   }
 
-  void _zoomToSceneRect(Rect sceneRect) =>
-      _animateTo(_matrixForSceneRect(sceneRect));
+  void _zoomToSceneRect(Rect sceneRect, {double bottomInset = 0}) =>
+      _animateTo(_matrixForSceneRect(sceneRect, bottomInset: bottomInset));
 
   void _zoomToRegion(GeoRegion region) {
     final project = _projector ??
@@ -582,6 +647,22 @@ class _KoreaMapState extends State<_KoreaMap>
       project(Offset(b.left, b.top)),
       project(Offset(b.right, b.bottom)),
     ));
+  }
+
+  /// Pan/zoom the camera to a favorited spot picked in the slide-up list —
+  /// a fixed ~44 km frame around it, drill stage unchanged.
+  void _focusOnLatLng(LatLng where) {
+    final project = _projector;
+    if (project == null || _geo == null || _boxSize == Size.zero) return;
+    final raw = Epsg5179.fromLatLng(where);
+    const half = _kFavoriteFocusMetres / 2;
+    _zoomToSceneRect(
+      Rect.fromPoints(
+        project(Offset(raw.dx - half, raw.dy - half)),
+        project(Offset(raw.dx + half, raw.dy + half)),
+      ),
+      bottomInset: widget.overlayBottomInset,
+    );
   }
 
   /// Focus one 시도: expand it to units and zoom the camera to it.

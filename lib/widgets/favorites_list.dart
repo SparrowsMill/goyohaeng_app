@@ -4,7 +4,6 @@ import 'package:material_symbols_icons/symbols.dart';
 import '../data/favorites.dart';
 import '../data/mock_map_regions.dart' show gapIndexColor;
 import '../data/mock_region_ranking.dart';
-import '../screens/place/place_info_screen.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_radius.dart';
 import '../theme/app_spacing.dart';
@@ -12,11 +11,25 @@ import '../theme/app_text_styles.dart';
 import 'favorite_star_button.dart';
 
 /// The favorites list body — a "즐겨찾기 N곳" header, a 시/군/구 filter, then a
-/// row per favorited place (each keeps its star for in-place removal; tapping a
-/// row opens `<장소 정보>`). Sized by its parent; used as the bottom half of the
-/// split `<지도>` view.
+/// row per favorited place (each keeps its star for in-place removal). Sized by
+/// its parent; used as the slide-up panel over the `<지도>` vector map.
+///
+/// Tapping a row **selects** it — the parent pans/zooms the map behind the panel
+/// to that spot at the current drill stage (no navigation). The selected row
+/// grows a "자세히 보기" button that opens `<장소 정보>`.
 class FavoritesList extends StatefulWidget {
-  const FavoritesList({super.key});
+  const FavoritesList({
+    super.key,
+    required this.onFocusSpot,
+    required this.onOpenDetail,
+  });
+
+  /// A row was tapped (freshly selected) — move the map to this spot. The parent
+  /// ignores spots with no coordinates.
+  final ValueChanged<MockTouristSpot> onFocusSpot;
+
+  /// "자세히 보기" on the selected row — open `<장소 정보>`.
+  final ValueChanged<MockTouristSpot> onOpenDetail;
 
   @override
   State<FavoritesList> createState() => _FavoritesListState();
@@ -33,6 +46,9 @@ class _FavoritesListState extends State<FavoritesList> {
   /// `null` == 전체.
   String? _sigungu;
 
+  /// Name of the selected row, or `null`. Re-tapping it deselects.
+  String? _selectedName;
+
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
@@ -47,6 +63,9 @@ class _FavoritesListState extends State<FavoritesList> {
           final spots = active == null
               ? all
               : [for (final s in all) if (_sigunguOf(s) == active) s];
+          // Selection may have been un-favorited or filtered out.
+          final selectedName =
+              spots.any((s) => s.name == _selectedName) ? _selectedName : null;
 
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -96,14 +115,20 @@ class _FavoritesListState extends State<FavoritesList> {
                           endIndent: AppSpacing.xl,
                           color: AppColors.divider,
                         ),
-                        itemBuilder: (_, i) => _FavoriteRow(
-                          spot: spots[i],
-                          onOpen: () => Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => PlaceInfoScreen(spot: spots[i]),
-                            ),
-                          ),
-                        ),
+                        itemBuilder: (_, i) {
+                          final spot = spots[i];
+                          return _FavoriteRow(
+                            spot: spot,
+                            selected: spot.name == selectedName,
+                            onTap: () {
+                              final select = _selectedName != spot.name;
+                              setState(() =>
+                                  _selectedName = select ? spot.name : null);
+                              if (select) widget.onFocusSpot(spot);
+                            },
+                            onDetail: () => widget.onOpenDetail(spot),
+                          );
+                        },
                       ),
               ),
             ],
@@ -178,59 +203,116 @@ class _SigunguFilter extends StatelessWidget {
 }
 
 class _FavoriteRow extends StatelessWidget {
-  const _FavoriteRow({required this.spot, required this.onOpen});
+  const _FavoriteRow({
+    required this.spot,
+    required this.selected,
+    required this.onTap,
+    required this.onDetail,
+  });
 
   final MockTouristSpot spot;
-  final VoidCallback onOpen;
+  final bool selected;
+  final VoidCallback onTap;
+  final VoidCallback onDetail;
 
   @override
   Widget build(BuildContext context) {
     // "전라남도 담양군" — first two address tokens are the 시도 + 시군구.
     final region = spot.address.split(' ').take(2).join(' ');
     return Material(
-      color: AppColors.surface,
+      color: selected ? AppColors.surfaceSelected : AppColors.surface,
       child: InkWell(
-        onTap: onOpen,
+        onTap: onTap,
         child: Padding(
           padding: const EdgeInsets.symmetric(
             horizontal: AppSpacing.xl,
             vertical: AppSpacing.md,
           ),
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                width: 3,
-                height: 34,
-                decoration: BoxDecoration(
-                  color: gapIndexColor(spot.gapIndex),
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              const SizedBox(width: AppSpacing.md),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      spot.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTextStyles.bodyLarge
-                          .copyWith(fontWeight: FontWeight.w600),
+              Row(
+                children: [
+                  Container(
+                    width: 3,
+                    height: 34,
+                    decoration: BoxDecoration(
+                      color: gapIndexColor(spot.gapIndex),
+                      borderRadius: BorderRadius.circular(2),
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      '$region · ${spot.category.label} · 갭지수 ${spot.gapIndex}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTextStyles.caption,
+                  ),
+                  const SizedBox(width: AppSpacing.md),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          spot.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTextStyles.bodyLarge
+                              .copyWith(fontWeight: FontWeight.w600),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '$region · ${spot.category.label} · 갭지수 ${spot.gapIndex}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTextStyles.caption,
+                        ),
+                      ],
                     ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(width: AppSpacing.sm),
+                  FavoriteStarButton(spotName: spot.name, size: 22),
+                ],
               ),
-              const SizedBox(width: AppSpacing.sm),
-              FavoriteStarButton(spotName: spot.name, size: 22),
+              if (selected) ...[
+                const SizedBox(height: AppSpacing.md),
+                _DetailButton(onTap: onDetail),
+              ],
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// "자세히 보기" — shown on the selected favorite row, opens `<장소 정보>`.
+class _DetailButton extends StatelessWidget {
+  const _DetailButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      child: Material(
+        color: AppColors.primary,
+        borderRadius: BorderRadius.circular(AppRadius.smallButton),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(AppRadius.smallButton),
+          onTap: onTap,
+          child: const Padding(
+            padding: EdgeInsets.symmetric(vertical: 10),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  '자세히 보기',
+                  style: TextStyle(
+                    color: AppColors.textOnPrimaryButton,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                  ),
+                ),
+                SizedBox(width: 4),
+                Icon(Symbols.arrow_forward_rounded,
+                    size: 18, color: AppColors.textOnPrimaryButton),
+              ],
+            ),
           ),
         ),
       ),
