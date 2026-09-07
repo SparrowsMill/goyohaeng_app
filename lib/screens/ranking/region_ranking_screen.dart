@@ -182,9 +182,19 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
             ),
           ),
           const Divider(height: 1, color: AppColors.border),
-          Expanded(
-            child: _buildList(spots, hasPins: hasPins, favOnly: favOnly),
+          // Fixed above the scrolling list — filter/sort stay put as cards move.
+          _FilterBar(
+            category: _category,
+            onCategory: (value) => setState(() => _category = value),
+            descending: _descending,
+            onSort: (value) => setState(() => _descending = value),
+            hint: favOnly
+                ? '즐겨찾기한 장소만 보고 있어요 · 지도 별 핀과 연동돼요'
+                : hasPins
+                    ? "장소를 누르면 지도에 표시돼요 · '자세히 보기'로 상세"
+                    : '선택한 필터와 정렬은 다음에도 유지돼요',
           ),
+          Expanded(child: _buildCardList(spots, favOnly: favOnly)),
         ],
       ),
       bottomNavigationBar: AppBottomNavBar(
@@ -201,11 +211,22 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
     );
   }
 
-  Widget _buildList(
-    List<MockTouristSpot> spots, {
-    required bool hasPins,
-    required bool favOnly,
-  }) {
+  Widget _buildCardList(List<MockTouristSpot> spots, {required bool favOnly}) {
+    if (spots.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.xxl),
+          child: Text(
+            favOnly
+                ? '이 지역엔 즐겨찾기한 장소가 없어요.'
+                : '해당하는 관광 스팟이 아직 없어요.',
+            textAlign: TextAlign.center,
+            style: AppTextStyles.bodyMedium
+                .copyWith(color: AppColors.textSecondary),
+          ),
+        ),
+      );
+    }
     return ListView(
       controller: _listController,
       // The list is short (a handful of spots); build every card up front so a
@@ -219,59 +240,73 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
         AppSpacing.xxl,
       ),
       children: [
-        _CategoryFilter(
-          selected: _category,
-          onChanged: (value) => setState(() => _category = value),
-        ),
-        const SizedBox(height: AppSpacing.md),
-        Row(
-          children: [
-            Expanded(
-              child: _SortDropdown(
-                descending: _descending,
-                onChanged: (value) => setState(() => _descending = value),
-              ),
-            ),
-            const SizedBox(width: AppSpacing.sm),
-            const GapIndexInfoButton(),
-          ],
-        ),
-        const SizedBox(height: AppSpacing.xs),
-        Text(
-          favOnly
-              ? '즐겨찾기한 장소만 보고 있어요 · 지도 별 핀과 연동돼요'
-              : hasPins
-                  ? "장소를 누르면 지도에 표시돼요 · '자세히 보기'로 상세"
-                  : '선택한 필터와 정렬은 다음에도 유지돼요',
-          style: AppTextStyles.caption,
-        ),
-        const SizedBox(height: AppSpacing.lg),
-        if (spots.isEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: AppSpacing.huge),
-            child: Center(
-              child: Text(
-                favOnly
-                    ? '이 지역엔 즐겨찾기한 장소가 없어요.'
-                    : '해당하는 관광 스팟이 아직 없어요.',
-                style: AppTextStyles.bodyMedium
-                    .copyWith(color: AppColors.textSecondary),
-              ),
-            ),
-          )
-        else
-          for (var i = 0; i < spots.length; i++) ...[
-            if (i != 0) const SizedBox(height: AppSpacing.md),
-            _RankingCard(
-              key: spots[i] == _selected ? _selectedCardKey : null,
-              rank: i + 1,
-              spot: spots[i],
-              selected: spots[i] == _selected,
-              onTap: () => _select(spots[i]),
-              onDetail: () => _openSpot(spots[i]),
-            ),
-          ],
+        for (var i = 0; i < spots.length; i++) ...[
+          if (i != 0) const SizedBox(height: AppSpacing.md),
+          _RankingCard(
+            key: spots[i] == _selected ? _selectedCardKey : null,
+            rank: i + 1,
+            spot: spots[i],
+            selected: spots[i] == _selected,
+            onTap: () => _select(spots[i]),
+            onDetail: () => _openSpot(spots[i]),
+          ),
+        ],
       ],
+    );
+  }
+}
+
+/// The category chips + sort dropdown + hint line, pinned above the scrolling
+/// ranking list (a subtle bottom divider marks it as fixed chrome).
+class _FilterBar extends StatelessWidget {
+  const _FilterBar({
+    required this.category,
+    required this.onCategory,
+    required this.descending,
+    required this.onSort,
+    required this.hint,
+  });
+
+  final SpotCategory? category;
+  final ValueChanged<SpotCategory?> onCategory;
+  final bool descending;
+  final ValueChanged<bool> onSort;
+  final String hint;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: AppColors.appBackground,
+        border: Border(bottom: BorderSide(color: AppColors.divider)),
+      ),
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.xl,
+        AppSpacing.md,
+        AppSpacing.xl,
+        AppSpacing.md,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _CategoryFilter(selected: category, onChanged: onCategory),
+          const SizedBox(height: AppSpacing.md),
+          Row(
+            children: [
+              Expanded(
+                child: _SortDropdown(
+                  descending: descending,
+                  onChanged: onSort,
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              const GapIndexInfoButton(),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          Text(hint, style: AppTextStyles.caption),
+        ],
+      ),
     );
   }
 }

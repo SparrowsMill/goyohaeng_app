@@ -224,6 +224,45 @@ void main() {
     expect(find.byType(PlaceInfoScreen), findsOneWidget);
   });
 
+  testWidgets('<지역별 랭킹>: 카테고리·정렬은 스크롤 목록 밖에 고정', (tester) async {
+    tester.view.physicalSize = const Size(390, 520);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    await tester.runAsync(() async {
+      final g = await KoreaGeo.load();
+      await g.ensureSigungu();
+    });
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: RegionRankingScreen(regionKey: '35011', regionName: '전주시 완산구'),
+      ),
+    );
+    await tester.runAsync(() async {});
+    await tester.pumpAndSettle();
+
+    // 컨트롤은 화면에 있지만 스크롤 ListView의 자식이 아니다 → 고정 헤더.
+    expect(find.text('전체'), findsOneWidget); // 카테고리 칩
+    expect(find.text('갭지수 내림차순'), findsWidgets); // 정렬 드롭다운
+    expect(
+      find.descendant(of: find.byType(ListView), matching: find.text('전체')),
+      findsNothing,
+    );
+    expect(
+      find.descendant(
+        of: find.byType(ListView),
+        matching: find.text('갭지수 내림차순'),
+      ),
+      findsNothing,
+    );
+
+    // 목록을 스크롤해도 필터 칩 위치는 그대로.
+    final catRect = tester.getRect(find.text('전체'));
+    await tester.drag(find.byType(ListView), const Offset(0, -160));
+    await tester.pumpAndSettle();
+    expect(tester.getRect(find.text('전체')), catRect);
+  });
+
   testWidgets('RegionSpotMap: selecting a spot flies the camera to it',
       (tester) async {
     tester.view.physicalSize = const Size(390, 700);
