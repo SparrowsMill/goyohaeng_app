@@ -669,6 +669,44 @@ void main() {
       expect(favPin('보성 녹차밭'), isNotNull);
     });
 
+    testWidgets('RegionSpotMap: 즐겨찾기 모드 진입은 스팟이 아니라 지역 경계에 맞춘다',
+        (tester) async {
+      tester.view.physicalSize = const Size(390, 700);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.runAsync(() async {
+        final g = await KoreaGeo.load();
+        await g.ensureSigungu();
+      });
+
+      final favs = rankingForRegion('36310')
+          .where((s) => Favorites.instance.contains(s.name) && s.hasLocation)
+          .toList();
+      expect(favs, isNotEmpty);
+
+      final controller = MapController();
+      Favorites.instance.mapOverlayActive.value = true; // 필터 켜진 채 진입
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.light,
+          home: Scaffold(
+            body: RegionSpotMap(
+              regionCode: '36310',
+              spots: favs, // 목록이 즐겨찾기만 남은 상태
+              selected: null,
+              onMarkerTap: (_) {},
+              mapController: controller,
+            ),
+          ),
+        ),
+      );
+      await tester.runAsync(() async {});
+      await tester.pumpAndSettle();
+
+      // 단일 즐겨찾기 스팟에 맞췄다면 zoom이 16+로 튄다. 지역 경계에 맞추면 완만.
+      expect(controller.camera.zoom, lessThan(13));
+    });
+
     testWidgets('벡터 지도: 즐겨찾기 목록이 맵 위에 얹힘 — 맵은 그대로', (tester) async {
       tester.view.physicalSize = const Size(390, 900);
       tester.view.devicePixelRatio = 1;

@@ -156,11 +156,14 @@ class _RegionSpotMapState extends State<RegionSpotMap> {
           flags: InteractiveFlag.all,
           enableMultiFingerGestureRace: true,
         ),
+        // 즐겨찾기 모드로 들어오면 목록은 즐겨찾기만 남아 located가 1~2곳일 수
+        // 있다 — 거기에 맞추면 과하게 확대된다. 그럴 땐 지역 경계 전체가
+        // 한눈에 들어오게. (스팟은 목록에서 눌러 집중.)
         initialCameraFit: allPoints.isEmpty
             ? null
             : CameraFit.bounds(
                 bounds: LatLngBounds.fromPoints(
-                  located.isEmpty
+                  (_showFavorites || located.isEmpty)
                       ? allPoints
                       : [for (final s in located) LatLng(s.lat!, s.lng!)],
                 ),
