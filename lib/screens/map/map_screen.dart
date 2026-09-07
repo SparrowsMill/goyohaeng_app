@@ -114,18 +114,22 @@ class _MapScreenState extends State<MapScreen> {
               return Stack(
                 children: [
                   Positioned.fill(
-                    child: _KoreaMap(
-                      favoritesActive: _favoritesOpen,
-                      onToggleFavorites: () =>
-                          setState(() => _favoritesOpen = !_favoritesOpen),
-                      // Float the overlay buttons above the panel when it's up.
-                      overlayBottomInset: _favoritesOpen ? panelHeight : 0,
-                      onEnterRegion: (code, name) =>
-                          Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => RegionRankingScreen(
-                            regionKey: code,
-                            regionName: name,
+                    child: Padding(
+                      padding:
+                          const EdgeInsets.symmetric(vertical: kMapPaddingV),
+                      child: _KoreaMap(
+                        favoritesActive: _favoritesOpen,
+                        onToggleFavorites: () =>
+                            setState(() => _favoritesOpen = !_favoritesOpen),
+                        // Float the overlay buttons above the panel when up.
+                        overlayBottomInset: _favoritesOpen ? panelHeight : 0,
+                        onEnterRegion: (code, name) =>
+                            Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => RegionRankingScreen(
+                              regionKey: code,
+                              regionName: name,
+                            ),
                           ),
                         ),
                       ),
@@ -296,7 +300,12 @@ const double _kMaxScale = 40;
 /// frame) at the un-drilled view. 1.0 = exactly fill; higher = bigger map, more
 /// of the coastline cropped but reachable by dragging. **This is the knob for
 /// "make the default map bigger".**
-const double kMapZoom = 1.0;
+const double kMapZoom = 1.2;
+
+/// Cream breathing room above & below the `<지도>` map (between the chrome and
+/// the map, and the map and the bottom nav). **The knob for map top/bottom
+/// padding.**
+const double kMapPaddingV = 12;
 
 class _KoreaMap extends StatefulWidget {
   const _KoreaMap({
@@ -978,9 +987,10 @@ class _KoreaMapPainter extends CustomPainter {
       false,
     );
 
-    // `size` here is the cover-scaled canvas, so a plain contain-fit into it
-    // reproduces the same scale/offset the paths were built with.
-    final project = MapProjector(bounds: geo.bounds, size: size);
+    // `size` here IS the cover-scaled canvas, so `.cover` of it reproduces the
+    // exact scale/offset the paths were built with — independent of the plain
+    // `MapProjector` factory (which the mini map tweaks).
+    final project = MapProjector.cover(bounds: geo.bounds, viewport: size);
 
     final sidoStroke = Paint()
       ..style = PaintingStyle.stroke
