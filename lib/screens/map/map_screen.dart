@@ -292,15 +292,6 @@ class _SearchBar extends StatelessWidget {
 /// 자치구 after focusing it.
 const double _kMaxScale = 40;
 
-/// Short 시도 names for on-map labels, keyed by the GeoJSON's 행정구역 코드
-/// (legacy 2-digit scheme). Falls back to the GeoJSON title if a code is new.
-const _sidoShortName = <String, String>{
-  '11': '서울', '21': '부산', '22': '대구', '23': '인천', '24': '광주',
-  '25': '대전', '26': '울산', '29': '세종', '31': '경기', '32': '강원',
-  '33': '충북', '34': '충남', '35': '전북', '36': '전남', '37': '경북',
-  '38': '경남', '39': '제주',
-};
-
 class _KoreaMap extends StatefulWidget {
   const _KoreaMap({
     required this.onEnterRegion,
@@ -1088,7 +1079,7 @@ class _KoreaMapPainter extends CustomPainter {
       final p = project(label.point);
       if (!view.contains(p)) continue;
       final stats = statsForRegion(label.id);
-      final name = _sidoShortName[label.id] ?? label.title;
+      final name = kSidoShortName[label.id] ?? label.title;
 
       if (focused == null) {
         // Province names anchor the country view — always shown (short form);

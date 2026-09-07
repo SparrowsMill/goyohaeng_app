@@ -428,8 +428,9 @@ class _StatItem extends StatelessWidget {
 /// user's location (갭지수 colours + "you are here" dot), an "지도 열기" hint,
 
 /// The home mini-map card — the live `<지도>` vector map cropped to the user's
-/// location (갭지수 colours + "you are here" dot), with a compact "방문 TOP 3"
-/// panel in the top-left corner and the "지도 열기" button beneath its list.
+/// location (갭지수 colours + 지역 이름 + "you are here" dot). A compact "방문
+/// TOP 3" panel sits in the top-left corner; the "지도 열기" button in the
+/// bottom-right.
 class _HomeMapCard extends StatelessWidget {
   const _HomeMapCard();
 
@@ -437,7 +438,7 @@ class _HomeMapCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       clipBehavior: Clip.antiAlias,
-      height: 200,
+      height: 220,
       decoration: BoxDecoration(
         color: AppColors.surface,
         border: Border.all(color: AppColors.border),
@@ -448,11 +449,16 @@ class _HomeMapCard extends StatelessWidget {
         fit: StackFit.expand,
         children: [
           const MiniKoreaMap(),
-          Positioned(
+          const Positioned(
             top: AppSpacing.sm,
             left: AppSpacing.sm,
-            child: _TopVisitedPanel(
-              onOpenMap: () => Navigator.of(context).push(
+            child: _TopVisitedPanel(),
+          ),
+          Positioned(
+            right: AppSpacing.md,
+            bottom: AppSpacing.md,
+            child: _OpenMapButton(
+              onTap: () => Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => const MapScreen()),
               ),
             ),
@@ -464,12 +470,9 @@ class _HomeMapCard extends StatelessWidget {
 }
 
 /// Compact "방문 TOP 3" card — 이미 방문한 스팟 / 전체 관광스팟, per 도 —
-/// tucked into a corner of the mini-map frame, with the "지도 열기" button
-/// below the list. Hugs its content width.
+/// tucked into the top-left corner of the mini-map frame. Hugs its content.
 class _TopVisitedPanel extends StatelessWidget {
-  const _TopVisitedPanel({required this.onOpenMap});
-
-  final VoidCallback onOpenMap;
+  const _TopVisitedPanel();
 
   @override
   Widget build(BuildContext context) {
@@ -495,8 +498,6 @@ class _TopVisitedPanel extends StatelessWidget {
             if (i != 0) const SizedBox(height: 3),
             _TopVisitedRow(rank: i + 1, region: top[i]),
           ],
-          const SizedBox(height: AppSpacing.sm),
-          _OpenMapButton(onTap: onOpenMap),
         ],
       ),
     );
@@ -553,7 +554,7 @@ class _TopVisitedRow extends StatelessWidget {
   }
 }
 
-/// "지도 열기 ›" — solid primary pill beneath the TOP 3 list, opens `<지도>`.
+/// "지도 열기 ›" — solid primary pill in the mini-map's bottom-right corner.
 class _OpenMapButton extends StatelessWidget {
   const _OpenMapButton({required this.onTap});
 
@@ -564,24 +565,30 @@ class _OpenMapButton extends StatelessWidget {
     return Material(
       color: AppColors.primary,
       borderRadius: BorderRadius.circular(AppRadius.pill),
+      elevation: 3,
+      shadowColor: const Color(0x33626730),
       child: InkWell(
         borderRadius: BorderRadius.circular(AppRadius.pill),
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(AppSpacing.sm, 6, AppSpacing.xs, 6),
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.lg,
+            AppSpacing.sm,
+            AppSpacing.md,
+            AppSpacing.sm,
+          ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
                 '지도 열기',
-                style: AppTextStyles.caption.copyWith(
-                  color: AppColors.textOnPrimaryButton,
-                  fontWeight: FontWeight.w700,
-                ),
+                style: AppTextStyles.buttonMedium
+                    .copyWith(color: AppColors.textOnPrimaryButton),
               ),
+              const SizedBox(width: 2),
               const Icon(
                 Symbols.chevron_right_rounded,
-                size: 14,
+                size: 20,
                 color: AppColors.textOnPrimaryButton,
               ),
             ],

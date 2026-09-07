@@ -16,6 +16,15 @@ class RegionStats {
   final int spotCount;
 }
 
+/// Short 시도 names for on-map labels, keyed by the GeoJSON's 행정구역 코드
+/// (legacy 2-digit scheme). Falls back to the GeoJSON title if a code is new.
+const kSidoShortName = <String, String>{
+  '11': '서울', '21': '부산', '22': '대구', '23': '인천', '24': '광주',
+  '25': '대전', '26': '울산', '29': '세종', '31': '경기', '32': '강원',
+  '33': '충북', '34': '충남', '35': '전북', '36': '전남', '37': '경북',
+  '38': '경남', '39': '제주',
+};
+
 /// 시도 code → stats. All 17 시도 present.
 const mockSidoStats = <String, RegionStats>{
   '11': RegionStats(avgGapIndex: 22, spotCount: 14), // 서울특별시

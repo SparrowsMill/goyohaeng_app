@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../data/korea_crs.dart' show Epsg5179, LatLng;
 import '../data/korea_map_geo.dart';
-import '../data/mock_map_regions.dart' show gapIndexColor, statsForRegion;
+import '../data/mock_map_regions.dart'
+    show gapIndexColor, kSidoShortName, statsForRegion;
 import '../data/user_location.dart';
 import '../theme/app_colors.dart';
 import 'my_location_button.dart';
@@ -93,6 +94,29 @@ class _MiniMapPainter extends CustomPainter {
       canvas.drawPath(_path(region, project), stroke);
     }
     canvas.restore();
+
+    // 시도 names — placed with the crop transform applied manually so the text
+    // stays a constant on-screen size.
+    final frame = Offset.zero & size;
+    final tp = TextPainter(
+      textAlign: TextAlign.center,
+      textDirection: TextDirection.ltr,
+    );
+    for (final label in geo.sidoLabels) {
+      final at = centre + (project(label.point) - focus) * zoom;
+      if (!frame.contains(at)) continue;
+      tp.text = TextSpan(
+        text: kSidoShortName[label.id] ?? label.title,
+        style: const TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+          color: AppColors.textPrimary,
+          shadows: [Shadow(color: AppColors.surface, blurRadius: 3)],
+        ),
+      );
+      tp.layout();
+      tp.paint(canvas, at - Offset(tp.width / 2, tp.height / 2));
+    }
 
     if (located) {
       canvas.drawCircle(
