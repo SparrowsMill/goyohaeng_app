@@ -113,3 +113,8 @@ Color gapIndexColor(num gapIndex) {
 const gapIndexGradient = LinearGradient(
   colors: [_gapLow, _gapMid, _gapHigh],
 );
+
+/// Soft watercolor sea behind the land on every Korea map (the `<지도>` vector
+/// map and the mill-home mini map) — a muted sky blue that still sits inside
+/// the warm storybook palette.
+const kMapSeaColor = Color(0xFFAEC7D6);

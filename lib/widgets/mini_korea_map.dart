@@ -3,14 +3,10 @@ import 'package:flutter/material.dart';
 import '../data/korea_crs.dart' show Epsg5179, LatLng;
 import '../data/korea_map_geo.dart';
 import '../data/mock_map_regions.dart'
-    show gapIndexColor, kSidoShortName, statsForRegion;
+    show gapIndexColor, kMapSeaColor, kSidoShortName, statsForRegion;
 import '../data/user_location.dart';
 import '../theme/app_colors.dart';
 import 'my_location_button.dart';
-
-/// Soft watercolor sea behind the land — a muted blue that still sits inside
-/// the warm storybook palette.
-const _seaColor = Color(0xFFAEC7D6);
 
 /// A small 시도-level slice of the `<지도>` vector map — same 갭지수 colours —
 /// cropped around the device's position ([UserLocation]) with the "you are
@@ -50,7 +46,7 @@ class _MiniKoreaMapState extends State<MiniKoreaMap> {
   Widget build(BuildContext context) {
     final geo = _geo;
     if (geo == null) {
-      return const ColoredBox(color: _seaColor);
+      return const ColoredBox(color: kMapSeaColor);
     }
     return CustomPaint(
       painter: _MiniMapPainter(geo, UserLocation.position.value),
@@ -68,7 +64,7 @@ class _MiniMapPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     canvas.clipRect(Offset.zero & size);
-    canvas.drawRect(Offset.zero & size, Paint()..color = _seaColor);
+    canvas.drawRect(Offset.zero & size, Paint()..color = kMapSeaColor);
 
     final project = MapProjector(bounds: geo.bounds, size: size);
     final centre = Offset(size.width / 2, size.height / 2);

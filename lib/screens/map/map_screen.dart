@@ -879,7 +879,7 @@ class _KoreaMapState extends State<_KoreaMap>
   Widget _buildMap(BuildContext context, KoreaGeo? geo) {
     return SizedBox.expand(
       child: geo == null
-          ? null
+          ? const ColoredBox(color: kMapSeaColor)
           : LayoutBuilder(
               builder: (context, constraints) {
                 final size = constraints.biggest;
@@ -908,6 +908,11 @@ class _KoreaMapState extends State<_KoreaMap>
                 return ClipRect(
                   child: Stack(
                     children: [
+                      // Sea behind the land — also fills the pan slack past the
+                      // coastline so dragging never shows the cream Scaffold.
+                      const Positioned.fill(
+                        child: ColoredBox(color: kMapSeaColor),
+                      ),
                       Positioned.fill(
                         child: InteractiveViewer(
                           transformationController: _tc,

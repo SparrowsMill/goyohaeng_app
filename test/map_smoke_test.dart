@@ -85,6 +85,13 @@ void main() {
     // the map surface exists and the fixed chrome rendered.
     expect(find.text('지역명 · 장소명 검색'), findsOneWidget); // pinned search bar
     expect(find.text('전국 보기'), findsOneWidget); // present but faded/ignoring
+    // Map section sits on the sea colour, not the cream Scaffold.
+    expect(
+      tester
+          .widgetList<ColoredBox>(find.byType(ColoredBox))
+          .any((b) => b.color == kMapSeaColor),
+      isTrue,
+    );
   });
 
   testWidgets('tapping a 시도 focuses it; "전국 보기" clears the focus',
