@@ -10,6 +10,7 @@ import '../../theme/app_radius.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
 import '../../widgets/app_bottom_nav_bar.dart';
+import '../../widgets/drag_to_resize_handle.dart';
 import '../../widgets/favorite_star_button.dart';
 import '../../widgets/gap_index_info_dialog.dart';
 import '../map/region_spot_map.dart';
@@ -60,6 +61,10 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
   final ScrollController _listController = ScrollController();
   final GlobalKey _selectedCardKey = GlobalKey();
   bool _didAutoScroll = false;
+
+  /// Fraction of the screen height the map takes — the user drags the grip
+  /// between map and list to change it (the list gets the rest).
+  double _mapFraction = 0.42;
 
   /// "즐겨찾기만" — the same shared toggle the map's 즐겨찾기 button drives.
   ValueNotifier<bool> get _favoritesOnly => Favorites.instance.mapOverlayActive;
@@ -169,10 +174,11 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
         title: Text('${widget.regionName} 관광스팟'),
       ),
       // Top: the region on the real map (pins for located spots); bottom list.
+      // The grip between them is draggable to trade height between the two.
       body: Column(
         children: [
           SizedBox(
-            height: MediaQuery.sizeOf(context).height * 0.42,
+            height: MediaQuery.sizeOf(context).height * _mapFraction,
             child: RegionSpotMap(
               key: ValueKey('spotmap_${widget.regionKey}'),
               regionCode: widget.regionKey,
@@ -181,7 +187,14 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
               onMarkerTap: _select,
             ),
           ),
-          const Divider(height: 1, color: AppColors.border),
+          DragToResizeHandle(
+            onDrag: (dy) {
+              final h = MediaQuery.sizeOf(context).height;
+              setState(() {
+                _mapFraction = (_mapFraction + dy / h).clamp(0.24, 0.62);
+              });
+            },
+          ),
           // Fixed above the scrolling list — filter/sort stay put as cards move.
           _FilterBar(
             category: _category,

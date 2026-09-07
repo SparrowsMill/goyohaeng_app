@@ -12,6 +12,7 @@ import 'package:goyohaeng_app/screens/map/region_spot_map.dart';
 import 'package:goyohaeng_app/screens/place/place_info_screen.dart';
 import 'package:goyohaeng_app/screens/ranking/region_ranking_screen.dart';
 import 'package:goyohaeng_app/theme/app_theme.dart';
+import 'package:goyohaeng_app/widgets/drag_to_resize_handle.dart';
 import 'package:goyohaeng_app/widgets/favorite_star_button.dart';
 import 'package:goyohaeng_app/widgets/my_location_button.dart';
 import 'package:goyohaeng_app/widgets/spot_pin.dart';
@@ -266,6 +267,57 @@ void main() {
     final cards =
         find.descendant(of: find.byType(ListView), matching: find.byType(InkWell));
     expect(tester.getSize(cards.first).height, lessThan(74));
+  });
+
+  testWidgets('<지역별 랭킹>: 손잡이 드래그로 지도/목록 높이 조절', (tester) async {
+    tester.view.physicalSize = const Size(390, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    await tester.runAsync(() async {
+      final g = await KoreaGeo.load();
+      await g.ensureSigungu();
+    });
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: RegionRankingScreen(regionKey: '35011', regionName: '전주시 완산구'),
+      ),
+    );
+    await tester.runAsync(() async {});
+    await tester.pumpAndSettle();
+
+    final mapH0 = tester.getSize(find.byType(RegionSpotMap)).height;
+
+    // 아래로 드래그 → 지도 커지고 목록 줄어듦.
+    await tester.drag(find.byType(DragToResizeHandle), const Offset(0, 120));
+    await tester.pumpAndSettle();
+    expect(tester.getSize(find.byType(RegionSpotMap)).height,
+        greaterThan(mapH0 + 80));
+
+    // 위로 크게 드래그 → 최소 클램프(화면의 24%)까지만.
+    await tester.drag(find.byType(DragToResizeHandle), const Offset(0, -600));
+    await tester.pumpAndSettle();
+    expect(tester.getSize(find.byType(RegionSpotMap)).height,
+        moreOrLessEquals(800 * 0.24, epsilon: 14));
+  });
+
+  testWidgets('벡터 지도: 즐겨찾기 패널 손잡이로 높이 조절', (tester) async {
+    tester.view.physicalSize = const Size(390, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    addTearDown(Favorites.instance.resetToSeed);
+
+    await pumpMapScreen(tester);
+    await tester.tap(find.text('즐겨찾기'));
+    await tester.pumpAndSettle();
+
+    final handle = find.byType(DragToResizeHandle);
+    final topBefore = tester.getRect(handle).top;
+
+    // 손잡이를 위로 → 패널이 커지며 손잡이가 올라간다.
+    await tester.drag(handle, const Offset(0, -150));
+    await tester.pumpAndSettle();
+    expect(tester.getRect(handle).top, lessThan(topBefore - 100));
   });
 
   testWidgets('RegionSpotMap: selecting a spot flies the camera to it',

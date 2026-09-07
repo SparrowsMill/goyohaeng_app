@@ -18,6 +18,7 @@ import '../../theme/app_shadows.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
 import '../../widgets/app_bottom_nav_bar.dart';
+import '../../widgets/drag_to_resize_handle.dart';
 import '../../widgets/favorites_list.dart';
 import '../../widgets/gap_index_info_dialog.dart';
 import '../../widgets/my_location_button.dart';
@@ -56,6 +57,12 @@ class _MapScreenState extends State<MapScreen> {
   /// re-centres the map.
   LatLng? _favFocusPoint;
   int _favFocusTick = 0;
+
+  /// Height of the 즐겨찾기 panel as a fraction of the body — the user drags its
+  /// grip to resize it. [_favPanelResizing] drops the slide animation so the
+  /// drag tracks the finger 1:1.
+  double _favPanelFraction = 0.52;
+  bool _favPanelResizing = false;
 
   void _focusFavorite(MockTouristSpot spot) {
     if (spot.lat == null || spot.lng == null) return;
@@ -97,7 +104,8 @@ class _MapScreenState extends State<MapScreen> {
   Widget _buildVectorBody(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final panelHeight = constraints.maxHeight * 0.52;
+        final bodyHeight = constraints.maxHeight;
+        final panelHeight = bodyHeight * _favPanelFraction;
         return ValueListenableBuilder<bool>(
           valueListenable: _favorites,
           builder: (context, favoritesOpen, _) => Stack(
@@ -131,13 +139,22 @@ class _MapScreenState extends State<MapScreen> {
                 ),
               ),
               AnimatedPositioned(
-                duration: AppMotion.standard,
+                duration:
+                    _favPanelResizing ? Duration.zero : AppMotion.standard,
                 curve: AppMotion.curve,
                 left: 0,
                 right: 0,
                 height: panelHeight,
                 bottom: favoritesOpen ? 0 : -panelHeight,
                 child: _FavoritesPanel(
+                  onResizeStart: () =>
+                      setState(() => _favPanelResizing = true),
+                  onResize: (dy) => setState(() {
+                    _favPanelFraction =
+                        (_favPanelFraction - dy / bodyHeight).clamp(0.30, 0.80);
+                  }),
+                  onResizeEnd: () =>
+                      setState(() => _favPanelResizing = false),
                   onFocusSpot: _focusFavorite,
                   onOpenDetail: (spot) => Navigator.of(context).push(
                     MaterialPageRoute(
@@ -190,13 +207,20 @@ class _MapChrome extends StatelessWidget {
 }
 
 /// The favorites list as a floating panel laid over the map's lower half —
-/// rounded top, top shadow, so it reads as sitting *on* the map.
+/// rounded top, top shadow, so it reads as sitting *on* the map. Its grip is
+/// draggable to resize the panel (parent owns the height).
 class _FavoritesPanel extends StatelessWidget {
   const _FavoritesPanel({
+    required this.onResizeStart,
+    required this.onResize,
+    required this.onResizeEnd,
     required this.onFocusSpot,
     required this.onOpenDetail,
   });
 
+  final VoidCallback onResizeStart;
+  final ValueChanged<double> onResize;
+  final VoidCallback onResizeEnd;
   final ValueChanged<MockTouristSpot> onFocusSpot;
   final ValueChanged<MockTouristSpot> onOpenDetail;
 
@@ -212,16 +236,12 @@ class _FavoritesPanel extends StatelessWidget {
       ),
       child: Column(
         children: [
-          const SizedBox(height: AppSpacing.sm),
-          Container(
-            width: 36,
-            height: 4,
-            decoration: BoxDecoration(
-              color: AppColors.border,
-              borderRadius: BorderRadius.circular(AppRadius.pill),
-            ),
+          DragToResizeHandle(
+            bordered: false,
+            onDragStart: onResizeStart,
+            onDrag: onResize,
+            onDragEnd: onResizeEnd,
           ),
-          const SizedBox(height: AppSpacing.sm),
           Expanded(
             child: FavoritesList(
               onFocusSpot: onFocusSpot,
