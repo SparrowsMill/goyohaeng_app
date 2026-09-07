@@ -12,6 +12,7 @@ import '../../data/user_location.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_motion.dart';
 import '../../theme/app_radius.dart';
+import '../../theme/app_shadows.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
 import '../../widgets/app_bottom_nav_bar.dart';
@@ -41,8 +42,8 @@ class MapScreen extends StatefulWidget {
 }
 
 class _MapScreenState extends State<MapScreen> {
-  /// "즐겨찾기" — splits the screen: vector map on top (still fully
-  /// interactive, star pins on), favorites list on the bottom.
+  /// "즐겨찾기" — slides a favorites list up *over* the bottom of the map.
+  /// The map keeps its full size and position; only star pins toggle on.
   bool _favoritesOpen = false;
 
   @override
@@ -72,7 +73,8 @@ class _MapScreenState extends State<MapScreen> {
 
   /// Nationwide → 시도 → 시군구 → 구 vector drill-down. The chrome (검색 바 +
   /// 갭지수 범례/설명) is a fixed header; the map fills the rest. Toggling
-  /// "즐겨찾기" splits the map and a favorites list, both live at once.
+  /// "즐겨찾기" slides a favorites list up over the map's lower half — the map
+  /// itself never resizes or moves.
   Widget _buildVectorBody(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -106,28 +108,78 @@ class _MapScreenState extends State<MapScreen> {
           ),
         ),
         Expanded(
-          child: _KoreaMap(
-            favoritesActive: _favoritesOpen,
-            onToggleFavorites: () =>
-                setState(() => _favoritesOpen = !_favoritesOpen),
-            onEnterRegion: (code, name) => Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => RegionRankingScreen(
-                  regionKey: code,
-                  regionName: name,
-                ),
-              ),
-            ),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final panelHeight = constraints.maxHeight * 0.52;
+              return Stack(
+                children: [
+                  Positioned.fill(
+                    child: _KoreaMap(
+                      favoritesActive: _favoritesOpen,
+                      onToggleFavorites: () =>
+                          setState(() => _favoritesOpen = !_favoritesOpen),
+                      // Float the overlay buttons above the panel when it's up.
+                      overlayBottomInset: _favoritesOpen ? panelHeight : 0,
+                      onEnterRegion: (code, name) =>
+                          Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => RegionRankingScreen(
+                            regionKey: code,
+                            regionName: name,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  AnimatedPositioned(
+                    duration: AppMotion.standard,
+                    curve: AppMotion.curve,
+                    left: 0,
+                    right: 0,
+                    height: panelHeight,
+                    bottom: _favoritesOpen ? 0 : -panelHeight,
+                    child: const _FavoritesPanel(),
+                  ),
+                ],
+              );
+            },
           ),
         ),
-        if (_favoritesOpen) ...[
-          const Divider(height: 1, color: AppColors.border),
-          SizedBox(
-            height: MediaQuery.sizeOf(context).height * 0.4,
-            child: const FavoritesList(),
-          ),
-        ],
       ],
+    );
+  }
+}
+
+/// The favorites list as a floating panel laid over the map's lower half —
+/// rounded top, top shadow, so it reads as sitting *on* the map.
+class _FavoritesPanel extends StatelessWidget {
+  const _FavoritesPanel();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      decoration: const BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.card)),
+        border: Border(top: BorderSide(color: AppColors.border)),
+        boxShadow: AppShadows.modalOrBottomSheet,
+      ),
+      child: Column(
+        children: [
+          const SizedBox(height: AppSpacing.sm),
+          Container(
+            width: 36,
+            height: 4,
+            decoration: BoxDecoration(
+              color: AppColors.border,
+              borderRadius: BorderRadius.circular(AppRadius.pill),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          const Expanded(child: FavoritesList()),
+        ],
+      ),
     );
   }
 }
@@ -254,6 +306,7 @@ class _KoreaMap extends StatefulWidget {
     required this.onEnterRegion,
     required this.favoritesActive,
     required this.onToggleFavorites,
+    this.overlayBottomInset = 0,
   });
 
   /// Called with a 시군구/구 code + name when the user taps a leaf region
@@ -265,6 +318,10 @@ class _KoreaMap extends StatefulWidget {
   /// split favorites list stays in sync with it.
   final bool favoritesActive;
   final VoidCallback onToggleFavorites;
+
+  /// Lifts the bottom-corner overlay buttons this many px, so the favorites
+  /// panel sliding up over the map doesn't cover them.
+  final double overlayBottomInset;
 
   @override
   State<_KoreaMap> createState() => _KoreaMapState();
@@ -699,9 +756,11 @@ class _KoreaMapState extends State<_KoreaMap>
                           ),
                         ),
                       ),
-                      Positioned(
+                      AnimatedPositioned(
+                        duration: AppMotion.standard,
+                        curve: AppMotion.curve,
                         left: AppSpacing.sm,
-                        bottom: AppSpacing.sm,
+                        bottom: AppSpacing.sm + widget.overlayBottomInset,
                         child: MapToggleButton(
                           icon: Symbols.star_rounded,
                           label: '즐겨찾기',
@@ -709,9 +768,11 @@ class _KoreaMapState extends State<_KoreaMap>
                           onTap: widget.onToggleFavorites,
                         ),
                       ),
-                      Positioned(
+                      AnimatedPositioned(
+                        duration: AppMotion.standard,
+                        curve: AppMotion.curve,
                         right: AppSpacing.sm,
-                        bottom: AppSpacing.sm,
+                        bottom: AppSpacing.sm + widget.overlayBottomInset,
                         child: _ResetViewButton(
                           scale: _scale,
                           focusedSido: _focusedSido,

@@ -13,7 +13,6 @@ import 'package:goyohaeng_app/screens/place/place_info_screen.dart';
 import 'package:goyohaeng_app/screens/ranking/region_ranking_screen.dart';
 import 'package:goyohaeng_app/theme/app_theme.dart';
 import 'package:goyohaeng_app/widgets/favorite_star_button.dart';
-import 'package:goyohaeng_app/widgets/favorites_list.dart';
 import 'package:goyohaeng_app/widgets/my_location_button.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:material_symbols_icons/symbols.dart';
@@ -615,7 +614,7 @@ void main() {
       expect(starInMap, findsWidgets); // 이제 별 핀
     });
 
-    testWidgets('벡터 지도: 즐겨찾기 = 지도+목록 분할, 지도도 계속 살아있음', (tester) async {
+    testWidgets('벡터 지도: 즐겨찾기 목록이 맵 위에 얹힘 — 맵은 그대로', (tester) async {
       tester.view.physicalSize = const Size(390, 900);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
@@ -624,17 +623,19 @@ void main() {
 
       MapToggleButton btn() =>
           tester.widget(find.widgetWithText(MapToggleButton, '즐겨찾기'));
+      final mapBefore = tester.getRect(find.byType(InteractiveViewer));
+      final header = find.text('즐겨찾기 3곳');
+
       expect(btn().active, isFalse);
-      expect(find.byType(FavoritesList), findsNothing);
+      expect(header.hitTestable(), findsNothing); // panel is slid away
 
       await tester.tap(find.text('즐겨찾기'));
       await tester.pumpAndSettle();
 
-      // Split: the map is still there AND the list showed up.
+      // The map box is byte-for-byte unchanged — no resize, no move.
+      expect(tester.getRect(find.byType(InteractiveViewer)), mapBefore);
       expect(btn().active, isTrue);
-      expect(find.byType(InteractiveViewer), findsOneWidget); // map alive
-      expect(find.byType(FavoritesList), findsOneWidget);
-      expect(find.text('즐겨찾기 3곳'), findsOneWidget);
+      expect(header.hitTestable(), findsOneWidget); // panel up, on screen
       expect(find.text('담양 죽녹원'), findsOneWidget);
 
       // The row keeps a star → unfavorite in place.
@@ -645,11 +646,12 @@ void main() {
       expect(Favorites.instance.contains('담양 죽녹원'), isFalse);
       expect(find.text('즐겨찾기 2곳'), findsOneWidget);
 
-      // Toggle off → list gone.
+      // Toggle off → panel slides away again, map still unchanged.
       await tester.tap(find.text('즐겨찾기'));
       await tester.pumpAndSettle();
       expect(btn().active, isFalse);
-      expect(find.byType(FavoritesList), findsNothing);
+      expect(find.text('즐겨찾기 2곳').hitTestable(), findsNothing);
+      expect(tester.getRect(find.byType(InteractiveViewer)), mapBefore);
     });
 
     testWidgets('즐겨찾기 목록에서 항목 탭 → <장소 정보>', (tester) async {
