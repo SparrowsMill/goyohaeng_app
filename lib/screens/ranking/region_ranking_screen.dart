@@ -241,7 +241,7 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
       ),
       children: [
         for (var i = 0; i < spots.length; i++) ...[
-          if (i != 0) const SizedBox(height: AppSpacing.sm),
+          if (i != 0) const SizedBox(height: AppSpacing.xs),
           _RankingCard(
             key: spots[i] == _selected ? _selectedCardKey : null,
             rank: i + 1,
@@ -406,7 +406,7 @@ class _RankingCard extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(
             horizontal: AppSpacing.lg,
-            vertical: AppSpacing.md,
+            vertical: AppSpacing.sm,
           ),
           decoration: BoxDecoration(
             border: Border.all(
@@ -425,11 +425,11 @@ class _RankingCard extends StatelessWidget {
                   const SizedBox(width: AppSpacing.sm),
                   Expanded(
                     child: Padding(
-                      padding: const EdgeInsets.only(top: 3),
+                      padding: const EdgeInsets.only(top: 2),
                       child: Text(
                         spot.name,
-                        style: AppTextStyles.bodyLarge
-                            .copyWith(fontWeight: FontWeight.w600),
+                        style: AppTextStyles.bodyMedium
+                            .copyWith(fontWeight: FontWeight.w700),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -459,11 +459,11 @@ class _RankingCard extends StatelessWidget {
                   ),
                 ],
               ),
-              const SizedBox(height: AppSpacing.sm),
+              const SizedBox(height: AppSpacing.xs),
               // Category · ingredient · visit-verify · business status, all
               // on one line; scrolls sideways rather than wrapping.
               Padding(
-                padding: const EdgeInsets.only(left: 32 + AppSpacing.sm),
+                padding: const EdgeInsets.only(left: 26 + AppSpacing.sm),
                 child: SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
                   physics: const ClampingScrollPhysics(),
@@ -493,7 +493,7 @@ class _RankingCard extends StatelessWidget {
                 ),
               ),
               if (selected) ...[
-                const SizedBox(height: AppSpacing.sm),
+                const SizedBox(height: AppSpacing.xs),
                 _DetailButton(
                   onTap: onDetail,
                   color: accent,
@@ -532,7 +532,7 @@ class _DetailButton extends StatelessWidget {
           borderRadius: BorderRadius.circular(AppRadius.smallButton),
           onTap: onTap,
           child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 10),
+            padding: const EdgeInsets.symmetric(vertical: 8),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -578,11 +578,14 @@ class _RankBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     if (rank > 3) {
       return SizedBox(
-        width: 32,
+        width: 26,
         child: Center(
           child: Text(
             '$rank',
-            style: AppTextStyles.title.copyWith(color: AppColors.textSecondary),
+            style: AppTextStyles.bodyLarge.copyWith(
+              color: AppColors.textSecondary,
+              fontWeight: FontWeight.w700,
+            ),
           ),
         ),
       );
@@ -591,11 +594,11 @@ class _RankBadge extends StatelessWidget {
     final color = _medalColors[rank]!;
     return Image.asset(
       _medalAsset[rank]!,
-      width: 32,
-      height: 32,
+      width: 26,
+      height: 26,
       errorBuilder: (context, error, stackTrace) => Container(
-        width: 32,
-        height: 32,
+        width: 26,
+        height: 26,
         decoration: BoxDecoration(color: color, shape: BoxShape.circle),
         alignment: Alignment.center,
         child: Text(
@@ -623,7 +626,7 @@ class _GapValue extends StatelessWidget {
       children: [
         Container(
           width: 3,
-          height: 12,
+          height: 11,
           decoration: BoxDecoration(
             color: gapIndexColor(gapIndex),
             borderRadius: BorderRadius.circular(2),
@@ -648,7 +651,7 @@ class _Tag extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 22,
+      height: 20,
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
       decoration: BoxDecoration(
         border: Border.all(color: AppColors.border),
@@ -701,7 +704,7 @@ class _StatusChip extends StatelessWidget {
       _ChipTone.negative => (AppColors.errorBackground, AppColors.error),
     };
     return Container(
-      height: 22,
+      height: 20,
       alignment: Alignment.center,
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
       decoration: BoxDecoration(
