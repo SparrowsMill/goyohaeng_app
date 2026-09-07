@@ -282,9 +282,9 @@ class _FilterBar extends StatelessWidget {
       ),
       padding: const EdgeInsets.fromLTRB(
         AppSpacing.xl,
-        AppSpacing.md,
+        AppSpacing.sm,
         AppSpacing.xl,
-        AppSpacing.md,
+        AppSpacing.sm,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -340,12 +340,12 @@ class _PillDropdown<T> extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 44,
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+      height: 36,
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
       decoration: BoxDecoration(
         color: AppColors.surface,
         border: Border.all(color: AppColors.border),
-        borderRadius: BorderRadius.circular(AppRadius.inputField),
+        borderRadius: BorderRadius.circular(AppRadius.smallButton),
       ),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<T>(
@@ -353,8 +353,8 @@ class _PillDropdown<T> extends StatelessWidget {
           isExpanded: true,
           isDense: true,
           borderRadius: BorderRadius.circular(AppRadius.secondaryButton),
-          icon: const Icon(Symbols.keyboard_arrow_down_rounded, size: 20),
-          style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.w600),
+          icon: const Icon(Symbols.keyboard_arrow_down_rounded, size: 18),
+          style: AppTextStyles.bodySmall.copyWith(fontWeight: FontWeight.w600),
           dropdownColor: AppColors.surface,
           items: items,
           onChanged: onChanged,
