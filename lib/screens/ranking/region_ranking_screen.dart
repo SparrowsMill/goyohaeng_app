@@ -403,10 +403,25 @@ class _RankingCard extends StatelessWidget {
   final VoidCallback onDetail;
   final bool selected;
 
+  /// The spot's map-pin colour (갭지수 scale), lightness-clamped so the pale
+  /// mid of the scale still reads as an accent on a border / filled button.
+  Color get _accent {
+    final hsl = HSLColor.fromColor(gapIndexColor(spot.gapIndex));
+    return hsl.withLightness(hsl.lightness.clamp(0.34, 0.56)).toColor();
+  }
+
   @override
   Widget build(BuildContext context) {
+    final accent = _accent;
+    final onAccent =
+        ThemeData.estimateBrightnessForColor(accent) == Brightness.dark
+            ? AppColors.textOnPrimaryButton
+            : AppColors.textPrimary;
+
     return Material(
-      color: selected ? AppColors.surfaceSelected : AppColors.surface,
+      color: selected
+          ? Color.alphaBlend(accent.withValues(alpha: 0.09), AppColors.surface)
+          : AppColors.surface,
       borderRadius: BorderRadius.circular(AppRadius.card),
       child: InkWell(
         borderRadius: BorderRadius.circular(AppRadius.card),
@@ -415,7 +430,7 @@ class _RankingCard extends StatelessWidget {
           padding: const EdgeInsets.all(AppSpacing.lg),
           decoration: BoxDecoration(
             border: Border.all(
-              color: selected ? AppColors.primary : AppColors.border,
+              color: selected ? accent : AppColors.border,
               width: selected ? 2 : 1,
             ),
             borderRadius: BorderRadius.circular(AppRadius.card),
@@ -457,9 +472,7 @@ class _RankingCard extends StatelessWidget {
                           ? Symbols.location_on_rounded
                           : Symbols.chevron_right_rounded,
                       size: 20,
-                      color: selected
-                          ? AppColors.primary
-                          : AppColors.iconInactive,
+                      color: selected ? accent : AppColors.iconInactive,
                       fill: selected ? 1 : 0,
                     ),
                   ),
@@ -500,7 +513,11 @@ class _RankingCard extends StatelessWidget {
               ),
               if (selected) ...[
                 const SizedBox(height: AppSpacing.md),
-                _DetailButton(onTap: onDetail),
+                _DetailButton(
+                  onTap: onDetail,
+                  color: accent,
+                  foreground: onAccent,
+                ),
               ],
             ],
           ),
@@ -511,37 +528,43 @@ class _RankingCard extends StatelessWidget {
 }
 
 /// "자세히 보기" — appears on the selected ranking card, opens `<장소 정보>`.
+/// Filled with the spot's map-pin colour so the card reads as "this pin".
 class _DetailButton extends StatelessWidget {
-  const _DetailButton({required this.onTap});
+  const _DetailButton({
+    required this.onTap,
+    required this.color,
+    required this.foreground,
+  });
 
   final VoidCallback onTap;
+  final Color color;
+  final Color foreground;
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
       width: double.infinity,
       child: Material(
-        color: AppColors.primary,
+        color: color,
         borderRadius: BorderRadius.circular(AppRadius.smallButton),
         child: InkWell(
           borderRadius: BorderRadius.circular(AppRadius.smallButton),
           onTap: onTap,
-          child: const Padding(
-            padding: EdgeInsets.symmetric(vertical: 10),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 10),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Text(
                   '자세히 보기',
                   style: TextStyle(
-                    color: AppColors.textOnPrimaryButton,
+                    color: foreground,
                     fontWeight: FontWeight.w600,
                     fontSize: 14,
                   ),
                 ),
-                SizedBox(width: 4),
-                Icon(Symbols.arrow_forward_rounded,
-                    size: 18, color: AppColors.textOnPrimaryButton),
+                const SizedBox(width: 4),
+                Icon(Symbols.arrow_forward_rounded, size: 18, color: foreground),
               ],
             ),
           ),

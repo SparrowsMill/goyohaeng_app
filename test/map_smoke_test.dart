@@ -203,6 +203,22 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('자세히 보기'), findsOneWidget); // button appeared
 
+    // 강조 색은 그 스팟 갭지수(핀) 색 계열 — "자세히 보기" 버튼도 그 색.
+    final spot =
+        rankingForRegion('35011').firstWhere((s) => s.name == '전주 경기전');
+    final hsl = HSLColor.fromColor(gapIndexColor(spot.gapIndex));
+    final accent =
+        hsl.withLightness(hsl.lightness.clamp(0.34, 0.56)).toColor();
+    final btn = tester.widget<Material>(
+      find
+          .ancestor(
+            of: find.text('자세히 보기'),
+            matching: find.byType(Material),
+          )
+          .first,
+    );
+    expect(btn.color, accent);
+
     await tester.tap(find.text('자세히 보기'));
     await tester.pumpAndSettle();
     expect(find.byType(PlaceInfoScreen), findsOneWidget);
