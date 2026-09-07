@@ -3,7 +3,7 @@ import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:material_symbols_icons/symbols.dart';
 
 import '../../data/favorites.dart';
-import '../../data/mock_map_regions.dart' show gapIndexColor;
+import '../../data/mock_map_regions.dart' show gapIndexAccent;
 import '../../data/mock_region_ranking.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_radius.dart';
@@ -393,16 +393,11 @@ class _RankingCard extends StatelessWidget {
   final VoidCallback onDetail;
   final bool selected;
 
-  /// The spot's map-pin colour (갭지수 scale), lightness-clamped so the pale
-  /// mid of the scale still reads as an accent on a border / filled button.
-  Color get _accent {
-    final hsl = HSLColor.fromColor(gapIndexColor(spot.gapIndex));
-    return hsl.withLightness(hsl.lightness.clamp(0.34, 0.56)).toColor();
-  }
-
   @override
   Widget build(BuildContext context) {
-    final accent = _accent;
+    // The spot's map-pin colour (갭지수 scale) — used for the row's pin, the
+    // emphasised 갭지수 text, and (when selected) the border / 자세히 보기 button.
+    final accent = gapIndexAccent(spot.gapIndex);
     final onAccent =
         ThemeData.estimateBrightnessForColor(accent) == Brightness.dark
             ? AppColors.textOnPrimaryButton
@@ -455,20 +450,8 @@ class _RankingCard extends StatelessWidget {
                   ),
                   const SizedBox(width: AppSpacing.xs),
                   Padding(
-                    padding: const EdgeInsets.only(top: 3),
-                    child: _GapValue(gapIndex: spot.gapIndex),
-                  ),
-                  const SizedBox(width: AppSpacing.xs),
-                  Padding(
-                    padding: const EdgeInsets.only(top: 1),
-                    child: Icon(
-                      selected
-                          ? Symbols.location_on_rounded
-                          : Symbols.chevron_right_rounded,
-                      size: 20,
-                      color: selected ? accent : AppColors.iconInactive,
-                      fill: selected ? 1 : 0,
-                    ),
+                    padding: const EdgeInsets.only(top: 2),
+                    child: _GapValue(gapIndex: spot.gapIndex, accent: accent),
                   ),
                 ],
               ),
@@ -626,29 +609,27 @@ class _RankBadge extends StatelessWidget {
   }
 }
 
-/// The 갭지수 value with its scale-colored tick, shown at the card's top-right.
+/// The 갭지수, emphasised with the scale colour: a filled pin + a bold coloured
+/// number, shown at the card's top-right.
 class _GapValue extends StatelessWidget {
-  const _GapValue({required this.gapIndex});
+  const _GapValue({required this.gapIndex, required this.accent});
 
   final int gapIndex;
+  final Color accent;
 
   @override
   Widget build(BuildContext context) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Container(
-          width: 3,
-          height: 11,
-          decoration: BoxDecoration(
-            color: gapIndexColor(gapIndex),
-            borderRadius: BorderRadius.circular(2),
-          ),
-        ),
-        const SizedBox(width: AppSpacing.xs),
+        Icon(Symbols.location_on_rounded, size: 18, fill: 1, color: accent),
+        const SizedBox(width: 2),
         Text(
           '갭지수 $gapIndex',
-          style: AppTextStyles.bodySmall.copyWith(fontWeight: FontWeight.w700),
+          style: AppTextStyles.bodyMedium.copyWith(
+            color: accent,
+            fontWeight: FontWeight.w700,
+          ),
         ),
       ],
     );

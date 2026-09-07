@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
 import '../data/favorites.dart';
-import '../data/mock_map_regions.dart' show gapIndexColor;
+import '../data/mock_map_regions.dart' show gapIndexAccent;
 import '../data/mock_region_ranking.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_radius.dart';
@@ -219,6 +219,7 @@ class _FavoriteRow extends StatelessWidget {
   Widget build(BuildContext context) {
     // "전라남도 담양군" — first two address tokens are the 시도 + 시군구.
     final region = spot.address.split(' ').take(2).join(' ');
+    final accent = gapIndexAccent(spot.gapIndex);
     return Material(
       color: selected ? AppColors.surfaceSelected : AppColors.surface,
       child: InkWell(
@@ -233,15 +234,9 @@ class _FavoriteRow extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  Container(
-                    width: 3,
-                    height: 34,
-                    decoration: BoxDecoration(
-                      color: gapIndexColor(spot.gapIndex),
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                  const SizedBox(width: AppSpacing.md),
+                  Icon(Symbols.location_on_rounded,
+                      size: 22, fill: 1, color: accent),
+                  const SizedBox(width: AppSpacing.sm),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -255,12 +250,20 @@ class _FavoriteRow extends StatelessWidget {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          '$region · ${spot.category.label} · 갭지수 ${spot.gapIndex}',
+                          '$region · ${spot.category.label}',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: AppTextStyles.caption,
                         ),
                       ],
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.sm),
+                  Text(
+                    '갭지수 ${spot.gapIndex}',
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      color: accent,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
                   const SizedBox(width: AppSpacing.sm),

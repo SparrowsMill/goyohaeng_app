@@ -111,6 +111,14 @@ Color gapIndexColor(num gapIndex) {
       : Color.lerp(_gapMid, _gapHigh, (t - 0.5) * 2)!;
 }
 
+/// [gapIndexColor] with its lightness clamped into a legible band — for using
+/// the gap colour as *text* or a small *icon* on the light card surfaces, where
+/// the raw pale middle of the scale would wash out. Same hue, just deep enough.
+Color gapIndexAccent(num gapIndex) {
+  final hsl = HSLColor.fromColor(gapIndexColor(gapIndex));
+  return hsl.withLightness(hsl.lightness.clamp(0.34, 0.56)).toColor();
+}
+
 /// The full low→high gradient, for the legend bar.
 const gapIndexGradient = LinearGradient(
   colors: [_gapLow, _gapMid, _gapHigh],
