@@ -18,12 +18,18 @@ class Favorites extends ChangeNotifier {
   // Seeded so the feature has something to show on first run.
   final Set<String> _names = {..._seedFavorites};
 
+  /// Whether the "즐겨찾기" map overlay (star pins) is toggled on. Shared across
+  /// the whole 지도 flow so it survives the 도/시/군/구 벡터 지도 ↔ 실제 타일 지도
+  /// 전환: turn it on at any stage and it stays on when you drill in or step back.
+  final ValueNotifier<bool> mapOverlayActive = ValueNotifier<bool>(false);
+
   /// Restore the seeded set — for test isolation only.
   @visibleForTesting
   void resetToSeed() {
     _names
       ..clear()
       ..addAll(_seedFavorites);
+    mapOverlayActive.value = false;
     notifyListeners();
   }
 

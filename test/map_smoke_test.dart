@@ -675,6 +675,59 @@ void main() {
       expect(find.byType(PlaceInfoScreen), findsOneWidget);
     });
 
+    testWidgets('즐겨찾기 토글이 벡터 지도 ↔ 실제 지도 전환에도 유지된다', (tester) async {
+      tester.view.physicalSize = const Size(390, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+
+      await tester.runAsync(() async {
+        final g = await KoreaGeo.load();
+        await g.ensureSigungu();
+      });
+
+      // 벡터 지도에서 즐겨찾기 ON — 상태는 공유 노티파이어에 있다.
+      await pumpMapScreen(tester);
+      await tester.tap(find.text('즐겨찾기'));
+      await tester.pumpAndSettle();
+      expect(Favorites.instance.mapOverlayActive.value, isTrue);
+      expect(find.text('즐겨찾기 3곳').hitTestable(), findsOneWidget); // 목록 올라옴
+
+      // 실제 타일 지도로 전환 (드릴다운 결과와 동일하게 <지역별 랭킹>을 push).
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: RegionRankingScreen(regionKey: '36310', regionName: '담양군'),
+        ),
+      );
+      await tester.runAsync(() async {});
+      await tester.pumpAndSettle();
+
+      // 전환됐어도 토글은 켜진 채 — 실제 지도에 별 핀이 뜬다.
+      final toggleInSpotMap = tester.widget<MapToggleButton>(find.descendant(
+        of: find.byType(RegionSpotMap),
+        matching: find.byType(MapToggleButton),
+      ));
+      expect(toggleInSpotMap.active, isTrue);
+      expect(
+        find.descendant(
+          of: find.byType(FlutterMap),
+          matching: find.byIcon(Symbols.star_rounded),
+        ),
+        findsWidgets,
+      );
+
+      // 실제 지도에서 OFF.
+      await tester.tap(find.text('즐겨찾기'));
+      await tester.pumpAndSettle();
+      expect(Favorites.instance.mapOverlayActive.value, isFalse);
+
+      // 다시 벡터 지도로 돌아오면 OFF 상태를 이어받는다.
+      await pumpMapScreen(tester);
+      final toggleInVector = tester.widget<MapToggleButton>(
+          find.widgetWithText(MapToggleButton, '즐겨찾기'));
+      expect(toggleInVector.active, isFalse);
+      expect(find.text('즐겨찾기 3곳').hitTestable(), findsNothing);
+    });
+
     testWidgets('즐겨찾기 목록: 시/군/구로 필터링', (tester) async {
       tester.view.physicalSize = const Size(390, 800);
       tester.view.devicePixelRatio = 1;

@@ -42,9 +42,11 @@ class MapScreen extends StatefulWidget {
 }
 
 class _MapScreenState extends State<MapScreen> {
-  /// "즐겨찾기" — slides a favorites list up *over* the bottom of the map.
-  /// The map keeps its full size and position; only star pins toggle on.
-  bool _favoritesOpen = false;
+  /// "즐겨찾기" — slides a favorites list up *over* the bottom of the map and
+  /// toggles the star pins on. The map keeps its full size and position. State
+  /// lives in [Favorites.mapOverlayActive] so it carries across the vector ↔
+  /// real-map 전환 (drilling into a region and stepping back).
+  ValueNotifier<bool> get _favorites => Favorites.instance.mapOverlayActive;
 
   @override
   Widget build(BuildContext context) {
@@ -79,45 +81,47 @@ class _MapScreenState extends State<MapScreen> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final panelHeight = constraints.maxHeight * 0.52;
-        return Stack(
-          children: [
-            Positioned.fill(
-              child: _KoreaMap(
-                favoritesActive: _favoritesOpen,
-                onToggleFavorites: () =>
-                    setState(() => _favoritesOpen = !_favoritesOpen),
-                overlayBottomInset: _favoritesOpen ? panelHeight : 0,
-                topInset: kMapChromeInset,
-                onEnterRegion: (code, name) => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => RegionRankingScreen(
-                      regionKey: code,
-                      regionName: name,
+        return ValueListenableBuilder<bool>(
+          valueListenable: _favorites,
+          builder: (context, favoritesOpen, _) => Stack(
+            children: [
+              Positioned.fill(
+                child: _KoreaMap(
+                  favoritesActive: favoritesOpen,
+                  onToggleFavorites: () => _favorites.value = !favoritesOpen,
+                  overlayBottomInset: favoritesOpen ? panelHeight : 0,
+                  topInset: kMapChromeInset,
+                  onEnterRegion: (code, name) => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => RegionRankingScreen(
+                        regionKey: code,
+                        regionName: name,
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: _MapChrome(
-                onSearch: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const PlaceSearchScreen()),
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: _MapChrome(
+                  onSearch: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const PlaceSearchScreen()),
+                  ),
                 ),
               ),
-            ),
-            AnimatedPositioned(
-              duration: AppMotion.standard,
-              curve: AppMotion.curve,
-              left: 0,
-              right: 0,
-              height: panelHeight,
-              bottom: _favoritesOpen ? 0 : -panelHeight,
-              child: const _FavoritesPanel(),
-            ),
-          ],
+              AnimatedPositioned(
+                duration: AppMotion.standard,
+                curve: AppMotion.curve,
+                left: 0,
+                right: 0,
+                height: panelHeight,
+                bottom: favoritesOpen ? 0 : -panelHeight,
+                child: const _FavoritesPanel(),
+              ),
+            ],
+          ),
         );
       },
     );

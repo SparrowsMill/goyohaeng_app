@@ -48,13 +48,17 @@ class _RegionSpotMapState extends State<RegionSpotMap> {
   bool _ready = false;
 
   /// "즐겨찾기" toggle — this region's favorited spots become amber star pins
-  /// (in place, no camera change) and the favorites list slides up.
-  bool _showFavorites = false;
+  /// (in place, no camera change). State lives in [Favorites.mapOverlayActive]
+  /// so it stays in sync with `<지도>`: toggle it on there, drill into a region,
+  /// and it's still on here — and vice-versa.
+  ValueNotifier<bool> get _favorites => Favorites.instance.mapOverlayActive;
+  bool get _showFavorites => _favorites.value;
 
   @override
   void initState() {
     super.initState();
     Favorites.instance.addListener(_onChanged);
+    _favorites.addListener(_onChanged);
     UserLocation.position.addListener(_onChanged);
     UserLocation.ensure();
   }
@@ -62,6 +66,7 @@ class _RegionSpotMapState extends State<RegionSpotMap> {
   @override
   void dispose() {
     Favorites.instance.removeListener(_onChanged);
+    _favorites.removeListener(_onChanged);
     UserLocation.position.removeListener(_onChanged);
     super.dispose();
   }
@@ -72,7 +77,7 @@ class _RegionSpotMapState extends State<RegionSpotMap> {
 
   /// This region's ranked list is already on screen below the map, so the
   /// toggle here just flips the favorited spots to amber star pins in place.
-  void _toggleFavorites() => setState(() => _showFavorites = !_showFavorites);
+  void _toggleFavorites() => _favorites.value = !_favorites.value;
 
   List<MockTouristSpot> get _located =>
       widget.spots.where((s) => s.hasLocation).toList();
