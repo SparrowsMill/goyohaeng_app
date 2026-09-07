@@ -68,6 +68,8 @@ class _PlaceSearchScreenState extends State<PlaceSearchScreen> {
         ),
         titleSpacing: AppSpacing.sm,
         centerTitle: true,
+        // Balance the leading back button so the centred bar isn't right-heavy.
+        actions: const [SizedBox(width: 48)],
         title: Container(
           height: 44,
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
