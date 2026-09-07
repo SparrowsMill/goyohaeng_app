@@ -241,7 +241,7 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
       ),
       children: [
         for (var i = 0; i < spots.length; i++) ...[
-          if (i != 0) const SizedBox(height: AppSpacing.md),
+          if (i != 0) const SizedBox(height: AppSpacing.sm),
           _RankingCard(
             key: spots[i] == _selected ? _selectedCardKey : null,
             rank: i + 1,
@@ -404,7 +404,10 @@ class _RankingCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppRadius.card),
         onTap: onTap,
         child: Container(
-          padding: const EdgeInsets.all(AppSpacing.lg),
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.lg,
+            vertical: AppSpacing.md,
+          ),
           decoration: BoxDecoration(
             border: Border.all(
               color: selected ? accent : AppColors.border,
@@ -422,11 +425,12 @@ class _RankingCard extends StatelessWidget {
                   const SizedBox(width: AppSpacing.sm),
                   Expanded(
                     child: Padding(
-                      padding: const EdgeInsets.only(top: 2),
+                      padding: const EdgeInsets.only(top: 3),
                       child: Text(
                         spot.name,
-                        style: AppTextStyles.title,
-                        maxLines: 2,
+                        style: AppTextStyles.bodyLarge
+                            .copyWith(fontWeight: FontWeight.w600),
+                        maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
@@ -455,11 +459,11 @@ class _RankingCard extends StatelessWidget {
                   ),
                 ],
               ),
-              const SizedBox(height: AppSpacing.md),
+              const SizedBox(height: AppSpacing.sm),
               // Category · ingredient · visit-verify · business status, all
               // on one line; scrolls sideways rather than wrapping.
               Padding(
-                padding: const EdgeInsets.only(left: 36 + AppSpacing.sm),
+                padding: const EdgeInsets.only(left: 32 + AppSpacing.sm),
                 child: SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
                   physics: const ClampingScrollPhysics(),
@@ -489,7 +493,7 @@ class _RankingCard extends StatelessWidget {
                 ),
               ),
               if (selected) ...[
-                const SizedBox(height: AppSpacing.md),
+                const SizedBox(height: AppSpacing.sm),
                 _DetailButton(
                   onTap: onDetail,
                   color: accent,
@@ -574,11 +578,11 @@ class _RankBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     if (rank > 3) {
       return SizedBox(
-        width: 36,
+        width: 32,
         child: Center(
           child: Text(
             '$rank',
-            style: AppTextStyles.h3.copyWith(color: AppColors.textSecondary),
+            style: AppTextStyles.title.copyWith(color: AppColors.textSecondary),
           ),
         ),
       );
@@ -587,11 +591,11 @@ class _RankBadge extends StatelessWidget {
     final color = _medalColors[rank]!;
     return Image.asset(
       _medalAsset[rank]!,
-      width: 36,
-      height: 36,
+      width: 32,
+      height: 32,
       errorBuilder: (context, error, stackTrace) => Container(
-        width: 36,
-        height: 36,
+        width: 32,
+        height: 32,
         decoration: BoxDecoration(color: color, shape: BoxShape.circle),
         alignment: Alignment.center,
         child: Text(
@@ -619,7 +623,7 @@ class _GapValue extends StatelessWidget {
       children: [
         Container(
           width: 3,
-          height: 14,
+          height: 12,
           decoration: BoxDecoration(
             color: gapIndexColor(gapIndex),
             borderRadius: BorderRadius.circular(2),
@@ -628,7 +632,7 @@ class _GapValue extends StatelessWidget {
         const SizedBox(width: AppSpacing.xs),
         Text(
           '갭지수 $gapIndex',
-          style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.w700),
+          style: AppTextStyles.bodySmall.copyWith(fontWeight: FontWeight.w700),
         ),
       ],
     );
@@ -644,7 +648,7 @@ class _Tag extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 24,
+      height: 22,
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
       decoration: BoxDecoration(
         border: Border.all(color: AppColors.border),
@@ -697,7 +701,7 @@ class _StatusChip extends StatelessWidget {
       _ChipTone.negative => (AppColors.errorBackground, AppColors.error),
     };
     return Container(
-      height: 24,
+      height: 22,
       alignment: Alignment.center,
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
       decoration: BoxDecoration(

@@ -261,6 +261,11 @@ void main() {
     await tester.drag(find.byType(ListView), const Offset(0, -160));
     await tester.pumpAndSettle();
     expect(tester.getRect(find.text('전체').first), catRect);
+
+    // 카드가 낮아져 리스트 영역에 2개 이상 들어온다.
+    final cards =
+        find.descendant(of: find.byType(ListView), matching: find.byType(InkWell));
+    expect(tester.getSize(cards.first).height, lessThan(96));
   });
 
   testWidgets('RegionSpotMap: selecting a spot flies the camera to it',
