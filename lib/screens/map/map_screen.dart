@@ -1195,12 +1195,17 @@ class _KoreaMapPainter extends CustomPainter {
   /// Scene-space positions of every favorited located spot.
   final ValueListenable<List<Offset>> favPoints;
 
+  /// Scene-space rects of the label cards drawn this frame — a new card that
+  /// would overlap one already placed is skipped (falls back to its bare name).
+  final List<Rect> _labelRects = [];
+
   @override
   void paint(Canvas canvas, Size size) {
     final z = scale.value.clamp(1.0, _kMaxScale);
     final view = viewport.value;
     final focused = focusedSido.value;
     final group = focusedGroup.value;
+    _labelRects.clear();
 
     canvas.drawShadow(
       focused != null && focusOutline != null ? focusOutline! : countryOutline,
@@ -1348,24 +1353,16 @@ class _KoreaMapPainter extends CustomPainter {
 
       if (focused == null) {
         // Province names anchor the country view — always shown (short form);
-        // the 갭지수 subtitle is added only when it actually fits.
-        final sub = '갭지수 ${stats.avgGapIndex} · 스팟 ${stats.spotCount}';
-        final drewFull = _drawLabel(canvas,
-            text: name,
-            center: p,
-            gap: stats.avgGapIndex,
-            fontPx: 13 / z,
-            region: region,
-            subtitle: sub);
-        if (!drewFull) {
-          _drawLabel(canvas,
-              text: name,
-              center: p,
-              gap: stats.avgGapIndex,
-              fontPx: 13 / z,
-              region: region,
-              enforceFit: false);
-        }
+        // the 갭지수·스팟 card is added only when it actually fits.
+        _drawStatLabel(
+          canvas,
+          text: name,
+          center: p,
+          gapIndex: stats.avgGapIndex,
+          spotCount: stats.spotCount,
+          fontPx: 13 / z,
+          region: region,
+        );
       } else {
         // Another 시도 is focused; these are just context — fit or hide.
         _drawLabel(canvas,
@@ -1416,9 +1413,9 @@ class _KoreaMapPainter extends CustomPainter {
     }
   }
 
-  /// A drilled-level label: the region name over a "갭지수 N · 스팟 M" subtitle
-  /// when both fit inside the shape, otherwise just the name (or nothing if even
-  /// that doesn't fit — same progressive-reveal rule as the nationwide view).
+  /// The "갭지수 N · 스팟 M" card when it fits inside the shape and clears the
+  /// labels already placed; otherwise the bare region name (always — it anchors
+  /// the view), and the card shows once you zoom in enough for it to fit.
   void _drawStatLabel(
     Canvas canvas, {
     required String text,
@@ -1428,16 +1425,16 @@ class _KoreaMapPainter extends CustomPainter {
     required double fontPx,
     required Path region,
   }) {
-    final drewFull = _drawLabel(
+    final drewCard = _drawLabel(
       canvas,
       text: text,
       center: center,
       gap: gapIndex,
+      spotCount: spotCount,
       fontPx: fontPx,
       region: region,
-      subtitle: '갭지수 $gapIndex · 스팟 $spotCount',
     );
-    if (!drewFull) {
+    if (!drewCard) {
       _drawLabel(
         canvas,
         text: text,
@@ -1445,6 +1442,7 @@ class _KoreaMapPainter extends CustomPainter {
         gap: gapIndex,
         fontPx: fontPx,
         region: region,
+        enforceFit: false,
       );
     }
   }
@@ -1455,19 +1453,14 @@ class _KoreaMapPainter extends CustomPainter {
       region.contains(box.bottomLeft) &&
       region.contains(box.bottomRight);
 
-  TextPainter _tp(String s, TextStyle style) => TextPainter(
-        text: TextSpan(text: s, style: style),
-        textAlign: TextAlign.center,
-        textDirection: TextDirection.ltr,
-      )..layout();
-
-  /// Draws [text] centred at [center] — but only if the label box fits inside
-  /// [region] at the current scale, so labels appear as you zoom in rather
-  /// than overlapping when a region is too small. Returns whether it drew.
+  /// Draws [text] centred at [center] — but only if the label fits inside
+  /// [region] at the current scale and doesn't collide with a label already
+  /// placed this frame, so labels appear as you zoom in rather than piling up.
+  /// Returns whether it drew.
   ///
-  /// With a [subtitle] ("갭지수 N · 스팟 M") the small line gets its own solid
-  /// chip — surface fill + a gap-coloured frame + soft shadow — so the numbers
-  /// stay readable over any region colour.
+  /// With [spotCount] the whole label is a solid card — surface fill + a
+  /// gap-coloured frame + soft shadow — with the name over a coloured
+  /// "갭지수 N · 스팟 M" line, so the numbers stay readable over any region.
   bool _drawLabel(
     Canvas canvas, {
     required String text,
@@ -1475,92 +1468,112 @@ class _KoreaMapPainter extends CustomPainter {
     required int gap,
     required double fontPx,
     required Path region,
-    String? subtitle,
+    int? spotCount,
     bool enforceFit = true,
   }) {
-    final onDark = ThemeData.estimateBrightnessForColor(gapIndexColor(gap)) ==
-        Brightness.dark;
-    final fg = onDark ? AppColors.surface : AppColors.textPrimary;
-    final halo =
-        (onDark ? Colors.black : AppColors.surface).withValues(alpha: 0.55);
-
-    final nameTp = _tp(
-      text,
-      TextStyle(
-        color: fg,
-        fontSize: fontPx,
-        fontWeight: FontWeight.w700,
-        shadows: [Shadow(color: halo, blurRadius: fontPx * 0.4)],
-      ),
-    );
-
-    if (subtitle == null) {
+    if (spotCount == null) {
+      final onDark =
+          ThemeData.estimateBrightnessForColor(gapIndexColor(gap)) ==
+              Brightness.dark;
+      final fg = onDark ? AppColors.surface : AppColors.textPrimary;
+      final halo =
+          (onDark ? Colors.black : AppColors.surface).withValues(alpha: 0.55);
+      final tp = TextPainter(
+        text: TextSpan(
+          text: text,
+          style: TextStyle(
+            color: fg,
+            fontSize: fontPx,
+            fontWeight: FontWeight.w700,
+            shadows: [Shadow(color: halo, blurRadius: fontPx * 0.4)],
+          ),
+        ),
+        textAlign: TextAlign.center,
+        textDirection: TextDirection.ltr,
+      )..layout();
       final box = Rect.fromCenter(
         center: center,
-        width: nameTp.width * 1.15,
-        height: nameTp.height * 1.3,
+        width: tp.width * 1.1,
+        height: tp.height * 1.2,
       );
       if (enforceFit && !_boxInside(region, box)) return false;
-      nameTp.paint(
-          canvas, center - Offset(nameTp.width / 2, nameTp.height / 2));
+      tp.paint(canvas, center - Offset(tp.width / 2, tp.height / 2));
+      _labelRects.add(box);
       return true;
     }
 
-    final subFont = fontPx * 0.82;
-    final subTp = _tp(
-      subtitle,
-      TextStyle(
-        color: AppColors.textPrimary,
-        fontSize: subFont,
-        fontWeight: FontWeight.w700,
+    final accent = gapIndexAccent(gap);
+    final tp = TextPainter(
+      text: TextSpan(
+        children: [
+          TextSpan(
+            text: text,
+            style: TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: fontPx,
+              fontWeight: FontWeight.w700,
+              height: 1.15,
+            ),
+          ),
+          TextSpan(
+            text: '\n갭지수 $gap',
+            style: TextStyle(
+              color: accent,
+              fontSize: fontPx * 0.86,
+              fontWeight: FontWeight.w700,
+              height: 1.4,
+            ),
+          ),
+          TextSpan(
+            text: '  ·  스팟 $spotCount',
+            style: TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: fontPx * 0.86,
+              fontWeight: FontWeight.w600,
+              height: 1.4,
+            ),
+          ),
+        ],
       ),
-    );
+      textAlign: TextAlign.center,
+      textDirection: TextDirection.ltr,
+    )..layout();
 
-    final padH = subFont * 0.44;
-    final padV = subFont * 0.18;
-    final chipW = subTp.width + padH * 2;
-    final chipH = subTp.height + padV * 2;
-    final gapY = fontPx * 0.12;
-    final totalH = nameTp.height + gapY + chipH;
-
-    final box = Rect.fromCenter(
+    final padH = fontPx * 0.55;
+    final padV = fontPx * 0.4;
+    final cardRect = Rect.fromCenter(
       center: center,
-      width: math.max(nameTp.width, chipW) * 1.12,
-      height: totalH * 1.16,
+      width: tp.width + padH * 2,
+      height: tp.height + padV * 2,
     );
-    if (enforceFit && !_boxInside(region, box)) return false;
 
-    final top = center.dy - totalH / 2;
-    nameTp.paint(canvas, Offset(center.dx - nameTp.width / 2, top));
+    if (enforceFit && !_boxInside(region, cardRect.inflate(fontPx * 0.1))) {
+      return false;
+    }
+    if (_labelRects.any((r) => r.overlaps(cardRect.inflate(fontPx * 0.1)))) {
+      return false;
+    }
 
-    final chipRect = Rect.fromLTWH(
-      center.dx - chipW / 2,
-      top + nameTp.height + gapY,
-      chipW,
-      chipH,
+    final rr = RRect.fromRectAndRadius(
+      cardRect,
+      Radius.circular(fontPx * 0.55),
     );
-    final rr = RRect.fromRectAndRadius(chipRect, Radius.circular(chipH / 2));
     canvas.drawShadow(
       Path()..addRRect(rr),
-      Colors.black.withValues(alpha: 0.35),
-      fontPx * 0.22,
+      Colors.black.withValues(alpha: 0.4),
+      fontPx * 0.25,
       false,
     );
-    canvas.drawRRect(
-      rr,
-      Paint()..color = AppColors.surface.withValues(alpha: 0.96),
-    );
+    canvas.drawRRect(rr, Paint()..color = AppColors.surface);
     canvas.drawRRect(
       rr,
       Paint()
         ..style = PaintingStyle.stroke
-        ..strokeWidth = fontPx * 0.11
-        ..color = gapIndexAccent(gap),
+        ..strokeWidth = fontPx * 0.1
+        ..color = accent,
     );
-    subTp.paint(
-      canvas,
-      Offset(center.dx - subTp.width / 2, chipRect.top + padV),
-    );
+    tp.paint(canvas, cardRect.topLeft + Offset(padH, padV));
+    _labelRects.add(cardRect);
     return true;
   }
 
