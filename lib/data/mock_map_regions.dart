@@ -84,7 +84,7 @@ RegionStats _deterministicStats(String code) {
 /// 0–100) keeps neighbouring regions visibly distinct; values outside just
 /// saturate to the end color.
 ///
-/// The scale runs 붉은 흙빛 ("낮음") → 따뜻한 모래빛 (중간) → 차분한 남청색
+/// The scale runs 붉은 흙빛 ("낮음") → 중립 회색 (중간) → 차분한 남청색
 /// ("높음"), all muted to sit inside the warm storybook palette.
 const gapIndexScaleMin = 20;
 const gapIndexScaleMax = 80;
@@ -92,8 +92,10 @@ const gapIndexScaleMax = 80;
 /// Muted terracotta — 갭지수가 낮은 쪽 (관심 대비 방문이 이미 많음).
 const _gapLow = Color(0xFFB75E4D);
 
-/// Warm sand — the neutral middle of the scale.
-const _gapMid = Color(0xFFE9DFC0);
+/// Neutral warm grey — the middle of the scale. Deliberately near-colourless
+/// (balanced RGB) so it never reads as a third category and the red↔blue lerp
+/// doesn't pass through a muddy green.
+const _gapMid = Color(0xFFC9C5BF);
 
 /// Muted slate blue — 갭지수가 높은 쪽 (숨은 명소).
 const _gapHigh = Color(0xFF4C6B8A);
