@@ -1449,9 +1449,25 @@ class _KoreaMapPainter extends CustomPainter {
     }
   }
 
-  /// Draws [text] centred at [center] — but only if the text box fits inside
+  bool _boxInside(Path region, Rect box) =>
+      region.contains(box.topLeft) &&
+      region.contains(box.topRight) &&
+      region.contains(box.bottomLeft) &&
+      region.contains(box.bottomRight);
+
+  TextPainter _tp(String s, TextStyle style) => TextPainter(
+        text: TextSpan(text: s, style: style),
+        textAlign: TextAlign.center,
+        textDirection: TextDirection.ltr,
+      )..layout();
+
+  /// Draws [text] centred at [center] — but only if the label box fits inside
   /// [region] at the current scale, so labels appear as you zoom in rather
   /// than overlapping when a region is too small. Returns whether it drew.
+  ///
+  /// With a [subtitle] ("갭지수 N · 스팟 M") the small line gets its own solid
+  /// chip — surface fill + a gap-coloured frame + soft shadow — so the numbers
+  /// stay readable over any region colour.
   bool _drawLabel(
     Canvas canvas, {
     required String text,
@@ -1468,53 +1484,82 @@ class _KoreaMapPainter extends CustomPainter {
     final halo =
         (onDark ? Colors.black : AppColors.surface).withValues(alpha: 0.55);
 
-    final builder = TextPainter(
-      textAlign: TextAlign.center,
-      textDirection: TextDirection.ltr,
+    final nameTp = _tp(
+      text,
+      TextStyle(
+        color: fg,
+        fontSize: fontPx,
+        fontWeight: FontWeight.w700,
+        shadows: [Shadow(color: halo, blurRadius: fontPx * 0.4)],
+      ),
     );
-    builder.text = TextSpan(
-      children: [
-        TextSpan(
-          text: text,
-          style: TextStyle(
-            color: fg,
-            fontSize: fontPx,
-            fontWeight: FontWeight.w700,
-            shadows: [Shadow(color: halo, blurRadius: fontPx * 0.4)],
-          ),
-        ),
-        if (subtitle != null)
-          TextSpan(
-            text: '\n$subtitle',
-            style: TextStyle(
-              color: fg,
-              fontSize: fontPx * 0.72,
-              fontWeight: FontWeight.w600,
-              shadows: [Shadow(color: halo, blurRadius: fontPx * 0.4)],
-            ),
-          ),
-      ],
-    );
-    builder.layout();
 
-    // Does a slightly padded text box, centred on the anchor, sit inside the
-    // region polygon? Check the four corners.
-    final box = Rect.fromCenter(
-      center: center,
-      width: builder.width * 1.15,
-      height: builder.height * 1.3,
-    );
-    if (enforceFit) {
-      final fits = region.contains(box.topLeft) &&
-          region.contains(box.topRight) &&
-          region.contains(box.bottomLeft) &&
-          region.contains(box.bottomRight);
-      if (!fits) return false;
+    if (subtitle == null) {
+      final box = Rect.fromCenter(
+        center: center,
+        width: nameTp.width * 1.15,
+        height: nameTp.height * 1.3,
+      );
+      if (enforceFit && !_boxInside(region, box)) return false;
+      nameTp.paint(
+          canvas, center - Offset(nameTp.width / 2, nameTp.height / 2));
+      return true;
     }
 
-    builder.paint(
+    final subFont = fontPx * 0.82;
+    final subTp = _tp(
+      subtitle,
+      TextStyle(
+        color: AppColors.textPrimary,
+        fontSize: subFont,
+        fontWeight: FontWeight.w700,
+      ),
+    );
+
+    final padH = subFont * 0.44;
+    final padV = subFont * 0.18;
+    final chipW = subTp.width + padH * 2;
+    final chipH = subTp.height + padV * 2;
+    final gapY = fontPx * 0.12;
+    final totalH = nameTp.height + gapY + chipH;
+
+    final box = Rect.fromCenter(
+      center: center,
+      width: math.max(nameTp.width, chipW) * 1.12,
+      height: totalH * 1.16,
+    );
+    if (enforceFit && !_boxInside(region, box)) return false;
+
+    final top = center.dy - totalH / 2;
+    nameTp.paint(canvas, Offset(center.dx - nameTp.width / 2, top));
+
+    final chipRect = Rect.fromLTWH(
+      center.dx - chipW / 2,
+      top + nameTp.height + gapY,
+      chipW,
+      chipH,
+    );
+    final rr = RRect.fromRectAndRadius(chipRect, Radius.circular(chipH / 2));
+    canvas.drawShadow(
+      Path()..addRRect(rr),
+      Colors.black.withValues(alpha: 0.35),
+      fontPx * 0.22,
+      false,
+    );
+    canvas.drawRRect(
+      rr,
+      Paint()..color = AppColors.surface.withValues(alpha: 0.96),
+    );
+    canvas.drawRRect(
+      rr,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = fontPx * 0.11
+        ..color = gapIndexAccent(gap),
+    );
+    subTp.paint(
       canvas,
-      center - Offset(builder.width / 2, builder.height / 2),
+      Offset(center.dx - subTp.width / 2, chipRect.top + padV),
     );
     return true;
   }
