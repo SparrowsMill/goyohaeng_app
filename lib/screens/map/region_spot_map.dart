@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:material_symbols_icons/symbols.dart';
 
 import '../../config/map_config.dart';
 import '../../data/favorites.dart';
@@ -47,10 +46,11 @@ class _RegionSpotMapState extends State<RegionSpotMap> {
   late final MapController _map = widget.mapController ?? MapController();
   bool _ready = false;
 
-  /// "즐겨찾기" toggle — this region's favorited spots become amber star pins
-  /// (in place, no camera change). State lives in [Favorites.mapOverlayActive]
-  /// so it stays in sync with `<지도>`: toggle it on there, drill into a region,
-  /// and it's still on here — and vice-versa.
+  /// "즐겨찾기" filter — driven by [Favorites.mapOverlayActive], the shared
+  /// toggle. When on, this region's favorited spots become amber star pins and
+  /// the ranking list (which owns the visible toggle chip) narrows to them, so
+  /// [widget.spots] is already the favorites-only set here. Stays in sync with
+  /// `<지도>`: arrive with it on and the region opens filtered.
   ValueNotifier<bool> get _favorites => Favorites.instance.mapOverlayActive;
   bool get _showFavorites => _favorites.value;
 
@@ -74,10 +74,6 @@ class _RegionSpotMapState extends State<RegionSpotMap> {
   void _onChanged() {
     if (mounted) setState(() {});
   }
-
-  /// This region's ranked list is already on screen below the map, so the
-  /// toggle here just flips the favorited spots to amber star pins in place.
-  void _toggleFavorites() => _favorites.value = !_favorites.value;
 
   List<MockTouristSpot> get _located =>
       widget.spots.where((s) => s.hasLocation).toList();
@@ -115,21 +111,9 @@ class _RegionSpotMapState extends State<RegionSpotMap> {
         if (rings == null) {
           return const ColoredBox(color: AppColors.appBackground);
         }
-        return Stack(
-          children: [
-            _buildMap(rings),
-            Positioned(
-              left: AppSpacing.sm,
-              bottom: AppSpacing.sm,
-              child: MapToggleButton(
-                icon: Symbols.star_rounded,
-                label: '즐겨찾기',
-                active: _showFavorites,
-                onTap: _toggleFavorites,
-              ),
-            ),
-          ],
-        );
+        // The 즐겨찾기 toggle lives in the ranking list header below the map
+        // (`_FavoritesOnlyChip`); this map just reflects the shared state.
+        return _buildMap(rings);
       },
     );
   }

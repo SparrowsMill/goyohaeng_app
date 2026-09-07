@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:material_symbols_icons/symbols.dart';
 
+import '../../data/favorites.dart';
 import '../../data/mock_map_regions.dart' show gapIndexColor;
 import '../../data/mock_region_ranking.dart';
 import '../../theme/app_colors.dart';
@@ -20,6 +21,11 @@ import '../place/place_info_screen.dart';
 /// card to drop/highlight its pin on the map, tap again (or the pin) to open
 /// `<장소 정보 페이지>`. Category filter + 갭지수 asc/desc sort (default: 전체 ·
 /// 내림차순); the chosen filter/sort should persist across visits.
+///
+/// A "즐겨찾기만" filter narrows the list (and the map pins) to this region's
+/// favorited spots. It's bound to [Favorites.mapOverlayActive] — the same
+/// toggle as the map's 즐겨찾기 button — so arriving here with it already on
+/// (from `<지도>`) starts filtered, and flipping it anywhere keeps both in sync.
 ///
 /// * TODO(backend): 필터·정렬 설정 영속화 (user_flow §6 "다음 방문 시에도 유지")
 class RegionRankingScreen extends StatefulWidget {
@@ -55,9 +61,14 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
   final GlobalKey _selectedCardKey = GlobalKey();
   bool _didAutoScroll = false;
 
+  /// "즐겨찾기만" — the same shared toggle the map's 즐겨찾기 button drives.
+  ValueNotifier<bool> get _favoritesOnly => Favorites.instance.mapOverlayActive;
+
   @override
   void initState() {
     super.initState();
+    Favorites.instance.addListener(_onFavoritesChanged);
+    _favoritesOnly.addListener(_onFavoritesChanged);
     final name = widget.initialSpotName;
     if (name != null) {
       for (final spot in rankingForRegion(widget.regionKey)) {
@@ -71,13 +82,31 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
 
   @override
   void dispose() {
+    Favorites.instance.removeListener(_onFavoritesChanged);
+    _favoritesOnly.removeListener(_onFavoritesChanged);
     _listController.dispose();
     super.dispose();
   }
 
+  /// Favorites toggled (filter flipped, or a spot un-starred): rebuild, and drop
+  /// the selection if it just fell out of the filtered list.
+  void _onFavoritesChanged() {
+    if (!mounted) return;
+    setState(() {
+      final s = _selected;
+      if (s != null &&
+          _favoritesOnly.value &&
+          !Favorites.instance.contains(s.name)) {
+        _selected = null;
+      }
+    });
+  }
+
   List<MockTouristSpot> get _visibleSpots {
+    final favOnly = _favoritesOnly.value;
     final spots = rankingForRegion(widget.regionKey)
         .where((s) => _category == null || s.category == _category)
+        .where((s) => !favOnly || Favorites.instance.contains(s.name))
         .toList()
       ..sort((a, b) => _descending
           ? b.gapIndex.compareTo(a.gapIndex)
@@ -127,6 +156,7 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
   Widget build(BuildContext context) {
     final spots = _visibleSpots;
     final hasPins = spots.any((s) => s.hasLocation);
+    final favOnly = _favoritesOnly.value;
     _maybeAutoScroll();
 
     return Scaffold(
@@ -152,7 +182,9 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
             ),
           ),
           const Divider(height: 1, color: AppColors.border),
-          Expanded(child: _buildList(spots, hasPins: hasPins)),
+          Expanded(
+            child: _buildList(spots, hasPins: hasPins, favOnly: favOnly),
+          ),
         ],
       ),
       bottomNavigationBar: AppBottomNavBar(
@@ -169,7 +201,11 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
     );
   }
 
-  Widget _buildList(List<MockTouristSpot> spots, {required bool hasPins}) {
+  Widget _buildList(
+    List<MockTouristSpot> spots, {
+    required bool hasPins,
+    required bool favOnly,
+  }) {
     return ListView(
       controller: _listController,
       // The list is short (a handful of spots); build every card up front so a
@@ -197,14 +233,21 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
               ),
             ),
             const SizedBox(width: AppSpacing.sm),
+            _FavoritesOnlyChip(
+              active: favOnly,
+              onTap: () => _favoritesOnly.value = !_favoritesOnly.value,
+            ),
+            const SizedBox(width: AppSpacing.sm),
             const GapIndexInfoButton(),
           ],
         ),
         const SizedBox(height: AppSpacing.xs),
         Text(
-          hasPins
-              ? "장소를 누르면 지도에 표시돼요 · '자세히 보기'로 상세"
-              : '선택한 필터와 정렬은 다음에도 유지돼요',
+          favOnly
+              ? '즐겨찾기한 장소만 보고 있어요 · 지도 별 핀과 연동돼요'
+              : hasPins
+                  ? "장소를 누르면 지도에 표시돼요 · '자세히 보기'로 상세"
+                  : '선택한 필터와 정렬은 다음에도 유지돼요',
           style: AppTextStyles.caption,
         ),
         const SizedBox(height: AppSpacing.lg),
@@ -213,7 +256,9 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
             padding: const EdgeInsets.symmetric(vertical: AppSpacing.huge),
             child: Center(
               child: Text(
-                '해당하는 관광 스팟이 아직 없어요.',
+                favOnly
+                    ? '이 지역엔 즐겨찾기한 장소가 없어요.'
+                    : '해당하는 관광 스팟이 아직 없어요.',
                 style: AppTextStyles.bodyMedium
                     .copyWith(color: AppColors.textSecondary),
               ),
@@ -341,6 +386,56 @@ class _SortDropdown extends StatelessWidget {
             DropdownMenuItem(value: false, child: Text('갭지수 오름차순')),
           ],
           onChanged: (value) => onChanged(value ?? true),
+        ),
+      ),
+    );
+  }
+}
+
+/// "즐겨찾기만" filter toggle — sits beside the sort dropdown. Amber-filled when
+/// on, matching the map's 즐겨찾기 button (same underlying state).
+class _FavoritesOnlyChip extends StatelessWidget {
+  const _FavoritesOnlyChip({required this.active, required this.onTap});
+
+  final bool active;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final fg =
+        active ? AppColors.textOnPrimaryButton : AppColors.primaryPressed;
+    return Material(
+      color: active ? AppColors.secondaryAccent : AppColors.surface,
+      borderRadius: BorderRadius.circular(AppRadius.inputField),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AppRadius.inputField),
+        onTap: onTap,
+        child: Container(
+          height: 44,
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            border: Border.all(
+              color: active ? AppColors.secondaryAccent : AppColors.border,
+            ),
+            borderRadius: BorderRadius.circular(AppRadius.inputField),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                active ? Symbols.star_rounded : Symbols.star_outline_rounded,
+                size: 18,
+                fill: active ? 1 : 0,
+                color: fg,
+              ),
+              const SizedBox(width: AppSpacing.xs),
+              Text(
+                '즐겨찾기',
+                style: AppTextStyles.buttonMedium.copyWith(color: fg),
+              ),
+            ],
+          ),
         ),
       ),
     );

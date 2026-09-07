@@ -583,8 +583,8 @@ void main() {
       expect(Favorites.instance.contains('담양 소쇄원'), isTrue);
     });
 
-    testWidgets('RegionSpotMap: 즐겨찾기 토글 켜야 별 핀 (시트/분할 없음)', (tester) async {
-      tester.view.physicalSize = const Size(390, 700);
+    testWidgets('<지역별 랭킹>: 즐겨찾기만 필터 → 목록·지도 별 핀', (tester) async {
+      tester.view.physicalSize = const Size(390, 900);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
       await tester.runAsync(() async {
@@ -593,17 +593,8 @@ void main() {
       });
 
       await tester.pumpWidget(
-        MaterialApp(
-          theme: AppTheme.light,
-          home: Scaffold(
-            body: RegionSpotMap(
-              regionCode: '36310',
-              spots: rankingForRegion('36310'),
-              selected: null,
-              onMarkerTap: (_) {},
-              mapController: MapController(),
-            ),
-          ),
+        const MaterialApp(
+          home: RegionRankingScreen(regionKey: '36310', regionName: '담양군'),
         ),
       );
       await tester.runAsync(() async {});
@@ -613,12 +604,19 @@ void main() {
         of: find.byType(FlutterMap),
         matching: find.byIcon(Symbols.star_rounded),
       );
-      // 토글 꺼짐(기본) → 담양 죽녹원이 seed 즐겨찾기여도 별 아님.
+      // 필터 꺼짐(기본) → 죽녹원이 seed 즐겨찾기여도 지도에 별 없음, 목록엔
+      // 즐겨찾기가 아닌 스팟(소쇄원)도 보인다.
       expect(starInMap, findsNothing);
+      expect(find.text('담양 소쇄원'), findsWidgets);
 
+      // "즐겨찾기" 필터 칩 ON.
       await tester.tap(find.text('즐겨찾기'));
       await tester.pumpAndSettle();
-      expect(starInMap, findsWidgets); // 이제 별 핀
+
+      expect(Favorites.instance.mapOverlayActive.value, isTrue);
+      expect(starInMap, findsWidgets); // 지도 별 핀
+      expect(find.text('담양 죽녹원'), findsOneWidget); // 즐겨찾기 스팟은 남고
+      expect(find.text('담양 소쇄원'), findsNothing); // 나머지는 걸러짐
     });
 
     testWidgets('벡터 지도: 즐겨찾기 목록이 맵 위에 얹힘 — 맵은 그대로', (tester) async {
@@ -701,12 +699,9 @@ void main() {
       await tester.runAsync(() async {});
       await tester.pumpAndSettle();
 
-      // 전환됐어도 토글은 켜진 채 — 실제 지도에 별 핀이 뜬다.
-      final toggleInSpotMap = tester.widget<MapToggleButton>(find.descendant(
-        of: find.byType(RegionSpotMap),
-        matching: find.byType(MapToggleButton),
-      ));
-      expect(toggleInSpotMap.active, isTrue);
+      // 전환됐어도 토글은 켜진 채 — 랭킹 목록은 즐겨찾기만, 지도엔 별 핀이 뜬다.
+      expect(find.text('담양 죽녹원'), findsOneWidget);
+      expect(find.text('담양 소쇄원'), findsNothing);
       expect(
         find.descendant(
           of: find.byType(FlutterMap),
@@ -715,7 +710,7 @@ void main() {
         findsWidgets,
       );
 
-      // 실제 지도에서 OFF.
+      // 실제 지도(랭킹)에서 즐겨찾기 칩 OFF.
       await tester.tap(find.text('즐겨찾기'));
       await tester.pumpAndSettle();
       expect(Favorites.instance.mapOverlayActive.value, isFalse);
