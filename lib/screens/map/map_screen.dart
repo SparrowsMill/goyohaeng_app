@@ -124,9 +124,9 @@ class _MapScreenState extends State<MapScreen> {
   }
 }
 
-/// The search bar + 갭지수 범례/설명, laid over the top of the map. Its own
-/// background is a soft cream scrim that fades out downward — the search bar
-/// and pills stay readable, the map shows through faintly below.
+/// The search bar + 갭지수 범례/설명, laid over the top of the map like the
+/// login screen's cards over its scene: **fully transparent behind** — each
+/// control carries its own opaque surface, the map shows through the gaps.
 class _MapChrome extends StatelessWidget {
   const _MapChrome({required this.onSearch});
 
@@ -134,44 +134,26 @@ class _MapChrome extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            AppColors.appBackground,
-            AppColors.appBackground.withValues(alpha: 0),
-          ],
-          stops: const [0.45, 1.0],
-        ),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.xl,
+        AppSpacing.md,
+        AppSpacing.xl,
+        AppSpacing.md,
       ),
-      // Swallow taps on the empty scrim so they don't focus a 시도 behind it.
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: () {},
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(
-            AppSpacing.xl,
-            AppSpacing.md,
-            AppSpacing.xl,
-            AppSpacing.xxl,
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _SearchBar(onTap: onSearch),
+          const SizedBox(height: AppSpacing.md),
+          const Row(
             children: [
-              _SearchBar(onTap: onSearch),
-              const SizedBox(height: AppSpacing.md),
-              const Row(
-                children: [
-                  _GapLegend(),
-                  Spacer(),
-                  GapIndexInfoButton(),
-                ],
-              ),
+              _GapLegend(),
+              Spacer(),
+              GapIndexInfoButton(),
             ],
           ),
-        ),
+        ],
       ),
     );
   }
@@ -244,29 +226,41 @@ class _NotificationBell extends StatelessWidget {
   }
 }
 
-/// Compact "낮음 —— 높음" scale shown above the map.
+/// Compact "낮음 —— 높음" scale. Its own surface pill so it stays readable
+/// floating over the map.
 class _GapLegend extends StatelessWidget {
   const _GapLegend();
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text('낮음', style: AppTextStyles.caption),
-        const SizedBox(width: AppSpacing.sm),
-        Container(
-          width: 96,
-          height: 10,
-          decoration: BoxDecoration(
-            gradient: gapIndexGradient,
-            borderRadius: BorderRadius.circular(AppRadius.pill),
-            border: Border.all(color: AppColors.border),
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.sm,
+        vertical: 5,
+      ),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        border: Border.all(color: AppColors.border),
+        borderRadius: BorderRadius.circular(AppRadius.pill),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text('낮음', style: AppTextStyles.caption),
+          const SizedBox(width: AppSpacing.sm),
+          Container(
+            width: 88,
+            height: 10,
+            decoration: BoxDecoration(
+              gradient: gapIndexGradient,
+              borderRadius: BorderRadius.circular(AppRadius.pill),
+              border: Border.all(color: AppColors.border),
+            ),
           ),
-        ),
-        const SizedBox(width: AppSpacing.sm),
-        Text('높음', style: AppTextStyles.caption),
-      ],
+          const SizedBox(width: AppSpacing.sm),
+          Text('높음', style: AppTextStyles.caption),
+        ],
+      ),
     );
   }
 }
