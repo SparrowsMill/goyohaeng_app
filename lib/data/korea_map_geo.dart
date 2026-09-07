@@ -73,14 +73,19 @@ class MapProjector {
   }
 
   /// A projector whose canvas is the *whole* map drawn at "cover" scale for
-  /// [viewport]: one axis matches the viewport, the other overflows so the
-  /// caller can pan/clip it. Offsets are zero, so [size] is exactly the content
-  /// size to hand the `CustomPaint`.
-  factory MapProjector.cover({required Rect bounds, required Size viewport}) {
+  /// [viewport] (× [overscan] to zoom in past cover): the map overflows the
+  /// viewport so the caller can pan/clip it. Offsets are zero, so [size] is
+  /// exactly the content size to hand the `CustomPaint`.
+  factory MapProjector.cover({
+    required Rect bounds,
+    required Size viewport,
+    double overscan = 1,
+  }) {
     final scale = math.max(
-      viewport.width / bounds.width,
-      viewport.height / bounds.height,
-    );
+          viewport.width / bounds.width,
+          viewport.height / bounds.height,
+        ) *
+        overscan;
     return MapProjector._(
       bounds,
       Size(bounds.width * scale, bounds.height * scale),

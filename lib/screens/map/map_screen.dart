@@ -292,6 +292,12 @@ class _SearchBar extends StatelessWidget {
 /// 자치구 after focusing it.
 const double _kMaxScale = 40;
 
+/// Default nationwide zoom: how much the map is scaled past "cover" (fills the
+/// frame) at the un-drilled view. 1.0 = exactly fill; higher = bigger map, more
+/// of the coastline cropped but reachable by dragging. **This is the knob for
+/// "make the default map bigger".**
+const double kMapZoom = 1.0;
+
 class _KoreaMap extends StatefulWidget {
   const _KoreaMap({
     required this.onEnterRegion,
@@ -439,7 +445,7 @@ class _KoreaMapState extends State<_KoreaMap>
     if (_pathsForSize == size) return;
     _pathsForSize = size;
     final project = _projector =
-        MapProjector.cover(bounds: geo.bounds, viewport: size);
+        MapProjector.cover(bounds: geo.bounds, viewport: size, overscan: kMapZoom);
     _sceneSize = project.size;
     // First layout — centre the (oversized) map in the viewport.
     if (!_didCentre) {
@@ -513,7 +519,7 @@ class _KoreaMapState extends State<_KoreaMap>
 
   void _zoomToRegion(GeoRegion region) {
     final project = _projector ??
-        MapProjector.cover(bounds: _geo!.bounds, viewport: _boxSize);
+        MapProjector.cover(bounds: _geo!.bounds, viewport: _boxSize, overscan: kMapZoom);
     final b = region.bounds;
     _zoomToSceneRect(Rect.fromPoints(
       project(Offset(b.left, b.top)),
