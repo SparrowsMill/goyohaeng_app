@@ -747,6 +747,31 @@ void main() {
       expect(tester.getRect(find.byType(InteractiveViewer)), mapBefore);
     });
 
+    testWidgets('벡터 지도: 즐겨찾기 목록이 뜨면 아래로 팬 여유가 늘어난다 (맵은 그대로)',
+        (tester) async {
+      tester.view.physicalSize = const Size(390, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+
+      await pumpMapScreen(tester);
+
+      EdgeInsets margin() => (tester
+              .widget<InteractiveViewer>(find.byType(InteractiveViewer))
+              .boundaryMargin)
+          .resolve(TextDirection.ltr);
+      final rectBefore = tester.getRect(find.byType(InteractiveViewer));
+      final closed = margin();
+
+      await tester.tap(find.text('즐겨찾기'));
+      await tester.pumpAndSettle();
+
+      final open = margin();
+      // 맵 박스는 그대로 — 늘어난 건 팬 허용 범위(boundaryMargin)뿐.
+      expect(tester.getRect(find.byType(InteractiveViewer)), rectBefore);
+      expect(open.top, closed.top); // 위쪽 여유 동일
+      expect(open.bottom, greaterThan(closed.bottom + 100)); // 아래로 더 드래그
+    });
+
     testWidgets('즐겨찾기 목록: 항목 탭 → 지도 집중, "자세히 보기" → <장소 정보>',
         (tester) async {
       tester.view.physicalSize = const Size(390, 900);

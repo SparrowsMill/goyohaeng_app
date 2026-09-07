@@ -517,6 +517,18 @@ class _KoreaMapState extends State<_KoreaMap>
         if (mounted) _focusOnLatLng(widget.focusPoint!);
       });
     }
+    // Favorites list just closed — the extra bottom pan room goes away. If the
+    // user had dragged the nationwide view up (to reach 제주 etc. past the
+    // panel), ease it back to the default framing rather than leave it stranded
+    // over where the panel was. Only at the un-drilled, un-zoomed view.
+    if (old.overlayBottomInset > 0 &&
+        widget.overlayBottomInset == 0 &&
+        _focusedSido.value == null &&
+        _scale.value < 1.05) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _animateTo(_homeMatrix());
+      });
+    }
   }
 
   void _onFavoritesChanged() {
@@ -896,8 +908,14 @@ class _KoreaMapState extends State<_KoreaMap>
                           minScale: 1,
                           maxScale: _kMaxScale,
                           // Pannable sea beyond the top & bottom coastline.
-                          boundaryMargin: const EdgeInsets.symmetric(
-                            vertical: kMapPanMarginV,
+                          // While the favorites list is up it also covers the
+                          // map's lower part — add that height to the bottom so
+                          // 전남·제주 can be dragged up clear of the panel and
+                          // still tapped. The map itself never moves/resizes;
+                          // only the allowed pan range grows.
+                          boundaryMargin: EdgeInsets.only(
+                            top: kMapPanMarginV,
+                            bottom: kMapPanMarginV + widget.overlayBottomInset,
                           ),
                           child: GestureDetector(
                             behavior: HitTestBehavior.opaque,
