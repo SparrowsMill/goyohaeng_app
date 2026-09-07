@@ -114,22 +114,18 @@ class _MapScreenState extends State<MapScreen> {
               return Stack(
                 children: [
                   Positioned.fill(
-                    child: Padding(
-                      padding:
-                          const EdgeInsets.symmetric(vertical: kMapPaddingV),
-                      child: _KoreaMap(
-                        favoritesActive: _favoritesOpen,
-                        onToggleFavorites: () =>
-                            setState(() => _favoritesOpen = !_favoritesOpen),
-                        // Float the overlay buttons above the panel when up.
-                        overlayBottomInset: _favoritesOpen ? panelHeight : 0,
-                        onEnterRegion: (code, name) =>
-                            Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => RegionRankingScreen(
-                              regionKey: code,
-                              regionName: name,
-                            ),
+                    child: _KoreaMap(
+                      favoritesActive: _favoritesOpen,
+                      onToggleFavorites: () =>
+                          setState(() => _favoritesOpen = !_favoritesOpen),
+                      // Float the overlay buttons above the panel when up.
+                      overlayBottomInset: _favoritesOpen ? panelHeight : 0,
+                      onEnterRegion: (code, name) =>
+                          Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => RegionRankingScreen(
+                            regionKey: code,
+                            regionName: name,
                           ),
                         ),
                       ),
@@ -302,10 +298,10 @@ const double _kMaxScale = 40;
 /// "make the default map bigger".**
 const double kMapZoom = 1.2;
 
-/// Cream breathing room above & below the `<지도>` map (between the chrome and
-/// the map, and the map and the bottom nav). **The knob for map top/bottom
-/// padding.**
-const double kMapPaddingV = 12;
+/// Extra empty (sea) room the user can pan *past* the map's top & bottom
+/// coastline before the drag stops — so e.g. dragging down to 제주 leaves a
+/// gap between it and the bottom nav. **The knob for map top/bottom slack.**
+const double kMapPanMarginV = 44;
 
 class _KoreaMap extends StatefulWidget {
   const _KoreaMap({
@@ -766,7 +762,10 @@ class _KoreaMapState extends State<_KoreaMap>
                           constrained: false,
                           minScale: 1,
                           maxScale: _kMaxScale,
-                          boundaryMargin: EdgeInsets.zero,
+                          // Pannable sea beyond the top & bottom coastline.
+                          boundaryMargin: const EdgeInsets.symmetric(
+                            vertical: kMapPanMarginV,
+                          ),
                           child: GestureDetector(
                             behavior: HitTestBehavior.opaque,
                             onTapUp: (d) => _handleTap(d.localPosition),
