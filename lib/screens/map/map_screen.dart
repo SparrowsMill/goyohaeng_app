@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
@@ -313,30 +314,38 @@ class _SearchBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: AppColors.surface,
+    return ClipRRect(
       borderRadius: BorderRadius.circular(AppRadius.inputField),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(AppRadius.inputField),
-        onTap: onTap,
-        child: Container(
-          height: 52,
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-          decoration: BoxDecoration(
-            border: Border.all(color: AppColors.border),
-            borderRadius: BorderRadius.circular(AppRadius.inputField),
-          ),
-          child: Row(
-            children: [
-              const Icon(Symbols.search_rounded,
-                  size: 20, color: AppColors.iconInactive),
-              const SizedBox(width: AppSpacing.sm),
-              Text(
-                '지역명 · 장소명 검색',
-                style: AppTextStyles.bodyLarge
-                    .copyWith(color: AppColors.textDisabled),
+      child: BackdropFilter(
+        // Slight frost so the sea/land behind reads through the bar without
+        // muddying the placeholder text.
+        filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+        child: Material(
+          color: AppColors.surface.withValues(alpha: 0.74),
+          child: InkWell(
+            onTap: onTap,
+            child: Container(
+              height: 52,
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+              decoration: BoxDecoration(
+                border: Border.all(
+                  color: AppColors.border.withValues(alpha: 0.7),
+                ),
+                borderRadius: BorderRadius.circular(AppRadius.inputField),
               ),
-            ],
+              child: Row(
+                children: [
+                  const Icon(Symbols.search_rounded,
+                      size: 20, color: AppColors.iconInactive),
+                  const SizedBox(width: AppSpacing.sm),
+                  Text(
+                    '지역명 · 장소명 검색',
+                    style: AppTextStyles.bodyLarge
+                        .copyWith(color: AppColors.textDisabled),
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
       ),
