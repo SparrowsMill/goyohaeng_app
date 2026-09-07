@@ -86,7 +86,6 @@ class _PlaceSearchScreenState extends State<PlaceSearchScreen> {
                   controller: _controller,
                   focusNode: _focus,
                   autofocus: true,
-                  textAlign: TextAlign.center,
                   style: AppTextStyles.bodyLarge,
                   textInputAction: TextInputAction.search,
                   onChanged: (value) => setState(() => _query = value),
