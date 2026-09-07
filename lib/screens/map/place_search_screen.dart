@@ -73,7 +73,6 @@ class _PlaceSearchScreenState extends State<PlaceSearchScreen> {
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
           decoration: BoxDecoration(
             color: AppColors.surface,
-            border: Border.all(color: AppColors.border),
             borderRadius: BorderRadius.circular(AppRadius.inputField),
           ),
           child: Row(
