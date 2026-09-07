@@ -745,26 +745,30 @@ class _KoreaMapState extends State<_KoreaMap>
         final r = members.single;
         final path = _sigunguPaths[r.id];
         if (path == null) return;
+        final stats = statsForRegion(r.id);
         units.add(_MapUnit(
           key: r.id,
           leafId: r.id,
           title: r.title,
           path: path,
           labelPoint: proj(labelPoint[r.id] ?? r.bounds.center),
-          gapIndex: statsForRegion(r.id).avgGapIndex,
+          gapIndex: stats.avgGapIndex,
+          spotCount: stats.spotCount,
           memberCount: 1,
         ));
         return;
       }
       Path? union;
-      var gapSum = 0, count = 0;
+      var gapSum = 0, spotSum = 0, count = 0;
       var lx = 0.0, ly = 0.0;
       for (final r in members) {
         final path = _sigunguPaths[r.id];
         if (path == null) continue;
         union =
             union == null ? path : Path.combine(PathOperation.union, union, path);
-        gapSum += statsForRegion(r.id).avgGapIndex;
+        final stats = statsForRegion(r.id);
+        gapSum += stats.avgGapIndex;
+        spotSum += stats.spotCount;
         final lp = labelPoint[r.id] ?? r.bounds.center;
         lx += lp.dx;
         ly += lp.dy;
@@ -779,6 +783,7 @@ class _KoreaMapState extends State<_KoreaMap>
         path: union,
         labelPoint: proj(Offset(lx / count, ly / count)),
         gapIndex: (gapSum / count).round(),
+        spotCount: spotSum,
         memberCount: members.length,
       ));
     });
@@ -1077,6 +1082,7 @@ class _MapUnit {
     required this.path,
     required this.labelPoint,
     required this.gapIndex,
+    required this.spotCount,
     required this.memberCount,
   });
 
@@ -1092,6 +1098,11 @@ class _MapUnit {
   final Offset labelPoint;
 
   final int gapIndex;
+
+  /// Total 관광 스팟 수 across the unit (a solo 군/자치구, or every 구 of a
+  /// merged 시) — shown as the label subtitle alongside [gapIndex].
+  final int spotCount;
+
   final int memberCount;
 
   bool get isDrillable => memberCount > 1;
@@ -1336,14 +1347,16 @@ class _KoreaMapPainter extends CustomPainter {
     if (focused == null) return;
 
     if (group == null) {
-      // Level 1 — one label per unit (the merged 시 name, or 군/자치구 name).
+      // Level 1 — one label per unit (the merged 시 name, or 군/자치구 name),
+      // with the 갭지수·스팟 subtitle when it fits, else just the name.
       for (final u in units) {
         if (!view.contains(u.labelPoint)) continue;
-        _drawLabel(
+        _drawStatLabel(
           canvas,
           text: u.title,
           center: u.labelPoint,
-          gap: u.gapIndex,
+          gapIndex: u.gapIndex,
+          spotCount: u.spotCount,
           fontPx: 12 / z,
           region: u.path,
         );
@@ -1357,15 +1370,49 @@ class _KoreaMapPainter extends CustomPainter {
         final p = project(label.point);
         if (!view.contains(p)) continue;
         final stats = statsForRegion(label.id);
-        _drawLabel(
+        _drawStatLabel(
           canvas,
           text: label.title.split(' ').last,
           center: p,
-          gap: stats.avgGapIndex,
+          gapIndex: stats.avgGapIndex,
+          spotCount: stats.spotCount,
           fontPx: 12 / z,
           region: region,
         );
       }
+    }
+  }
+
+  /// A drilled-level label: the region name over a "갭지수 N · 스팟 M" subtitle
+  /// when both fit inside the shape, otherwise just the name (or nothing if even
+  /// that doesn't fit — same progressive-reveal rule as the nationwide view).
+  void _drawStatLabel(
+    Canvas canvas, {
+    required String text,
+    required Offset center,
+    required int gapIndex,
+    required int spotCount,
+    required double fontPx,
+    required Path region,
+  }) {
+    final drewFull = _drawLabel(
+      canvas,
+      text: text,
+      center: center,
+      gap: gapIndex,
+      fontPx: fontPx,
+      region: region,
+      subtitle: '갭지수 $gapIndex · 스팟 $spotCount',
+    );
+    if (!drewFull) {
+      _drawLabel(
+        canvas,
+        text: text,
+        center: center,
+        gap: gapIndex,
+        fontPx: fontPx,
+        region: region,
+      );
     }
   }
 
