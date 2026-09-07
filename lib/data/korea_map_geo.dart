@@ -52,31 +52,41 @@ class GeoLabel {
 }
 
 /// Maps raw source-CRS points into a target box with a single uniform scale
-/// (no stretch) and centres the result, so the map keeps its shape whatever
-/// the box's aspect ratio is. The y axis is flipped (source y points north,
-/// screen y points down).
-///
-/// [fill] interpolates the scale between *contain* (0 — the whole map fits,
-/// slack becomes a letterbox margin) and *cover* (1 — the map fills the box,
-/// the overflowing edges are clipped by the caller).
+/// (no stretch) and centres the result — *contain* fit, slack becomes a
+/// letterbox margin. The y axis is flipped (source y points north, screen y
+/// points down).
 class MapProjector {
   MapProjector._(this.bounds, this.size, this._scale, this._dx, this._dy);
 
-  factory MapProjector({
-    required Rect bounds,
-    required Size size,
-    double fill = 0,
-  }) {
-    final sx = size.width / bounds.width;
-    final sy = size.height / bounds.height;
-    final scale = math.min(sx, sy) +
-        (math.max(sx, sy) - math.min(sx, sy)) * fill.clamp(0.0, 1.0);
+  factory MapProjector({required Rect bounds, required Size size}) {
+    final scale = math.min(
+      size.width / bounds.width,
+      size.height / bounds.height,
+    );
     return MapProjector._(
       bounds,
       size,
       scale,
       (size.width - bounds.width * scale) / 2,
       (size.height - bounds.height * scale) / 2,
+    );
+  }
+
+  /// A projector whose canvas is the *whole* map drawn at "cover" scale for
+  /// [viewport]: one axis matches the viewport, the other overflows so the
+  /// caller can pan/clip it. Offsets are zero, so [size] is exactly the content
+  /// size to hand the `CustomPaint`.
+  factory MapProjector.cover({required Rect bounds, required Size viewport}) {
+    final scale = math.max(
+      viewport.width / bounds.width,
+      viewport.height / bounds.height,
+    );
+    return MapProjector._(
+      bounds,
+      Size(bounds.width * scale, bounds.height * scale),
+      scale,
+      0,
+      0,
     );
   }
 

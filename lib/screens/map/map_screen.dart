@@ -292,12 +292,6 @@ class _SearchBar extends StatelessWidget {
 /// 자치구 after focusing it.
 const double _kMaxScale = 40;
 
-/// How much the nationwide map fills its box (see `MapProjector`'s `fill`).
-/// 0 = letterboxed to fit; 1 = fills fully, coastal edges clipped. Applied to
-/// every projector so paths, hit-testing, drill-zoom, and labels stay in sync
-/// (exposed so widget tests can reproduce the same projection).
-const double kMapFill = 0.7;
-
 class _KoreaMap extends StatefulWidget {
   const _KoreaMap({
     required this.onEnterRegion,
@@ -342,8 +336,13 @@ class _KoreaMapState extends State<_KoreaMap>
   KoreaGeo? _geo;
   bool _sigunguRequested = false;
 
-  /// Widget-space size of the map box, from the latest layout.
+  /// Widget-space size of the map box (the viewport), from the latest layout.
   Size _boxSize = Size.zero;
+
+  /// The drawn canvas — the whole map at "cover" scale, so one axis overflows
+  /// the viewport and the user can pan to the clipped coastline.
+  Size _sceneSize = Size.zero;
+  bool _didCentre = false;
 
   /// Cached projected paths, rebuilt when [_boxSize] changes.
   Size? _pathsForSize;
@@ -439,7 +438,16 @@ class _KoreaMapState extends State<_KoreaMap>
   void _rebuildPaths(KoreaGeo geo, Size size) {
     if (_pathsForSize == size) return;
     _pathsForSize = size;
-    final project = _projector = MapProjector(bounds: geo.bounds, size: size, fill: kMapFill);
+    final project = _projector =
+        MapProjector.cover(bounds: geo.bounds, viewport: size);
+    _sceneSize = project.size;
+    // First layout — centre the (oversized) map in the viewport.
+    if (!_didCentre) {
+      _didCentre = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _tc.value = _homeMatrix();
+      });
+    }
 
     Path pathFor(GeoRegion r) {
       final p = Path()..fillType = PathFillType.evenOdd;
@@ -477,6 +485,16 @@ class _KoreaMapState extends State<_KoreaMap>
     _animController.forward(from: 0);
   }
 
+  /// The nationwide "home" transform — scale 1, the oversized map centred in
+  /// the viewport (so equal amounts of the E/W coast are cropped either side).
+  Matrix4 _homeMatrix() => Matrix4.identity()
+    ..translateByDouble(
+      -(_sceneSize.width - _boxSize.width) / 2,
+      -(_sceneSize.height - _boxSize.height) / 2,
+      0,
+      1,
+    );
+
   Matrix4 _matrixForSceneRect(Rect rect) {
     final w = _boxSize.width, h = _boxSize.height;
     // 12% breathing room around the region.
@@ -494,7 +512,8 @@ class _KoreaMapState extends State<_KoreaMap>
       _animateTo(_matrixForSceneRect(sceneRect));
 
   void _zoomToRegion(GeoRegion region) {
-    final project = MapProjector(bounds: _geo!.bounds, size: _boxSize, fill: kMapFill);
+    final project = _projector ??
+        MapProjector.cover(bounds: _geo!.bounds, viewport: _boxSize);
     final b = region.bounds;
     _zoomToSceneRect(Rect.fromPoints(
       project(Offset(b.left, b.top)),
@@ -531,7 +550,7 @@ class _KoreaMapState extends State<_KoreaMap>
       return;
     }
     setState(() => _focusedSido.value = null);
-    _animateTo(Matrix4.identity());
+    _animateTo(_homeMatrix());
   }
 
   /// (Re)builds [_units] for the focused 시도 + layout if stale. Each 군/자치구
@@ -709,8 +728,8 @@ class _KoreaMapState extends State<_KoreaMap>
                   _viewport.value = Offset.zero & size;
                 }
                 // Keep the "내 위치" dot and 즐겨찾기 star pins glued to their
-                // lat/lng across layout changes (projector depends on box size).
-                final project = MapProjector(bounds: geo.bounds, size: size, fill: kMapFill);
+                // lat/lng across layout changes.
+                final project = _projector!;
                 final here = UserLocation.position.value;
                 _myPoint.value =
                     here == null ? null : project(Epsg5179.fromLatLng(here));
@@ -726,29 +745,33 @@ class _KoreaMapState extends State<_KoreaMap>
                 return ClipRect(
                   child: Stack(
                     children: [
-                      InteractiveViewer(
-                        transformationController: _tc,
-                        minScale: 1,
-                        maxScale: _kMaxScale,
-                        child: GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTapUp: (d) => _handleTap(d.localPosition),
-                          child: CustomPaint(
-                            size: size,
-                            painter: _KoreaMapPainter(
-                              geo: geo,
-                              sidoPaths: _sidoPaths,
-                              sigunguPaths: _sigunguPaths,
-                              countryOutline: _countryOutline,
-                              scale: _scale,
-                              viewport: _viewport,
-                              focusedSido: _focusedSido,
-                              focusedGroup: _focusedGroup,
-                              focusOutline: _focusOutline,
-                              units: _units,
-                              myPoint: _myPoint,
-                              showFavorites: widget.favoritesActive,
-                              favPoints: _favPoints,
+                      Positioned.fill(
+                        child: InteractiveViewer(
+                          transformationController: _tc,
+                          constrained: false,
+                          minScale: 1,
+                          maxScale: _kMaxScale,
+                          boundaryMargin: EdgeInsets.zero,
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTapUp: (d) => _handleTap(d.localPosition),
+                            child: CustomPaint(
+                              size: _sceneSize,
+                              painter: _KoreaMapPainter(
+                                geo: geo,
+                                sidoPaths: _sidoPaths,
+                                sigunguPaths: _sigunguPaths,
+                                countryOutline: _countryOutline,
+                                scale: _scale,
+                                viewport: _viewport,
+                                focusedSido: _focusedSido,
+                                focusedGroup: _focusedGroup,
+                                focusOutline: _focusOutline,
+                                units: _units,
+                                myPoint: _myPoint,
+                                showFavorites: widget.favoritesActive,
+                                favPoints: _favPoints,
+                              ),
                             ),
                           ),
                         ),
@@ -949,7 +972,9 @@ class _KoreaMapPainter extends CustomPainter {
       false,
     );
 
-    final project = MapProjector(bounds: geo.bounds, size: size, fill: kMapFill);
+    // `size` here is the cover-scaled canvas, so a plain contain-fit into it
+    // reproduces the same scale/offset the paths were built with.
+    final project = MapProjector(bounds: geo.bounds, size: size);
 
     final sidoStroke = Paint()
       ..style = PaintingStyle.stroke

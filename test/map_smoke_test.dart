@@ -88,24 +88,31 @@ void main() {
 
   testWidgets('tapping a 시도 focuses it; "전국 보기" clears the focus',
       (tester) async {
+    tester.view.physicalSize = const Size(390, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    final geo = await tester.runAsync(KoreaGeo.load);
     await pumpMapScreen(tester);
 
-    final iv = tester.widget<InteractiveViewer>(find.byType(InteractiveViewer));
-    final controller = iv.transformationController!;
-    expect(controller.value, equals(Matrix4.identity()));
+    final controller = tester
+        .widget<InteractiveViewer>(find.byType(InteractiveViewer))
+        .transformationController!;
+    // Home transform: scale 1 (the oversized map just centred, not identity).
+    expect(controller.value.getMaxScaleOnAxis(), moreOrLessEquals(1, epsilon: 0.01));
 
-    // Tap roughly over 경기도 (a large mainland 시도): ~44% across, ~22% down
-    // the map box, derived from its label coordinate vs the country bounds.
     final box = tester.getRect(find.byType(InteractiveViewer));
-    await tester.tapAt(Offset(
-      box.left + box.width * 0.44,
-      box.top + box.height * 0.22,
-    ));
+    final proj = MapProjector.cover(bounds: geo!.bounds, viewport: box.size);
+    Offset screenFor(Offset raw) =>
+        MatrixUtils.transformPoint(controller.value, proj(raw)) + box.topLeft;
+
+    final gyeonggi = geo.sidoLabels.firstWhere((l) => l.id == '31').point;
+    await tester.tapAt(screenFor(gyeonggi));
     await tester.pumpAndSettle();
 
-    expect(controller.value, isNot(equals(Matrix4.identity())));
+    // Focused → the camera zoomed in.
+    expect(controller.value.getMaxScaleOnAxis(), greaterThan(1.1));
 
-    // "전국 보기" restores the identity transform.
     await tester.ensureVisible(find.text('전국 보기'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('전국 보기'));
@@ -130,7 +137,7 @@ void main() {
     await pumpMapScreen(tester);
 
     final box = tester.getRect(find.byType(InteractiveViewer));
-    final proj = MapProjector(bounds: geo!.bounds, size: box.size, fill: kMapFill);
+    final proj = MapProjector.cover(bounds: geo!.bounds, viewport: box.size);
     TransformationController tc() => tester
         .widget<InteractiveViewer>(find.byType(InteractiveViewer))
         .transformationController!;
@@ -306,7 +313,7 @@ void main() {
     await pumpMapScreen(tester);
 
     final box = tester.getRect(find.byType(InteractiveViewer));
-    final proj = MapProjector(bounds: geo!.bounds, size: box.size, fill: kMapFill);
+    final proj = MapProjector.cover(bounds: geo!.bounds, viewport: box.size);
     TransformationController tc() => tester
         .widget<InteractiveViewer>(find.byType(InteractiveViewer))
         .transformationController!;
@@ -344,7 +351,7 @@ void main() {
     await pumpMapScreen(tester);
 
     final box = tester.getRect(find.byType(InteractiveViewer));
-    final proj = MapProjector(bounds: geo!.bounds, size: box.size, fill: kMapFill);
+    final proj = MapProjector.cover(bounds: geo!.bounds, viewport: box.size);
     TransformationController tc() => tester
         .widget<InteractiveViewer>(find.byType(InteractiveViewer))
         .transformationController!;
