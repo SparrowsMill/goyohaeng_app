@@ -256,8 +256,8 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
   }
 }
 
-/// The category chips + sort dropdown + hint line, pinned above the scrolling
-/// ranking list (a subtle bottom divider marks it as fixed chrome).
+/// Category + sort dropdowns (side by side) + hint line, pinned above the
+/// scrolling ranking list (a subtle bottom divider marks it as fixed chrome).
 class _FilterBar extends StatelessWidget {
   const _FilterBar({
     required this.category,
@@ -289,14 +289,28 @@ class _FilterBar extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _CategoryFilter(selected: category, onChanged: onCategory),
-          const SizedBox(height: AppSpacing.md),
           Row(
             children: [
               Expanded(
-                child: _SortDropdown(
-                  descending: descending,
-                  onChanged: onSort,
+                child: _PillDropdown<SpotCategory?>(
+                  value: category,
+                  onChanged: onCategory,
+                  items: [
+                    const DropdownMenuItem(value: null, child: Text('전체')),
+                    for (final c in SpotCategory.values)
+                      DropdownMenuItem(value: c, child: Text(c.label)),
+                  ],
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: _PillDropdown<bool>(
+                  value: descending,
+                  onChanged: (v) => onSort(v ?? true),
+                  items: const [
+                    DropdownMenuItem(value: true, child: Text('갭지수 높은순')),
+                    DropdownMenuItem(value: false, child: Text('갭지수 낮은순')),
+                  ],
                 ),
               ),
               const SizedBox(width: AppSpacing.sm),
@@ -311,111 +325,39 @@ class _FilterBar extends StatelessWidget {
   }
 }
 
-class _CategoryFilter extends StatelessWidget {
-  const _CategoryFilter({required this.selected, required this.onChanged});
-
-  final SpotCategory? selected;
-  final ValueChanged<SpotCategory?> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final items = <({String label, SpotCategory? value})>[
-      (label: '전체', value: null),
-      for (final category in SpotCategory.values)
-        (label: category.label, value: category),
-    ];
-
-    // Always one row — the four chips split the width evenly.
-    return Row(
-      children: [
-        for (var i = 0; i < items.length; i++) ...[
-          if (i != 0) const SizedBox(width: AppSpacing.sm),
-          Expanded(
-            child: _FilterChip(
-              label: items[i].label,
-              selected: selected == items[i].value,
-              onTap: () => onChanged(items[i].value),
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-}
-
-class _FilterChip extends StatelessWidget {
-  const _FilterChip({
-    required this.label,
-    required this.selected,
-    required this.onTap,
+/// A compact pill-styled dropdown used for both the category and sort filters.
+class _PillDropdown<T> extends StatelessWidget {
+  const _PillDropdown({
+    required this.value,
+    required this.items,
+    required this.onChanged,
   });
 
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: selected ? AppColors.primary : AppColors.surface,
-      borderRadius: BorderRadius.circular(AppRadius.pill),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(AppRadius.pill),
-        onTap: onTap,
-        child: Container(
-          height: 36,
-          padding: const EdgeInsets.symmetric(horizontal: 14),
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(AppRadius.pill),
-            border: Border.all(
-              color: selected ? AppColors.primary : AppColors.border,
-            ),
-          ),
-          child: Text(
-            label,
-            style: AppTextStyles.buttonMedium.copyWith(
-              color: selected
-                  ? AppColors.textOnPrimaryButton
-                  : AppColors.primaryPressed,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _SortDropdown extends StatelessWidget {
-  const _SortDropdown({required this.descending, required this.onChanged});
-
-  final bool descending;
-  final ValueChanged<bool> onChanged;
+  final T value;
+  final List<DropdownMenuItem<T>> items;
+  final ValueChanged<T?> onChanged;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       height: 44,
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
       decoration: BoxDecoration(
         color: AppColors.surface,
         border: Border.all(color: AppColors.border),
         borderRadius: BorderRadius.circular(AppRadius.inputField),
       ),
       child: DropdownButtonHideUnderline(
-        child: DropdownButton<bool>(
-          value: descending,
+        child: DropdownButton<T>(
+          value: value,
           isExpanded: true,
           isDense: true,
           borderRadius: BorderRadius.circular(AppRadius.secondaryButton),
           icon: const Icon(Symbols.keyboard_arrow_down_rounded, size: 20),
           style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.w600),
           dropdownColor: AppColors.surface,
-          items: const [
-            DropdownMenuItem(value: true, child: Text('갭지수 내림차순')),
-            DropdownMenuItem(value: false, child: Text('갭지수 오름차순')),
-          ],
-          onChanged: (value) => onChanged(value ?? true),
+          items: items,
+          onChanged: onChanged,
         ),
       ),
     );
