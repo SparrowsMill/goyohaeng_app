@@ -66,31 +66,53 @@ class _PlaceSearchScreenState extends State<PlaceSearchScreen> {
           onPressed: () => Navigator.of(context).maybePop(),
           icon: const Icon(Symbols.arrow_back_rounded),
         ),
-        titleSpacing: 0,
-        title: TextField(
-          controller: _controller,
-          focusNode: _focus,
-          autofocus: true,
-          style: AppTextStyles.bodyLarge,
-          textInputAction: TextInputAction.search,
-          onChanged: (value) => setState(() => _query = value),
-          decoration: InputDecoration(
-            isCollapsed: true,
-            border: InputBorder.none,
-            hintText: '지역명 · 장소명 검색',
-            hintStyle: AppTextStyles.bodyLarge
-                .copyWith(color: AppColors.textDisabled),
-            suffixIcon: _query.isEmpty
-                ? null
-                : IconButton(
-                    icon: const Icon(Symbols.close_rounded, size: 20),
-                    color: AppColors.iconInactive,
-                    onPressed: () {
-                      _controller.clear();
-                      setState(() => _query = '');
-                      _focus.requestFocus();
-                    },
+        titleSpacing: AppSpacing.sm,
+        centerTitle: true,
+        title: Container(
+          height: 44,
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            border: Border.all(color: AppColors.border),
+            borderRadius: BorderRadius.circular(AppRadius.inputField),
+          ),
+          child: Row(
+            children: [
+              const Icon(Symbols.search_rounded,
+                  size: 20, color: AppColors.iconInactive),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: TextField(
+                  controller: _controller,
+                  focusNode: _focus,
+                  autofocus: true,
+                  textAlign: TextAlign.center,
+                  style: AppTextStyles.bodyLarge,
+                  textInputAction: TextInputAction.search,
+                  onChanged: (value) => setState(() => _query = value),
+                  decoration: InputDecoration(
+                    isCollapsed: true,
+                    border: InputBorder.none,
+                    hintText: '지역명 · 장소명 검색',
+                    hintStyle: AppTextStyles.bodyLarge
+                        .copyWith(color: AppColors.textDisabled),
                   ),
+                ),
+              ),
+              if (_query.isNotEmpty)
+                GestureDetector(
+                  onTap: () {
+                    _controller.clear();
+                    setState(() => _query = '');
+                    _focus.requestFocus();
+                  },
+                  child: const Padding(
+                    padding: EdgeInsets.only(left: AppSpacing.sm),
+                    child: Icon(Symbols.close_rounded,
+                        size: 20, color: AppColors.iconInactive),
+                  ),
+                ),
+            ],
           ),
         ),
       ),
