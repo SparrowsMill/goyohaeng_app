@@ -177,7 +177,7 @@ class _RewardCard extends StatelessWidget {
         children: [
           // * TODO(asset): ingredient_rice.png 미납품 — 지금은 아이콘 폴백.
           Image.asset(
-            'assets/illustrations/rewards/ingredient_rice.png',
+            'assets/illustrations/rewards/ingredient_rice_one.png',
             width: 52,
             height: 52,
             errorBuilder: (context, error, stackTrace) => const Icon(
