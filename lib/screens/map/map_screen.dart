@@ -292,6 +292,12 @@ class _SearchBar extends StatelessWidget {
 /// 자치구 after focusing it.
 const double _kMaxScale = 40;
 
+/// How much the nationwide map fills its box (see `MapProjector`'s `fill`).
+/// 0 = letterboxed to fit; 1 = fills fully, coastal edges clipped. Applied to
+/// every projector so paths, hit-testing, drill-zoom, and labels stay in sync
+/// (exposed so widget tests can reproduce the same projection).
+const double kMapFill = 0.7;
+
 class _KoreaMap extends StatefulWidget {
   const _KoreaMap({
     required this.onEnterRegion,
@@ -433,7 +439,7 @@ class _KoreaMapState extends State<_KoreaMap>
   void _rebuildPaths(KoreaGeo geo, Size size) {
     if (_pathsForSize == size) return;
     _pathsForSize = size;
-    final project = _projector = MapProjector(bounds: geo.bounds, size: size);
+    final project = _projector = MapProjector(bounds: geo.bounds, size: size, fill: kMapFill);
 
     Path pathFor(GeoRegion r) {
       final p = Path()..fillType = PathFillType.evenOdd;
@@ -488,7 +494,7 @@ class _KoreaMapState extends State<_KoreaMap>
       _animateTo(_matrixForSceneRect(sceneRect));
 
   void _zoomToRegion(GeoRegion region) {
-    final project = MapProjector(bounds: _geo!.bounds, size: _boxSize);
+    final project = MapProjector(bounds: _geo!.bounds, size: _boxSize, fill: kMapFill);
     final b = region.bounds;
     _zoomToSceneRect(Rect.fromPoints(
       project(Offset(b.left, b.top)),
@@ -704,7 +710,7 @@ class _KoreaMapState extends State<_KoreaMap>
                 }
                 // Keep the "내 위치" dot and 즐겨찾기 star pins glued to their
                 // lat/lng across layout changes (projector depends on box size).
-                final project = MapProjector(bounds: geo.bounds, size: size);
+                final project = MapProjector(bounds: geo.bounds, size: size, fill: kMapFill);
                 final here = UserLocation.position.value;
                 _myPoint.value =
                     here == null ? null : project(Epsg5179.fromLatLng(here));
@@ -943,7 +949,7 @@ class _KoreaMapPainter extends CustomPainter {
       false,
     );
 
-    final project = MapProjector(bounds: geo.bounds, size: size);
+    final project = MapProjector(bounds: geo.bounds, size: size, fill: kMapFill);
 
     final sidoStroke = Paint()
       ..style = PaintingStyle.stroke

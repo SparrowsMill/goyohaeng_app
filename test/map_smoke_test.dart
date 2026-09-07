@@ -130,7 +130,7 @@ void main() {
     await pumpMapScreen(tester);
 
     final box = tester.getRect(find.byType(InteractiveViewer));
-    final proj = MapProjector(bounds: geo!.bounds, size: box.size);
+    final proj = MapProjector(bounds: geo!.bounds, size: box.size, fill: kMapFill);
     TransformationController tc() => tester
         .widget<InteractiveViewer>(find.byType(InteractiveViewer))
         .transformationController!;
@@ -306,7 +306,7 @@ void main() {
     await pumpMapScreen(tester);
 
     final box = tester.getRect(find.byType(InteractiveViewer));
-    final proj = MapProjector(bounds: geo!.bounds, size: box.size);
+    final proj = MapProjector(bounds: geo!.bounds, size: box.size, fill: kMapFill);
     TransformationController tc() => tester
         .widget<InteractiveViewer>(find.byType(InteractiveViewer))
         .transformationController!;
@@ -344,7 +344,7 @@ void main() {
     await pumpMapScreen(tester);
 
     final box = tester.getRect(find.byType(InteractiveViewer));
-    final proj = MapProjector(bounds: geo!.bounds, size: box.size);
+    final proj = MapProjector(bounds: geo!.bounds, size: box.size, fill: kMapFill);
     TransformationController tc() => tester
         .widget<InteractiveViewer>(find.byType(InteractiveViewer))
         .transformationController!;
