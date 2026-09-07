@@ -325,10 +325,13 @@ const double kMapZoom = 1.2;
 const double kMapPanMarginV = 44;
 
 /// Approx. height of the translucent chrome (검색 바 + 갭지수 범례) overlaid on
-/// the map's top. The map fills the whole body and is nudged down by this much
-/// so the country sits in the clear area below the chrome — but drags up
-/// behind it, faintly visible. **The knob for the chrome overlay height.**
+/// the map's top. The nationwide view keeps this much clear at the top so the
+/// country sits below the chrome (but drags up behind it, faintly visible).
 const double kMapChromeInset = 128;
+
+/// Blank sea margin above & below the country in the nationwide view — equal
+/// breathing room at the top (under the chrome) and bottom (over the nav bar).
+const double kMapMarginV = 20;
 
 class _KoreaMap extends StatefulWidget {
   const _KoreaMap({
@@ -483,7 +486,13 @@ class _KoreaMapState extends State<_KoreaMap>
     if (_pathsForSize == size) return;
     _pathsForSize = size;
     final project = _projector =
-        MapProjector.cover(bounds: geo.bounds, viewport: size, overscan: kMapZoom);
+        MapProjector.cover(
+      bounds: geo.bounds,
+      viewport: size,
+      overscan: kMapZoom,
+      insetTop: widget.topInset + kMapMarginV,
+      insetBottom: kMapMarginV,
+    );
     _sceneSize = project.size;
     // First layout — centre the (oversized) map in the viewport.
     if (!_didCentre) {
@@ -529,12 +538,12 @@ class _KoreaMapState extends State<_KoreaMap>
     _animController.forward(from: 0);
   }
 
-  /// The nationwide "home" transform — scale 1, the oversized map centred in
-  /// the clear area below the chrome overlay (E/W coast cropped either side).
+  /// The nationwide "home" transform — scale 1, the canvas (which already bakes
+  /// in the top/bottom sea margin) centred in the viewport.
   Matrix4 _homeMatrix() => Matrix4.identity()
     ..translateByDouble(
       -(_sceneSize.width - _boxSize.width) / 2,
-      -(_sceneSize.height - _boxSize.height) / 2 + widget.topInset / 2,
+      -(_sceneSize.height - _boxSize.height) / 2,
       0,
       1,
     );
@@ -557,7 +566,13 @@ class _KoreaMapState extends State<_KoreaMap>
 
   void _zoomToRegion(GeoRegion region) {
     final project = _projector ??
-        MapProjector.cover(bounds: _geo!.bounds, viewport: _boxSize, overscan: kMapZoom);
+        MapProjector.cover(
+          bounds: _geo!.bounds,
+          viewport: _boxSize,
+          overscan: kMapZoom,
+          insetTop: widget.topInset + kMapMarginV,
+          insetBottom: kMapMarginV,
+        );
     final b = region.bounds;
     _zoomToSceneRect(Rect.fromPoints(
       project(Offset(b.left, b.top)),
@@ -806,6 +821,7 @@ class _KoreaMapState extends State<_KoreaMap>
                               size: _sceneSize,
                               painter: _KoreaMapPainter(
                                 geo: geo,
+                                project: _projector!,
                                 sidoPaths: _sidoPaths,
                                 sigunguPaths: _sigunguPaths,
                                 countryOutline: _countryOutline,
@@ -963,6 +979,7 @@ class _MapUnit {
 class _KoreaMapPainter extends CustomPainter {
   _KoreaMapPainter({
     required this.geo,
+    required this.project,
     required this.sidoPaths,
     required this.sigunguPaths,
     required this.countryOutline,
@@ -981,6 +998,10 @@ class _KoreaMapPainter extends CustomPainter {
         );
 
   final KoreaGeo geo;
+
+  /// The exact projector the paths were built with (baked-in sea insets).
+  final MapProjector project;
+
   final Map<String, Path> sidoPaths;
   final Map<String, Path> sigunguPaths;
   final Path countryOutline;
@@ -1018,11 +1039,6 @@ class _KoreaMapPainter extends CustomPainter {
       6,
       false,
     );
-
-    // `size` here IS the cover-scaled canvas, so `.cover` of it reproduces the
-    // exact scale/offset the paths were built with — independent of the plain
-    // `MapProjector` factory (which the mini map tweaks).
-    final project = MapProjector.cover(bounds: geo.bounds, viewport: size);
 
     final sidoStroke = Paint()
       ..style = PaintingStyle.stroke
@@ -1300,6 +1316,7 @@ class _KoreaMapPainter extends CustomPainter {
   @override
   bool shouldRepaint(_KoreaMapPainter old) =>
       old.geo != geo ||
+      old.project != project ||
       old.sidoPaths != sidoPaths ||
       old.sigunguPaths != sigunguPaths ||
       old.countryOutline != countryOutline ||

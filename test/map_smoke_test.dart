@@ -102,7 +102,7 @@ void main() {
     expect(controller.value.getMaxScaleOnAxis(), moreOrLessEquals(1, epsilon: 0.01));
 
     final box = tester.getRect(find.byType(InteractiveViewer));
-    final proj = MapProjector.cover(bounds: geo!.bounds, viewport: box.size, overscan: kMapZoom);
+    final proj = MapProjector.cover(bounds: geo!.bounds, viewport: box.size, overscan: kMapZoom, insetTop: kMapChromeInset + kMapMarginV, insetBottom: kMapMarginV);
     Offset screenFor(Offset raw) =>
         MatrixUtils.transformPoint(controller.value, proj(raw)) + box.topLeft;
 
@@ -137,7 +137,7 @@ void main() {
     await pumpMapScreen(tester);
 
     final box = tester.getRect(find.byType(InteractiveViewer));
-    final proj = MapProjector.cover(bounds: geo!.bounds, viewport: box.size, overscan: kMapZoom);
+    final proj = MapProjector.cover(bounds: geo!.bounds, viewport: box.size, overscan: kMapZoom, insetTop: kMapChromeInset + kMapMarginV, insetBottom: kMapMarginV);
     TransformationController tc() => tester
         .widget<InteractiveViewer>(find.byType(InteractiveViewer))
         .transformationController!;
@@ -313,7 +313,7 @@ void main() {
     await pumpMapScreen(tester);
 
     final box = tester.getRect(find.byType(InteractiveViewer));
-    final proj = MapProjector.cover(bounds: geo!.bounds, viewport: box.size, overscan: kMapZoom);
+    final proj = MapProjector.cover(bounds: geo!.bounds, viewport: box.size, overscan: kMapZoom, insetTop: kMapChromeInset + kMapMarginV, insetBottom: kMapMarginV);
     TransformationController tc() => tester
         .widget<InteractiveViewer>(find.byType(InteractiveViewer))
         .transformationController!;
@@ -351,7 +351,7 @@ void main() {
     await pumpMapScreen(tester);
 
     final box = tester.getRect(find.byType(InteractiveViewer));
-    final proj = MapProjector.cover(bounds: geo!.bounds, viewport: box.size, overscan: kMapZoom);
+    final proj = MapProjector.cover(bounds: geo!.bounds, viewport: box.size, overscan: kMapZoom, insetTop: kMapChromeInset + kMapMarginV, insetBottom: kMapMarginV);
     TransformationController tc() => tester
         .widget<InteractiveViewer>(find.byType(InteractiveViewer))
         .transformationController!;
