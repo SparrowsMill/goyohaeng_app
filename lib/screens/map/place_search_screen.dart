@@ -90,7 +90,13 @@ class _PlaceSearchScreenState extends State<PlaceSearchScreen> {
                   onChanged: (value) => setState(() => _query = value),
                   decoration: InputDecoration(
                     isCollapsed: true,
+                    filled: false,
+                    contentPadding: EdgeInsets.zero,
+                    // Kill the app-wide InputDecorationTheme's outline in every
+                    // state — the pill Container is the only frame here.
                     border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
                     hintText: '지역명 · 장소명 검색',
                     hintStyle: AppTextStyles.bodyLarge
                         .copyWith(color: AppColors.textDisabled),
