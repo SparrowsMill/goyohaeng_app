@@ -679,7 +679,7 @@ void main() {
       expect(starInMap, findsNothing);
       expect(find.text('담양 소쇄원'), findsWidgets);
 
-      // "즐겨찾기" 필터 칩 ON.
+      // 지도 좌하단 "즐겨찾기" 오버레이 버튼 ON.
       await tester.tap(find.text('즐겨찾기'));
       await tester.pumpAndSettle();
 
@@ -905,7 +905,7 @@ void main() {
         findsWidgets,
       );
 
-      // 실제 지도(랭킹)에서 즐겨찾기 칩 OFF.
+      // 실제 지도(랭킹)의 즐겨찾기 오버레이 버튼 OFF.
       await tester.tap(find.text('즐겨찾기'));
       await tester.pumpAndSettle();
       expect(Favorites.instance.mapOverlayActive.value, isFalse);

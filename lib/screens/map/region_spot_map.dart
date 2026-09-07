@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:material_symbols_icons/symbols.dart';
 
 import '../../config/map_config.dart';
 import '../../data/favorites.dart';
@@ -52,10 +53,10 @@ class _RegionSpotMapState extends State<RegionSpotMap> {
   bool _ready = false;
 
   /// "즐겨찾기" filter — driven by [Favorites.mapOverlayActive], the shared
-  /// toggle. When on, this region's favorited spots become amber star pins and
-  /// the ranking list (which owns the visible toggle chip) narrows to them, so
-  /// [widget.spots] is already the favorites-only set here. Stays in sync with
-  /// `<지도>`: arrive with it on and the region opens filtered.
+  /// toggle (the bottom-left overlay button on this map). When on, this region's
+  /// favorited spots become amber star pins and the ranking list below narrows
+  /// to them, so [widget.spots] is already the favorites-only set here. Stays in
+  /// sync with `<지도>`: arrive with it on and the region opens filtered.
   ValueNotifier<bool> get _favorites => Favorites.instance.mapOverlayActive;
   bool get _showFavorites => _favorites.value;
 
@@ -127,17 +128,31 @@ class _RegionSpotMapState extends State<RegionSpotMap> {
         if (rings == null) {
           return const ColoredBox(color: AppColors.appBackground);
         }
-        // The 즐겨찾기 toggle lives in the ranking list header below the map
-        // (`_FavoritesOnlyChip`); this map just reflects the shared state.
         return Stack(
           children: [
             _buildMap(rings),
-            if (UserLocation.position.value != null)
-              Positioned(
-                left: AppSpacing.sm,
-                bottom: AppSpacing.sm,
-                child: MyLocationButton(onTap: _goToMyLocation),
+            // Bottom-left overlay, same stack as the vector `<지도>`:
+            // 내 위치 (once located) above the 즐겨찾기 toggle.
+            Positioned(
+              left: AppSpacing.sm,
+              bottom: AppSpacing.sm,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (UserLocation.position.value != null) ...[
+                    MyLocationButton(onTap: _goToMyLocation),
+                    const SizedBox(height: AppSpacing.sm),
+                  ],
+                  MapToggleButton(
+                    icon: Symbols.star_rounded,
+                    label: '즐겨찾기',
+                    active: _showFavorites,
+                    onTap: () => _favorites.value = !_favorites.value,
+                  ),
+                ],
               ),
+            ),
           ],
         );
       },

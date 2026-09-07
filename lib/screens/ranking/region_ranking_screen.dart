@@ -22,10 +22,10 @@ import '../place/place_info_screen.dart';
 /// `<장소 정보 페이지>`. Category filter + 갭지수 asc/desc sort (default: 전체 ·
 /// 내림차순); the chosen filter/sort should persist across visits.
 ///
-/// A "즐겨찾기만" filter narrows the list (and the map pins) to this region's
-/// favorited spots. It's bound to [Favorites.mapOverlayActive] — the same
-/// toggle as the map's 즐겨찾기 button — so arriving here with it already on
-/// (from `<지도>`) starts filtered, and flipping it anywhere keeps both in sync.
+/// The map's bottom-left "즐겨찾기" toggle (`MapToggleButton` on `RegionSpotMap`)
+/// also narrows this list to the region's favorited spots — it's bound to
+/// [Favorites.mapOverlayActive], so arriving here with it already on (from
+/// `<지도>`) starts filtered, and flipping it anywhere keeps map + list in sync.
 ///
 /// * TODO(backend): 필터·정렬 설정 영속화 (user_flow §6 "다음 방문 시에도 유지")
 class RegionRankingScreen extends StatefulWidget {
@@ -233,11 +233,6 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
               ),
             ),
             const SizedBox(width: AppSpacing.sm),
-            _FavoritesOnlyChip(
-              active: favOnly,
-              onTap: () => _favoritesOnly.value = !_favoritesOnly.value,
-            ),
-            const SizedBox(width: AppSpacing.sm),
             const GapIndexInfoButton(),
           ],
         ),
@@ -386,56 +381,6 @@ class _SortDropdown extends StatelessWidget {
             DropdownMenuItem(value: false, child: Text('갭지수 오름차순')),
           ],
           onChanged: (value) => onChanged(value ?? true),
-        ),
-      ),
-    );
-  }
-}
-
-/// "즐겨찾기만" filter toggle — sits beside the sort dropdown. Amber-filled when
-/// on, matching the map's 즐겨찾기 button (same underlying state).
-class _FavoritesOnlyChip extends StatelessWidget {
-  const _FavoritesOnlyChip({required this.active, required this.onTap});
-
-  final bool active;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final fg =
-        active ? AppColors.textOnPrimaryButton : AppColors.primaryPressed;
-    return Material(
-      color: active ? AppColors.secondaryAccent : AppColors.surface,
-      borderRadius: BorderRadius.circular(AppRadius.inputField),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(AppRadius.inputField),
-        onTap: onTap,
-        child: Container(
-          height: 44,
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            border: Border.all(
-              color: active ? AppColors.secondaryAccent : AppColors.border,
-            ),
-            borderRadius: BorderRadius.circular(AppRadius.inputField),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                active ? Symbols.star_rounded : Symbols.star_outline_rounded,
-                size: 18,
-                fill: active ? 1 : 0,
-                color: fg,
-              ),
-              const SizedBox(width: AppSpacing.xs),
-              Text(
-                '즐겨찾기',
-                style: AppTextStyles.buttonMedium.copyWith(color: fg),
-              ),
-            ],
-          ),
         ),
       ),
     );
