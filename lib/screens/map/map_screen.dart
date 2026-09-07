@@ -303,6 +303,10 @@ const double kMapZoom = 1.2;
 /// gap between it and the bottom nav. **The knob for map top/bottom slack.**
 const double kMapPanMarginV = 44;
 
+/// Height (px) of the soft fade at the map's top & bottom edges — the map
+/// dissolves into the page background there instead of a hard clipped line.
+const double kMapEdgeFade = 44;
+
 class _KoreaMap extends StatefulWidget {
   const _KoreaMap({
     required this.onEnterRegion,
@@ -757,7 +761,24 @@ class _KoreaMapState extends State<_KoreaMap>
                   child: Stack(
                     children: [
                       Positioned.fill(
-                        child: InteractiveViewer(
+                        child: ShaderMask(
+                          blendMode: BlendMode.dstIn,
+                          shaderCallback: (rect) {
+                            final f =
+                                (kMapEdgeFade / rect.height).clamp(0.0, 0.45);
+                            return LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: const [
+                                Colors.transparent,
+                                Colors.black,
+                                Colors.black,
+                                Colors.transparent,
+                              ],
+                              stops: [0.0, f, 1 - f, 1.0],
+                            ).createShader(rect);
+                          },
+                          child: InteractiveViewer(
                           transformationController: _tc,
                           constrained: false,
                           minScale: 1,
@@ -788,6 +809,7 @@ class _KoreaMapState extends State<_KoreaMap>
                               ),
                             ),
                           ),
+                        ),
                         ),
                       ),
                       AnimatedPositioned(
