@@ -1195,13 +1195,15 @@ class _KoreaMapPainter extends CustomPainter {
     }
 
     _paintLabels(canvas, project, z, view, focused, group);
-    _paintFavorites(canvas, z, view);
+    _paintFavorites(canvas, z);
     _paintMyLocation(canvas, z, view);
   }
 
-  /// Amber star pins for every favorited spot (constant on-screen size ÷ z,
-  /// white edge), matching the star pins on the real tile map.
-  void _paintFavorites(Canvas canvas, double z, Rect view) {
+  /// Amber star pins for **every** favorited spot in the country (constant
+  /// on-screen size ÷ z, white edge), matching the star pins on the real tile
+  /// map. Not viewport-culled: whichever region the camera sits on, the other
+  /// regions' favorites stay on the canvas and a small pan brings them in.
+  void _paintFavorites(Canvas canvas, double z) {
     if (!showFavorites) return;
     final pts = favPoints.value;
     if (pts.isEmpty) return;
@@ -1209,7 +1211,6 @@ class _KoreaMapPainter extends CustomPainter {
     final edge = Paint()..color = AppColors.surface;
     final fill = Paint()..color = AppColors.secondaryAccent;
     for (final p in pts) {
-      if (!view.contains(p)) continue;
       canvas.drawPath(_starPath(p, r + 2.4 / z), edge);
       canvas.drawPath(_starPath(p, r), fill);
     }

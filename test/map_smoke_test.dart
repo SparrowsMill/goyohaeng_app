@@ -14,6 +14,7 @@ import 'package:goyohaeng_app/screens/ranking/region_ranking_screen.dart';
 import 'package:goyohaeng_app/theme/app_theme.dart';
 import 'package:goyohaeng_app/widgets/favorite_star_button.dart';
 import 'package:goyohaeng_app/widgets/my_location_button.dart';
+import 'package:goyohaeng_app/widgets/spot_pin.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
@@ -617,6 +618,55 @@ void main() {
       expect(starInMap, findsWidgets); // 지도 별 핀
       expect(find.text('담양 죽녹원'), findsOneWidget); // 즐겨찾기 스팟은 남고
       expect(find.text('담양 소쇄원'), findsNothing); // 나머지는 걸러짐
+    });
+
+    testWidgets('RegionSpotMap: 즐겨찾기 모드면 다른 지역 즐겨찾기도 별 핀으로', (tester) async {
+      tester.view.physicalSize = const Size(390, 700);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.runAsync(() async {
+        final g = await KoreaGeo.load();
+        await g.ensureSigungu();
+      });
+
+      final controller = MapController();
+      // 담양군을 열지만 seed 즐겨찾기엔 전주·보성 것도 있다. 필터 켜짐 상태로 진입.
+      Favorites.instance.mapOverlayActive.value = true;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.light,
+          home: Scaffold(
+            body: RegionSpotMap(
+              regionCode: '36310',
+              spots: rankingForRegion('36310')
+                  .where((s) => Favorites.instance.contains(s.name))
+                  .toList(),
+              selected: null,
+              onMarkerTap: (_) {},
+              mapController: controller,
+            ),
+          ),
+        ),
+      );
+      await tester.runAsync(() async {});
+      await tester.pumpAndSettle();
+
+      // 전국이 다 들어오게 축소.
+      controller.move(const LatLng(36.0, 127.6), 6.2);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      SpotPin? favPin(String name) {
+        final f = find.byWidgetPredicate(
+          (w) => w is SpotPin && w.label == name && w.favorite,
+        );
+        return f.evaluate().isEmpty ? null : tester.widget<SpotPin>(f.first);
+      }
+
+      // 이 지역(죽녹원) + 다른 지역(경기전·녹차밭) 즐겨찾기가 모두 별 핀.
+      expect(favPin('담양 죽녹원'), isNotNull);
+      expect(favPin('전주 경기전'), isNotNull);
+      expect(favPin('보성 녹차밭'), isNotNull);
     });
 
     testWidgets('벡터 지도: 즐겨찾기 목록이 맵 위에 얹힘 — 맵은 그대로', (tester) async {

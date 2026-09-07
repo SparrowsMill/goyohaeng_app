@@ -13,11 +13,16 @@ import '../../theme/app_colors.dart';
 import '../../theme/app_spacing.dart';
 import '../../widgets/my_location_button.dart';
 import '../../widgets/spot_pin.dart';
+import '../place/place_info_screen.dart';
 
 /// The map half of `<지역별 랭킹>`: a real slippy map (VWorld tiles when
 /// [vworldApiKey] is set, else just the region outline) with a pin per located
 /// spot. Selecting a spot in the list flies the camera to it and highlights
 /// its pin; tapping a pin calls [onMarkerTap].
+///
+/// When 즐겨찾기 mode is on, **every** favorited spot in the country is also
+/// drawn as an amber star pin — not just this region's — so panning/zooming out
+/// on the tile map keeps the national favorites picture continuous with `<지도>`.
 class RegionSpotMap extends StatefulWidget {
   const RegionSpotMap({
     super.key,
@@ -77,6 +82,17 @@ class _RegionSpotMapState extends State<RegionSpotMap> {
 
   List<MockTouristSpot> get _located =>
       widget.spots.where((s) => s.hasLocation).toList();
+
+  /// Every favorited located spot **outside** the spots this screen already
+  /// plots — drawn as extra star pins in 즐겨찾기 mode so all regions' favorites
+  /// show no matter which region the camera sits on.
+  List<MockTouristSpot> get _otherFavorites {
+    final here = widget.spots.map((s) => s.name).toSet();
+    return [
+      for (final f in Favorites.instance.locatedSpots())
+        if (!here.contains(f.spot.name)) f.spot,
+    ];
+  }
 
   Future<List<List<LatLng>>> _loadRings() async {
     final geo = await KoreaGeo.load();
@@ -169,6 +185,11 @@ class _RegionSpotMapState extends State<RegionSpotMap> {
                 ),
             ],
           ),
+        // Every other region's favorites, drawn under this region's own pins.
+        if (_showFavorites)
+          MarkerLayer(
+            markers: [for (final s in _otherFavorites) _favMarker(s)],
+          ),
         MarkerLayer(
           markers: [
             for (final spot in located)
@@ -191,6 +212,26 @@ class _RegionSpotMapState extends State<RegionSpotMap> {
             ],
           ),
       ],
+    );
+  }
+
+  /// A star pin for a favorite that belongs to another region — tapping it
+  /// opens `<장소 정보>` (it isn't in this screen's ranked list).
+  Marker _favMarker(MockTouristSpot spot) {
+    return Marker(
+      point: LatLng(spot.lat!, spot.lng!),
+      width: 170,
+      height: 34,
+      alignment: Alignment.bottomCenter,
+      child: SpotPin(
+        label: spot.name,
+        color: gapIndexColor(spot.gapIndex),
+        selected: false,
+        favorite: true,
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => PlaceInfoScreen(spot: spot)),
+        ),
+      ),
     );
   }
 
