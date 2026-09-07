@@ -605,6 +605,12 @@ void main() {
       expect(UserLocation.position.value, me);
       expect(find.byType(InteractiveViewer), findsOneWidget);
       expect(find.text('내 위치'), findsOneWidget);
+
+      // 내 위치 · 즐겨찾기 오버레이 버튼은 폭이 같다.
+      expect(
+        tester.getSize(find.byType(MyLocationButton)).width,
+        tester.getSize(find.widgetWithText(MapToggleButton, '즐겨찾기')).width,
+      );
     });
 
     testWidgets('벡터 지도: "내 위치" 버튼이 그 위치로 카메라를 되돌린다', (tester) async {

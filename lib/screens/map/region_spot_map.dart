@@ -136,21 +136,24 @@ class _RegionSpotMapState extends State<RegionSpotMap> {
             Positioned(
               left: AppSpacing.sm,
               bottom: AppSpacing.sm,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (UserLocation.position.value != null) ...[
-                    MyLocationButton(onTap: _goToMyLocation),
-                    const SizedBox(height: AppSpacing.sm),
+              // IntrinsicWidth + stretch → 내 위치 and 즐겨찾기 buttons match.
+              child: IntrinsicWidth(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (UserLocation.position.value != null) ...[
+                      MyLocationButton(onTap: _goToMyLocation),
+                      const SizedBox(height: AppSpacing.sm),
+                    ],
+                    MapToggleButton(
+                      icon: Symbols.star_rounded,
+                      label: '즐겨찾기',
+                      active: _showFavorites,
+                      onTap: () => _favorites.value = !_favorites.value,
+                    ),
                   ],
-                  MapToggleButton(
-                    icon: Symbols.star_rounded,
-                    label: '즐겨찾기',
-                    active: _showFavorites,
-                    onTap: () => _favorites.value = !_favorites.value,
-                  ),
-                ],
+                ),
               ),
             ),
           ],

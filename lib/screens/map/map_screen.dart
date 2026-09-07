@@ -993,21 +993,25 @@ class _KoreaMapState extends State<_KoreaMap>
                         curve: AppMotion.curve,
                         left: AppSpacing.sm,
                         bottom: AppSpacing.sm + widget.overlayBottomInset,
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            if (UserLocation.position.value != null) ...[
-                              MyLocationButton(onTap: _goToMyLocation),
-                              const SizedBox(height: AppSpacing.sm),
+                        // IntrinsicWidth + stretch → both buttons take the
+                        // wider one's width so they match.
+                        child: IntrinsicWidth(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              if (UserLocation.position.value != null) ...[
+                                MyLocationButton(onTap: _goToMyLocation),
+                                const SizedBox(height: AppSpacing.sm),
+                              ],
+                              MapToggleButton(
+                                icon: Symbols.star_rounded,
+                                label: '즐겨찾기',
+                                active: widget.favoritesActive,
+                                onTap: widget.onToggleFavorites,
+                              ),
                             ],
-                            MapToggleButton(
-                              icon: Symbols.star_rounded,
-                              label: '즐겨찾기',
-                              active: widget.favoritesActive,
-                              onTap: widget.onToggleFavorites,
-                            ),
-                          ],
+                          ),
                         ),
                       ),
                       AnimatedPositioned(
