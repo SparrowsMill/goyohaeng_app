@@ -8,6 +8,7 @@ import '../../theme/app_shadows.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
 import '../../theme/app_theme.dart';
+import '../record/footprint_write_screen.dart';
 import '../share/sns_share_sheet.dart';
 import 'my_food_screen.dart';
 
@@ -44,8 +45,6 @@ class _ChefKitchenScreenState extends State<ChefKitchenScreen> {
   void _snack(String message) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
-
-  void _todo(String message) => _snack(message);
 
   String _shortageMessage(MakeFoodShortage e) {
     if (e.missing.isEmpty) return e.message;
@@ -87,6 +86,21 @@ class _ChefKitchenScreenState extends State<ChefKitchenScreen> {
       _result = result;
       _phase = _Phase.done;
     });
+  }
+
+  /// "기록 플랫폼" 공유 → `<기록 플랫폼 글쓰기>` (user_flow §4→§8). 방금 만든
+  /// 음식을 `initialUserFoodId`로 실어 넘겨서, 저장 시 `RecordService().
+  /// create()`가 그 `UserFood`를 기록에 연결할 수 있게 한다(`visit_reward_
+  /// screen.dart`의 같은 공유 버튼과 동일한 패턴).
+  void _shareToRecord(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => FootprintWriteScreen(
+          initialUserFoodId: _result?.userFood?.id,
+          initialUserFoodName: widget.food.name,
+        ),
+      ),
+    );
   }
 
   /// "확인" — `<본인 음식 보기>` 를 새로 열어 방금 만든 음식이 반영된 최신
@@ -140,8 +154,7 @@ class _ChefKitchenScreenState extends State<ChefKitchenScreen> {
                               food: food,
                               result: _result,
                               onShareSns: () => showSnsShareSheet(context),
-                              onShareRecord: () =>
-                                  _todo('기록용 플랫폼 공유는 준비 중이에요.'),
+                              onShareRecord: () => _shareToRecord(context),
                               onConfirm: () => _finish(context),
                             )
                           : _PrepCard(food: food),
