@@ -56,10 +56,10 @@ class AuthStore extends ChangeNotifier {
     final rawUser = prefs.getString(_kUser);
     if (rawUser != null) {
       try {
-        _user = AuthUser.fromJson(
-          jsonDecode(rawUser) as Map<String, dynamic>,
-        );
-      } catch (_) {/* ignore corrupt cache */}
+        _user = AuthUser.fromJson(jsonDecode(rawUser) as Map<String, dynamic>);
+      } catch (_) {
+        /* ignore corrupt cache */
+      }
     }
 
     try {
@@ -88,7 +88,9 @@ class AuthStore extends ChangeNotifier {
     // 로그인 직후 전체 프로필을 한 번 받아둔다(있으면).
     try {
       _me = await _users.getMe();
-    } catch (_) {/* 프로필은 계정 센터 진입 시 다시 시도 */}
+    } catch (_) {
+      /* 프로필은 계정 센터 진입 시 다시 시도 */
+    }
     notifyListeners();
     unawaited(Favorites.instance.loadFromServer());
   }
@@ -130,6 +132,32 @@ class AuthStore extends ChangeNotifier {
     Favorites.instance.clear();
     final prefs = await SharedPreferences.getInstance();
     await _clear(prefs);
+    notifyListeners();
+  }
+
+  /// 테스트 전용 — 실제 `POST /auth/login` 없이 즉시 로그인 상태로 만든다
+  /// (기기 저장은 건드리지 않음). `ApiClient.instance.debugHttpClient`를
+  /// 가짜 클라이언트로 바꿔치기한 테스트에서, 로그인된 화면의 실제 동작을
+  /// 검증할 때 쓴다.
+  @visibleForTesting
+  void debugSignIn({
+    int id = 1,
+    String username = 'tester',
+    String realName = '테스터',
+  }) {
+    _token = 'debug-token';
+    _user = AuthUser(id: id, username: username, realName: realName);
+    ApiClient.instance.authToken = _token;
+    notifyListeners();
+  }
+
+  /// 테스트 전용 — [debugSignIn]으로 만든 상태를 되돌린다.
+  @visibleForTesting
+  void debugSignOut() {
+    _token = null;
+    _user = null;
+    _me = null;
+    ApiClient.instance.authToken = null;
     notifyListeners();
   }
 
