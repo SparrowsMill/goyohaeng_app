@@ -285,7 +285,7 @@ class Place {
     this.longitude,
     this.phone,
     this.homepage,
-    this.ownerIntro,
+    this.overview,
     this.status,
     this.images = const [],
     this.operatingHours = const [],
@@ -309,7 +309,9 @@ class Place {
   final double? longitude;
   final String? phone;
   final String? homepage;
-  final String? ownerIntro;
+
+  /// 장소 소개 (스펙 §6.1, §6.2, §14-2 — `ownerIntro`는 더 이상 쓰지 않는다).
+  final String? overview;
   final String? status;
 
   // --- 상세 조회 전용 ---
@@ -341,7 +343,7 @@ class Place {
         longitude: _asDouble(json['longitude']),
         phone: json['phone'] as String?,
         homepage: json['homepage'] as String?,
-        ownerIntro: json['ownerIntro'] as String?,
+        overview: json['overview'] as String?,
         status: json['status'] as String?,
         images: ((json['images'] as List?) ?? const [])
             .whereType<Map>()
@@ -449,6 +451,8 @@ class VisitVerification {
   bool get isVerified => status == 'VERIFIED';
   bool get isExpired => status == 'EXPIRED';
   bool get isPending => status == 'ISSUED';
+  bool get isFailed => status == 'FAILED';
+  bool get isCancelled => status == 'CANCELLED';
 
   factory VisitVerification.fromJson(Map<String, dynamic> json) =>
       VisitVerification(
@@ -676,7 +680,35 @@ class UserIngredients {
       );
 }
 
-/// `GET /users/me/foods` 항목 (스펙 §3.9) — 내가 만든 음식.
+/// `foods[].specialIngredients[]` / `GET /users/me/foods` 항목의 특별 재료 1건
+/// (스펙 §3.9). `sourcePlace`는 FIFO 출처 추적 미지원으로 `null`일 수 있다.
+class UserFoodSpecialIngredient {
+  const UserFoodSpecialIngredient({
+    required this.ingredientId,
+    required this.name,
+    required this.quantity,
+    this.rarity,
+    this.sourcePlace,
+  });
+
+  final int ingredientId;
+  final String name;
+  final int quantity;
+  final String? rarity;
+  final String? sourcePlace;
+
+  factory UserFoodSpecialIngredient.fromJson(Map<String, dynamic> json) =>
+      UserFoodSpecialIngredient(
+        ingredientId: _asInt(json['ingredientId']) ?? 0,
+        name: json['name'] as String? ?? '',
+        quantity: _asInt(json['quantity']) ?? 0,
+        rarity: json['rarity'] as String?,
+        sourcePlace: json['sourcePlace'] as String?,
+      );
+}
+
+/// `GET /users/me/foods` 항목 (스펙 §3.9) — 내가 만든 음식. 동일 음식을 여러 번
+/// 만들어도 각각 별개의 `UserFood`로 내려온다.
 class UserFood {
   const UserFood({
     required this.id,
@@ -686,8 +718,7 @@ class UserFood {
     this.imageUrl,
     this.illustrationUrl,
     this.madeAt,
-    this.specialIngredient,
-    this.specialSourcePlace,
+    this.specialIngredients = const [],
   });
 
   final int id;
@@ -697,8 +728,9 @@ class UserFood {
   final String? imageUrl;
   final String? illustrationUrl;
   final DateTime? madeAt;
-  final String? specialIngredient;
-  final String? specialSourcePlace;
+
+  /// RARE / LEGENDARY 특별 재료 (스펙 §3.9 — 예전 단일 필드는 더 이상 쓰지 않는다).
+  final List<UserFoodSpecialIngredient> specialIngredients;
 
   factory UserFood.fromJson(Map<String, dynamic> json) => UserFood(
         id: _asInt(json['id']) ?? 0,
@@ -708,8 +740,11 @@ class UserFood {
         imageUrl: json['imageUrl'] as String?,
         illustrationUrl: json['illustrationUrl'] as String?,
         madeAt: _asDate(json['madeAt']),
-        specialIngredient: json['specialIngredient'] as String?,
-        specialSourcePlace: json['specialSourcePlace'] as String?,
+        specialIngredients: ((json['specialIngredients'] as List?) ?? const [])
+            .whereType<Map>()
+            .map((e) =>
+                UserFoodSpecialIngredient.fromJson(e.cast<String, dynamic>()))
+            .toList(),
       );
 }
 
@@ -1104,4 +1139,425 @@ class TrendFirstViewResult {
       ingredientQuantity: ing == null ? null : _asInt(ing['quantity']),
     );
   }
+}
+
+// ===========================================================================
+// Ingredients (2026-09-12, 스펙 §9) — 재료 상세 + GAP 기반 획득 정보.
+// ===========================================================================
+
+/// `acquisition.dropProbabilities[]` 항목 — GAP 정책 구간별 드롭 확률.
+/// 프론트는 이 값을 그대로 표시할 뿐 직접 계산하지 않는다(스펙 §8.5, §14-14).
+class IngredientDropProbability {
+  const IngredientDropProbability({
+    required this.policyCode,
+    required this.probability,
+  });
+
+  /// `NO_GAP` | `GAP_LOW` | `GAP_MID` | `GAP_HIGH` | `GAP_TOP`.
+  final String policyCode;
+  final double probability;
+
+  factory IngredientDropProbability.fromJson(Map<String, dynamic> json) =>
+      IngredientDropProbability(
+        policyCode: json['policyCode'] as String? ?? '',
+        probability: _asDouble(json['probability']) ?? 0,
+      );
+}
+
+/// `acquisition` 블록 (스펙 §9.1) — 재료를 얻는 방식에 대한 서버 설명.
+/// `availableIngredients`/`acquisitionPlaces`와 달리 이 값이 정식 획득 안내다.
+class IngredientAcquisition {
+  const IngredientAcquisition({
+    this.type,
+    this.method,
+    this.description,
+    this.region,
+    this.dropProbabilities = const [],
+  });
+
+  /// 예: `VISIT_REWARD`.
+  final String? type;
+
+  /// 예: `GAP_BASED_RANDOM_DROP`.
+  final String? method;
+  final String? description;
+
+  /// LEGENDARY 재료의 FOOD_REGION 정보 (그 외에는 `null`).
+  final Map<String, dynamic>? region;
+  final List<IngredientDropProbability> dropProbabilities;
+
+  factory IngredientAcquisition.fromJson(Map<String, dynamic> json) =>
+      IngredientAcquisition(
+        type: json['type'] as String?,
+        method: json['method'] as String?,
+        description: json['description'] as String?,
+        region: (json['region'] as Map?)?.cast<String, dynamic>(),
+        dropProbabilities: ((json['dropProbabilities'] as List?) ?? const [])
+            .whereType<Map>()
+            .map((e) =>
+                IngredientDropProbability.fromJson(e.cast<String, dynamic>()))
+            .toList(),
+      );
+}
+
+/// `usedFoods[]` 항목 — 이 재료를 레시피로 쓰는 음식.
+class IngredientUsedFood {
+  const IngredientUsedFood({
+    required this.foodId,
+    required this.name,
+    this.imageUrl,
+    this.illustrationUrl,
+    this.requiredQuantity,
+  });
+
+  final int foodId;
+  final String name;
+  final String? imageUrl;
+  final String? illustrationUrl;
+  final int? requiredQuantity;
+
+  factory IngredientUsedFood.fromJson(Map<String, dynamic> json) =>
+      IngredientUsedFood(
+        foodId: _asInt(json['foodId'] ?? json['id']) ?? 0,
+        name: json['name'] as String? ?? '',
+        imageUrl: json['imageUrl'] as String?,
+        illustrationUrl: json['illustrationUrl'] as String?,
+        requiredQuantity: _asInt(json['requiredQuantity']),
+      );
+}
+
+/// `GET /ingredients/{ingredientId}` 응답 (스펙 §9.1).
+class IngredientDetail {
+  const IngredientDetail({
+    required this.id,
+    required this.name,
+    this.description,
+    this.ingredientType,
+    required this.quantity,
+    required this.obtained,
+    this.rarity,
+    this.regionId,
+    this.imageUrl,
+    this.illustrationUrl,
+    this.usedFoods = const [],
+    this.acquisitionPlaces = const [],
+    this.acquisition,
+  });
+
+  final int id;
+  final String name;
+  final String? description;
+
+  /// `BASIC` | `REGIONAL`.
+  final String? ingredientType;
+  final int quantity;
+  final bool obtained;
+  final String? rarity;
+  final int? regionId;
+  final String? imageUrl;
+  final String? illustrationUrl;
+  final List<IngredientUsedFood> usedFoods;
+
+  /// 예전 고정 장소 보상 호환용 — 일반 GAP 방문 보상 출처로 쓰지 않는다
+  /// (스펙 §9.1). 정식 획득 안내는 [acquisition].
+  final List<Map<String, dynamic>> acquisitionPlaces;
+  final IngredientAcquisition? acquisition;
+
+  factory IngredientDetail.fromJson(Map<String, dynamic> json) =>
+      IngredientDetail(
+        id: _asInt(json['id']) ?? 0,
+        name: json['name'] as String? ?? '',
+        description: json['description'] as String?,
+        ingredientType: json['ingredientType'] as String?,
+        quantity: _asInt(json['quantity']) ?? 0,
+        obtained: _asBool(json['obtained']),
+        rarity: json['rarity'] as String?,
+        regionId: _asInt(json['regionId']),
+        imageUrl: json['imageUrl'] as String?,
+        illustrationUrl: json['illustrationUrl'] as String?,
+        usedFoods: ((json['usedFoods'] as List?) ?? const [])
+            .whereType<Map>()
+            .map((e) => IngredientUsedFood.fromJson(e.cast<String, dynamic>()))
+            .toList(),
+        acquisitionPlaces: ((json['acquisitionPlaces'] as List?) ?? const [])
+            .whereType<Map>()
+            .map((e) => e.cast<String, dynamic>())
+            .toList(),
+        acquisition: (json['acquisition'] as Map?) == null
+            ? null
+            : IngredientAcquisition.fromJson(
+                (json['acquisition'] as Map).cast<String, dynamic>()),
+      );
+}
+
+// ===========================================================================
+// Food Histories (2026-09-12, 스펙 §11) — 제작 음식 상세 히스토리.
+// ===========================================================================
+
+/// `food-histories/{id}` 응답의 `food` 블록 — 제작한 음식 기본 정보.
+class FoodHistoryFoodRef {
+  const FoodHistoryFoodRef({
+    required this.id,
+    required this.name,
+    this.description,
+    this.imageUrl,
+    this.illustrationUrl,
+    this.madeAt,
+  });
+
+  final int id;
+  final String name;
+  final String? description;
+  final String? imageUrl;
+  final String? illustrationUrl;
+  final DateTime? madeAt;
+
+  factory FoodHistoryFoodRef.fromJson(Map<String, dynamic> json) =>
+      FoodHistoryFoodRef(
+        id: _asInt(json['id']) ?? 0,
+        name: json['name'] as String? ?? '',
+        description: json['description'] as String?,
+        imageUrl: json['imageUrl'] as String?,
+        illustrationUrl: json['illustrationUrl'] as String?,
+        madeAt: _asDate(json['madeAt']),
+      );
+}
+
+/// `specialIngredients[]` / `normalIngredients[]` 공통 항목 (스펙 §11.1).
+/// `obtainedPlace`는 FIFO 출처 추적 미지원으로 현재 `null`일 수 있다.
+class FoodHistoryIngredient {
+  const FoodHistoryIngredient({
+    required this.ingredientId,
+    required this.name,
+    required this.quantity,
+    this.rarity,
+    this.obtainedPlace,
+  });
+
+  final int ingredientId;
+  final String name;
+  final int quantity;
+  final String? rarity;
+  final String? obtainedPlace;
+
+  factory FoodHistoryIngredient.fromJson(Map<String, dynamic> json) =>
+      FoodHistoryIngredient(
+        ingredientId: _asInt(json['ingredientId']) ?? 0,
+        name: json['name'] as String? ?? '',
+        quantity: _asInt(json['quantity']) ?? 0,
+        rarity: json['rarity'] as String?,
+        obtainedPlace: json['obtainedPlace'] as String?,
+      );
+}
+
+/// `GET /food-histories/{historyId}` 응답 (스펙 §11.1). `historyId`는
+/// `UserFood.id`.
+class FoodHistoryDetail {
+  const FoodHistoryDetail({
+    required this.food,
+    this.specialIngredients = const [],
+    this.normalIngredients = const [],
+  });
+
+  final FoodHistoryFoodRef food;
+  final List<FoodHistoryIngredient> specialIngredients;
+  final List<FoodHistoryIngredient> normalIngredients;
+
+  factory FoodHistoryDetail.fromJson(Map<String, dynamic> json) =>
+      FoodHistoryDetail(
+        food: FoodHistoryFoodRef.fromJson(
+          ((json['food'] as Map?) ?? const {}).cast<String, dynamic>(),
+        ),
+        specialIngredients: ((json['specialIngredients'] as List?) ?? const [])
+            .whereType<Map>()
+            .map((e) => FoodHistoryIngredient.fromJson(e.cast<String, dynamic>()))
+            .toList(),
+        normalIngredients: ((json['normalIngredients'] as List?) ?? const [])
+            .whereType<Map>()
+            .map((e) => FoodHistoryIngredient.fromJson(e.cast<String, dynamic>()))
+            .toList(),
+      );
+}
+
+// ===========================================================================
+// Records / 발자국 (2026-09-12, 스펙 §12) — 사용자 발자국 CRUD.
+// ===========================================================================
+
+/// `record.images[]` 항목.
+class RecordImage {
+  const RecordImage({required this.id, required this.imageUrl, this.displayOrder});
+
+  final int id;
+  final String imageUrl;
+  final int? displayOrder;
+
+  factory RecordImage.fromJson(Map<String, dynamic> json) => RecordImage(
+        id: _asInt(json['id']) ?? 0,
+        imageUrl: json['imageUrl'] as String? ?? '',
+        displayOrder: _asInt(json['displayOrder']),
+      );
+}
+
+/// `record.place` — 기록에 연결된 장소 (선택적).
+class RecordPlaceRef {
+  const RecordPlaceRef({required this.id, required this.name});
+
+  final int id;
+  final String name;
+
+  factory RecordPlaceRef.fromJson(Map<String, dynamic> json) => RecordPlaceRef(
+        id: _asInt(json['id']) ?? 0,
+        name: json['name'] as String? ?? '',
+      );
+}
+
+/// `record.food` — 기록에 연결된 제작 음식 (선택적). `userFoodId`가
+/// `UserFood.id`, `foodId`는 음식 자체의 ID(스펙 §14-20).
+class RecordFoodRef {
+  const RecordFoodRef({
+    required this.userFoodId,
+    required this.foodId,
+    required this.name,
+  });
+
+  final int userFoodId;
+  final int foodId;
+  final String name;
+
+  factory RecordFoodRef.fromJson(Map<String, dynamic> json) => RecordFoodRef(
+        userFoodId: _asInt(json['userFoodId']) ?? 0,
+        foodId: _asInt(json['foodId']) ?? 0,
+        name: json['name'] as String? ?? '',
+      );
+}
+
+/// 발자국 한 건 (`GET /records`, `GET /records/{id}`, 작성/수정 응답의 `record`).
+class RecordDetail {
+  const RecordDetail({
+    required this.id,
+    required this.date,
+    this.place,
+    this.food,
+    this.title,
+    required this.body,
+    this.images = const [],
+    this.createdAt,
+  });
+
+  final int id;
+
+  /// `YYYY-MM-DD`, KST 기준(스펙 §12.1).
+  final String date;
+  final RecordPlaceRef? place;
+  final RecordFoodRef? food;
+  final String? title;
+  final String body;
+  final List<RecordImage> images;
+  final DateTime? createdAt;
+
+  factory RecordDetail.fromJson(Map<String, dynamic> json) => RecordDetail(
+        id: _asInt(json['id']) ?? 0,
+        date: json['date'] as String? ?? '',
+        place: (json['place'] as Map?) == null
+            ? null
+            : RecordPlaceRef.fromJson((json['place'] as Map).cast<String, dynamic>()),
+        food: (json['food'] as Map?) == null
+            ? null
+            : RecordFoodRef.fromJson((json['food'] as Map).cast<String, dynamic>()),
+        title: json['title'] as String?,
+        body: json['body'] as String? ?? '',
+        images: ((json['images'] as List?) ?? const [])
+            .whereType<Map>()
+            .map((e) => RecordImage.fromJson(e.cast<String, dynamic>()))
+            .toList(),
+        createdAt: _asDate(json['createdAt']),
+      );
+}
+
+/// `POST /records` 성공 응답 (스펙 §12.1).
+class RecordCreateResult {
+  const RecordCreateResult({
+    required this.recordId,
+    required this.message,
+    this.record,
+  });
+
+  final int recordId;
+  final String message;
+  final RecordDetail? record;
+
+  factory RecordCreateResult.fromJson(Map<String, dynamic> json) =>
+      RecordCreateResult(
+        recordId: _asInt(json['recordId']) ?? 0,
+        message: json['message'] as String? ?? '발자국이 기록되었습니다.',
+        record: (json['record'] as Map?) == null
+            ? null
+            : RecordDetail.fromJson((json['record'] as Map).cast<String, dynamic>()),
+      );
+}
+
+/// `GET /records` 응답 (스펙 §12.2) — `items` 대신 `records` 키를 쓴다.
+class RecordListPage {
+  const RecordListPage({
+    required this.records,
+    required this.page,
+    required this.limit,
+    required this.total,
+    required this.totalPages,
+  });
+
+  final List<RecordDetail> records;
+  final int page;
+  final int limit;
+  final int total;
+  final int totalPages;
+
+  bool get hasMore => page < totalPages;
+
+  factory RecordListPage.fromJson(Map<String, dynamic> json) => RecordListPage(
+        records: ((json['records'] as List?) ?? const [])
+            .whereType<Map>()
+            .map((e) => RecordDetail.fromJson(e.cast<String, dynamic>()))
+            .toList(),
+        page: _asInt(json['page']) ?? 1,
+        limit: _asInt(json['limit']) ?? 20,
+        total: _asInt(json['total']) ?? 0,
+        totalPages: _asInt(json['totalPages']) ?? 1,
+      );
+}
+
+/// `GET /records/calendar` 의 `recordDays[]` 항목 (스펙 §12.3).
+class RecordDay {
+  const RecordDay({required this.date, required this.recordCount});
+
+  /// `YYYY-MM-DD`.
+  final String date;
+  final int recordCount;
+
+  factory RecordDay.fromJson(Map<String, dynamic> json) => RecordDay(
+        date: json['date'] as String? ?? '',
+        recordCount: _asInt(json['recordCount']) ?? 0,
+      );
+}
+
+/// `GET /records/calendar?year=&month=` 응답 (스펙 §12.3).
+class RecordCalendar {
+  const RecordCalendar({
+    required this.year,
+    required this.month,
+    required this.recordDays,
+  });
+
+  final int year;
+  final int month;
+  final List<RecordDay> recordDays;
+
+  factory RecordCalendar.fromJson(Map<String, dynamic> json) => RecordCalendar(
+        year: _asInt(json['year']) ?? 0,
+        month: _asInt(json['month']) ?? 0,
+        recordDays: ((json['recordDays'] as List?) ?? const [])
+            .whereType<Map>()
+            .map((e) => RecordDay.fromJson(e.cast<String, dynamic>()))
+            .toList(),
+      );
 }

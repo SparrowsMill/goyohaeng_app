@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
-import '../../data/mock_food_info.dart';
-import '../../data/mock_foods.dart';
+import '../../api/api.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_radius.dart';
 import '../../theme/app_shadows.dart';
@@ -13,22 +12,22 @@ import '../share/sns_share_sheet.dart';
 import 'my_food_screen.dart';
 
 /// `<셰프의 주방>` (user_flow §4) — 음식 정보에서 "만들기"를 눌렀을 때. 음식
-/// 이름·소모 재료 표시 → 제작 → 완성 일러스트 → 공유(SNS / 기록용 플랫폼) 또는
-/// "확인".
+/// 이름·소모 재료 표시 → 실제 제작(`POST /foods/{id}/make`, 스펙 §10.3) → 완성
+/// 일러스트 → 공유(SNS / 기록용 플랫폼) 또는 "확인".
 ///
-/// 뼈대만 구현 — "요리 시작" → `_CookingDialog`(요리 중 모달, 진행 점) 을 띄우고
-/// 2.2초 뒤 스스로 닫히면 완성 카드로 전환. 공유 플로우(§7)는 미구현이라 스낵바.
+/// "요리 시작"을 누르면 `_CookingDialog`(요리 중 모달, 진행 점 애니메이션)를
+/// 띄운 채로 실제 네트워크 요청을 기다린다 — 더 이상 고정 시간 뒤 자동 성공하지
+/// 않는다. 재료 부족(`MakeFoodShortage`)이면 완성 카드 없이 안내만 보여주고
+/// 준비 화면에 머문다.
 ///
-/// * TODO: 제작 애니메이션 (현재는 `_CookingDialog` 진행 점 + 시간 경과로 대체).
 /// * TODO: SNS 공유 → `<SNS에 공유>` (§7).
 /// * TODO: 기록용 플랫폼 공유 → `<기록용 플랫폼에 공유>` (§7).
-/// * TODO(backend): "요리 시작" 시 재료 소모 반영 API 연동.
 /// * TODO(asset): 이 화면 배경 scene 미납품 —
 ///   `assets/illustrations/scenes/chef_kitchen_bg.png` (§9, 주방 헤더 밴드 PNG).
 class ChefKitchenScreen extends StatefulWidget {
-  const ChefKitchenScreen({super.key, required this.info});
+  const ChefKitchenScreen({super.key, required this.food});
 
-  final FoodInfo info;
+  final Food food;
 
   @override
   State<ChefKitchenScreen> createState() => _ChefKitchenScreenState();
@@ -39,41 +38,70 @@ enum _Phase { prep, done }
 class _ChefKitchenScreenState extends State<ChefKitchenScreen> {
   _Phase _phase = _Phase.prep;
 
-  void _todo(String message) {
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
+  /// 제작 성공 후 서버가 내려준 결과(특별 재료 등) — 완성 카드에 사용.
+  MakeFoodResult? _result;
+
+  void _snack(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  void _todo(String message) => _snack(message);
+
+  String _shortageMessage(MakeFoodShortage e) {
+    if (e.missing.isEmpty) return e.message;
+    final parts = e.missing.map((m) => '${m.name} ${m.shortage}개 부족').join(', ');
+    return '재료가 부족해요: $parts';
   }
 
   Future<void> _startCooking() async {
-    // 제작 "애니메이션" 대체 — 요리 중 모달을 띄우고, 지정 시간 뒤 스스로 닫히면
-    // 완성 상태로 전환한다. (* TODO: 실제 제작 애니메이션)
-    await showDialog<void>(
+    if (!AuthStore.instance.isSignedIn) {
+      _snack('로그인이 필요해요.');
+      return;
+    }
+
+    // 요리 중 모달을 띄운 채로 실제 `POST /foods/{id}/make` 요청을 기다린다.
+    // 애니메이션은 반복 재생만 하고, 요청이 끝나면 화면에서 직접 닫는다.
+    final outcome = await showDialog<_CookOutcome>(
       context: context,
       barrierDismissible: false,
       barrierColor: const Color(0x8C1E160E),
-      builder: (_) => const _CookingDialog(
-        duration: Duration(milliseconds: 2200),
-      ),
+      builder: (_) => _CookingDialog(task: () => FoodService().make(widget.food.id)),
     );
-    if (mounted) setState(() => _phase = _Phase.done);
+    if (!mounted || outcome == null) return;
+
+    final error = outcome.error;
+    if (error != null) {
+      if (error is MakeFoodShortage) {
+        _snack(_shortageMessage(error));
+      } else if (error is ApiException) {
+        _snack(error.message);
+      } else {
+        _snack('음식을 만들지 못했어요.');
+      }
+      return;
+    }
+
+    final result = outcome.result!;
+    DashboardStore.instance.refresh();
+    setState(() {
+      _result = result;
+      _phase = _Phase.done;
+    });
   }
 
-  /// "확인" — 방금 만든 음식을 "내가 만든 음식" 맨 앞에 추가하고 `<본인 음식 보기>`
-  /// 로 돌아간다. (스택에 없으면 첫 화면까지 pop)
-  void _finish(BuildContext context, FoodInfo info) {
-    MyFoodsStore.instance.markMade(
-      slug: info.slug,
-      name: info.name,
-      description: info.description,
-    );
-    Navigator.of(context).popUntil(
-      (route) => route.settings.name == MyFoodScreen.routeName || route.isFirst,
+  /// "확인" — `<본인 음식 보기>` 를 새로 열어 방금 만든 음식이 반영된 최신
+  /// 목록을 보여준다(이전 화면 스택을 그대로 재사용하면 이미 불러온 목록이
+  /// 갱신되지 않으므로, 첫 화면까지 스택을 정리하고 새 인스턴스를 띄운다).
+  void _finish(BuildContext context) {
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const MyFoodScreen()),
+      (route) => route.isFirst,
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final info = widget.info;
+    final food = widget.food;
     return Scaffold(
       backgroundColor: AppColors.appBackground,
       body: SafeArea(
@@ -109,13 +137,14 @@ class _ChefKitchenScreenState extends State<ChefKitchenScreen> {
                       ),
                       child: _phase == _Phase.done
                           ? _DoneCard(
-                              info: info,
+                              food: food,
+                              result: _result,
                               onShareSns: () => showSnsShareSheet(context),
                               onShareRecord: () =>
                                   _todo('기록용 플랫폼 공유는 준비 중이에요.'),
-                              onConfirm: () => _finish(context, info),
+                              onConfirm: () => _finish(context),
                             )
-                          : _PrepCard(info: info),
+                          : _PrepCard(food: food),
                     ),
                   ],
                 ),
@@ -130,14 +159,24 @@ class _ChefKitchenScreenState extends State<ChefKitchenScreen> {
   }
 }
 
-/// 요리 중 모달 — 셰프 참새 일러스트 + 진행 점. [duration] 이 끝나면 스스로 닫힌다.
+/// `_CookingDialog` 의 결과 — 성공 시 [result], 실패 시 [error] 중 하나만 채워진다.
+class _CookOutcome {
+  const _CookOutcome.success(this.result) : error = null;
+  const _CookOutcome.failure(this.error) : result = null;
+
+  final MakeFoodResult? result;
+  final Object? error;
+}
+
+/// 요리 중 모달 — 셰프 참새 일러스트 + 진행 점(반복 재생). [task] 가 끝나면
+/// (성공/실패 모두) 스스로 결과를 안고 닫힌다.
 ///
 /// * TODO(asset): `assets/illustrations/sparrow/sparrow_cooking.png` 미납품 —
 ///   그 전까지 냄비 아이콘 placeholder.
 class _CookingDialog extends StatefulWidget {
-  const _CookingDialog({required this.duration});
+  const _CookingDialog({required this.task});
 
-  final Duration duration;
+  final Future<MakeFoodResult> Function() task;
 
   @override
   State<_CookingDialog> createState() => _CookingDialogState();
@@ -150,13 +189,20 @@ class _CookingDialogState extends State<_CookingDialog>
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(vsync: this, duration: widget.duration)
-      ..addStatusListener((status) {
-        if (status == AnimationStatus.completed && mounted) {
-          Navigator.of(context).pop();
-        }
-      })
-      ..forward();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1400),
+    )..repeat();
+    _run();
+  }
+
+  Future<void> _run() async {
+    try {
+      final result = await widget.task();
+      if (mounted) Navigator.of(context).pop(_CookOutcome.success(result));
+    } catch (e) {
+      if (mounted) Navigator.of(context).pop(_CookOutcome.failure(e));
+    }
   }
 
   @override
@@ -239,7 +285,7 @@ class _CookingDialogState extends State<_CookingDialog>
   }
 }
 
-/// 진행 점 — [progress] (0~1) 에 비례해 왼쪽부터 채워진다.
+/// 진행 점 — [progress] (0~1, 반복) 에 비례해 왼쪽부터 채워진다.
 class _ProgressDots extends StatelessWidget {
   const _ProgressDots({required this.progress});
 
@@ -315,9 +361,9 @@ class _HeaderBar extends StatelessWidget {
 
 /// 제작 전 카드 — 이름, 설명, 실루엣 일러스트, 소모 재료.
 class _PrepCard extends StatelessWidget {
-  const _PrepCard({required this.info});
+  const _PrepCard({required this.food});
 
-  final FoodInfo info;
+  final Food food;
 
   @override
   Widget build(BuildContext context) {
@@ -329,16 +375,16 @@ class _PrepCard extends StatelessWidget {
         children: [
           const _CardTitle('오늘 만들 음식'),
           const SizedBox(height: AppSpacing.sm),
-          Text(info.name, textAlign: TextAlign.center, style: AppTextStyles.h1),
+          Text(food.name, textAlign: TextAlign.center, style: AppTextStyles.h1),
           const SizedBox(height: AppSpacing.sm),
           Text(
-            info.description,
+            food.description ?? '',
             textAlign: TextAlign.center,
             style: AppTextStyles.bodyMedium
                 .copyWith(color: AppColors.textSecondary),
           ),
           const SizedBox(height: AppSpacing.xl),
-          _FoodIllustration(info: info, revealed: false),
+          _FoodIllustration(food: food, revealed: false),
           const SizedBox(height: AppSpacing.xl),
           Container(
             padding: const EdgeInsets.all(AppSpacing.lg),
@@ -368,7 +414,7 @@ class _PrepCard extends StatelessWidget {
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    for (final ing in info.ingredients)
+                    for (final ing in food.ingredients)
                       Expanded(child: _ConsumedTile(ingredient: ing)),
                   ],
                 ),
@@ -384,19 +430,22 @@ class _PrepCard extends StatelessWidget {
 /// 완성 카드 — 컬러 일러스트 + 완성 배너 + 특별 재료 + 공유하기.
 class _DoneCard extends StatelessWidget {
   const _DoneCard({
-    required this.info,
+    required this.food,
+    required this.result,
     required this.onShareSns,
     required this.onShareRecord,
     required this.onConfirm,
   });
 
-  final FoodInfo info;
+  final Food food;
+  final MakeFoodResult? result;
   final VoidCallback onShareSns;
   final VoidCallback onShareRecord;
   final VoidCallback onConfirm;
 
   @override
   Widget build(BuildContext context) {
+    final specialIngredients = result?.userFood?.specialIngredients ?? const [];
     return Container(
       padding: const EdgeInsets.all(AppSpacing.xl),
       decoration: AppDecorations.card(radius: AppRadius.largeCard),
@@ -405,10 +454,10 @@ class _DoneCard extends StatelessWidget {
         children: [
           const _CardTitle('오늘 만든 음식'),
           const SizedBox(height: AppSpacing.sm),
-          Text(info.name, textAlign: TextAlign.center, style: AppTextStyles.h1),
+          Text(food.name, textAlign: TextAlign.center, style: AppTextStyles.h1),
           const SizedBox(height: AppSpacing.sm),
           Text(
-            info.completedText,
+            food.description ?? '',
             textAlign: TextAlign.center,
             style: AppTextStyles.bodyMedium
                 .copyWith(color: AppColors.textSecondary),
@@ -418,15 +467,15 @@ class _DoneCard extends StatelessWidget {
             clipBehavior: Clip.none,
             alignment: Alignment.topCenter,
             children: [
-              _FoodIllustration(info: info, revealed: true),
+              _FoodIllustration(food: food, revealed: true),
               const Positioned(top: -12, child: _CompletionBanner()),
             ],
           ),
-          if (info.specialNotes.isNotEmpty) ...[
+          if (specialIngredients.isNotEmpty) ...[
             const SizedBox(height: AppSpacing.xl),
             const _MiniLabel('특별 재료'),
             const SizedBox(height: AppSpacing.md),
-            _SpecialNotesRow(notes: info.specialNotes),
+            _SpecialIngredientsRow(items: specialIngredients),
           ],
           const SizedBox(height: AppSpacing.xl),
           const _MiniLabel('공유하기'),
@@ -502,11 +551,12 @@ class _CompletionBanner extends StatelessWidget {
   }
 }
 
-/// 특별 재료 2열 카드.
-class _SpecialNotesRow extends StatelessWidget {
-  const _SpecialNotesRow({required this.notes});
+/// 특별 재료(RARE/LEGENDARY, `UserFood.specialIngredients`) 2열 카드. 서버
+/// 응답에는 재료별 이미지 URL 이 없으므로 항상 범용 아이콘을 쓴다.
+class _SpecialIngredientsRow extends StatelessWidget {
+  const _SpecialIngredientsRow({required this.items});
 
-  final List<SpecialNote> notes;
+  final List<UserFoodSpecialIngredient> items;
 
   @override
   Widget build(BuildContext context) {
@@ -514,9 +564,9 @@ class _SpecialNotesRow extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          for (var i = 0; i < notes.length; i++) ...[
+          for (var i = 0; i < items.length; i++) ...[
             if (i != 0) const SizedBox(width: AppSpacing.sm),
-            Expanded(child: _SpecialNoteCard(note: notes[i])),
+            Expanded(child: _SpecialIngredientCard(item: items[i])),
           ],
         ],
       ),
@@ -524,10 +574,17 @@ class _SpecialNotesRow extends StatelessWidget {
   }
 }
 
-class _SpecialNoteCard extends StatelessWidget {
-  const _SpecialNoteCard({required this.note});
+const _rarityNoteLabels = <String, String>{
+  'COMMON': '일반 등급 재료',
+  'UNCOMMON': '고급 등급 재료',
+  'RARE': '희귀 등급 재료',
+  'LEGENDARY': '전설 등급 재료',
+};
 
-  final SpecialNote note;
+class _SpecialIngredientCard extends StatelessWidget {
+  const _SpecialIngredientCard({required this.item});
+
+  final UserFoodSpecialIngredient item;
 
   @override
   Widget build(BuildContext context) {
@@ -541,18 +598,10 @@ class _SpecialNoteCard extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(
-            width: 36,
-            height: 36,
-            child: Image.asset(
-              note.illustrationPath,
-              fit: BoxFit.contain,
-              errorBuilder: (context, error, stackTrace) => Icon(
-                Symbols.grocery_rounded,
-                size: 26,
-                color: AppColors.primary,
-              ),
-            ),
+          const Icon(
+            Symbols.grocery_rounded,
+            size: 26,
+            color: AppColors.primary,
           ),
           const SizedBox(width: AppSpacing.sm),
           Expanded(
@@ -560,14 +609,17 @@ class _SpecialNoteCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  note.name,
+                  item.name,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: AppTextStyles.bodySmall
                       .copyWith(fontWeight: FontWeight.w700),
                 ),
                 const SizedBox(height: 2),
-                Text(note.note, style: AppTextStyles.caption),
+                Text(
+                  _rarityNoteLabels[item.rarity] ?? '특별 재료',
+                  style: AppTextStyles.caption,
+                ),
               ],
             ),
           ),
@@ -647,9 +699,9 @@ class _MiniLabel extends StatelessWidget {
 }
 
 class _FoodIllustration extends StatelessWidget {
-  const _FoodIllustration({required this.info, required this.revealed});
+  const _FoodIllustration({required this.food, required this.revealed});
 
-  final FoodInfo info;
+  final Food food;
   final bool revealed;
 
   @override
@@ -663,18 +715,12 @@ class _FoodIllustration extends StatelessWidget {
           alignment: Alignment.center,
           child: Opacity(
             opacity: revealed ? 1 : 0.35,
-            child: Image.asset(
-              info.illustrationPath,
+            child: _NetOrIcon(
+              url: food.imageUrl ?? food.illustrationUrl,
+              icon: Symbols.ramen_dining_rounded,
+              color: AppColors.iconInactive,
               fit: BoxFit.cover,
-              width: double.infinity,
-              height: double.infinity,
-              errorBuilder: (context, error, stackTrace) => const Center(
-                child: Icon(
-                  Symbols.ramen_dining_rounded,
-                  size: 56,
-                  color: AppColors.iconInactive,
-                ),
-              ),
+              iconSize: 56,
             ),
           ),
         ),
@@ -683,11 +729,11 @@ class _FoodIllustration extends StatelessWidget {
   }
 }
 
-/// 소모 재료 하나 — 아이콘 + 이름 + "n / n" + 체크.
+/// 소모 재료 하나 — 아이콘 + 이름 + "필요량 / 필요량" + 체크.
 class _ConsumedTile extends StatelessWidget {
   const _ConsumedTile({required this.ingredient});
 
-  final RecipeIngredient ingredient;
+  final FoodIngredient ingredient;
 
   @override
   Widget build(BuildContext context) {
@@ -706,19 +752,16 @@ class _ConsumedTile extends StatelessWidget {
         SizedBox(
           width: 40,
           height: 40,
-          child: Image.asset(
-            ingredient.illustrationPath,
-            fit: BoxFit.contain,
-            errorBuilder: (context, error, stackTrace) => Icon(
-              Symbols.grocery_rounded,
-              size: 28,
-              color: AppColors.primary,
-            ),
+          child: _NetOrIcon(
+            url: ingredient.imageUrl ?? ingredient.illustrationUrl,
+            icon: Symbols.grocery_rounded,
+            color: AppColors.primary,
+            iconSize: 28,
           ),
         ),
         const SizedBox(height: AppSpacing.xs),
         Text(
-          '${ingredient.required} / ${ingredient.required}',
+          '${ingredient.requiredQuantity} / ${ingredient.requiredQuantity}',
           style: AppTextStyles.caption.copyWith(
             color: AppColors.success,
             fontWeight: FontWeight.w700,
@@ -841,5 +884,37 @@ class _Leaf extends StatelessWidget {
       errorBuilder: (context, error, stackTrace) => const SizedBox(width: 16),
     );
     return flip ? Transform.flip(flipX: true, child: img) : img;
+  }
+}
+
+/// 서버 이미지 URL 이 있으면 네트워크 이미지를, 없거나 로드 실패 시 아이콘을
+/// 보여준다 (§6 — placeholder 대신 기존 errorBuilder 패턴 유지).
+class _NetOrIcon extends StatelessWidget {
+  const _NetOrIcon({
+    required this.url,
+    required this.icon,
+    required this.color,
+    this.fit = BoxFit.contain,
+    this.iconSize,
+  });
+
+  final String? url;
+  final IconData icon;
+  final Color color;
+  final BoxFit fit;
+  final double? iconSize;
+
+  @override
+  Widget build(BuildContext context) {
+    final u = url;
+    if (u == null || u.isEmpty) {
+      return Center(child: Icon(icon, size: iconSize, color: color));
+    }
+    return Image.network(
+      u,
+      fit: fit,
+      errorBuilder: (context, error, stackTrace) =>
+          Center(child: Icon(icon, size: iconSize, color: color)),
+    );
   }
 }

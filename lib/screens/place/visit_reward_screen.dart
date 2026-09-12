@@ -29,12 +29,37 @@ String? _ingredientAssetPath(String? ingredient) {
 /// 재료로 만들 수 있는 음식 추천, 공유 버튼 2개(SNS / 기록용 플랫폼), 확인 옵션을
 /// 보여준다.
 ///
-/// * TODO(backend): 추천 음식 연동 (§4 `<음식 정보>` 화면 필요)
+/// [placeId]가 있으면(실 방문 인증 세션 경로) 실제로 어떤 재료가 몇 개
+/// 지급됐는지 이 화면 시점엔 알 수 없다 — GAP 퍼센타일 기반 랜덤 드롭이
+/// 관리자 승인 시점에 서버에서 결정되기 때문(스펙 §7.4–§7.5), 이 화면이 읽을 수
+/// 있는 동기 응답이 없다. 그래서 실 세션일 때는 [spot.ingredient]/
+/// [spot.ingredientCount](목업 값)를 실제 지급 내역인 것처럼 보여주지 않고,
+/// 재료 이름·개수를 특정하지 않는 안전한 문구로 대체한다.
+///
+/// * TODO(backend): 추천 음식 연동 (§4 `<음식 정보>` 화면 필요) — 지역 기반
+///   추천은 `FoodInfoScreen`이 목업 `MockFoodInfo`만 받는 구조라 실 `Food`를
+///   그대로 연결할 어댑터가 없어 보류.
 /// * TODO: SNS 공유 연동 (§7)
 class VisitRewardScreen extends StatelessWidget {
-  const VisitRewardScreen({super.key, required this.spot});
+  const VisitRewardScreen({
+    super.key,
+    required this.spot,
+    this.placeId,
+    this.visitVerificationId,
+  });
 
   final MockTouristSpot spot;
+
+  /// 실 방문 인증 세션의 장소 ID. `null`이면 목업 경로 — 기존처럼
+  /// `spot.ingredient`/`spot.ingredientCount`를 그대로 보여준다.
+  final int? placeId;
+
+  /// 실 방문 인증 세션의 ID(`VERIFIED` 상태) — "기록 플랫폼" 공유로 넘어갈 때
+  /// `FootprintWriteScreen`에 그대로 실어 `RecordService().create()`가
+  /// `visitVerificationId`를 함께 보낼 수 있게 한다. `null`이면 목업 경로.
+  final int? visitVerificationId;
+
+  bool get _isRealVisit => placeId != null;
 
   void _todo(BuildContext context, String message) {
     ScaffoldMessenger.of(
@@ -48,8 +73,10 @@ class VisitRewardScreen extends StatelessWidget {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => FootprintWriteScreen(
+          initialPlaceId: placeId,
           initialPlace: spot.name,
           initialPhotoAssets: [?_ingredientAssetPath(spot.ingredient)],
+          initialVisitVerificationId: visitVerificationId,
         ),
       ),
     );
@@ -100,11 +127,11 @@ class VisitRewardScreen extends StatelessWidget {
             ),
           ),
           const SizedBox(height: AppSpacing.lg),
-          _RewardTitle(spot: spot),
+          _RewardTitle(spot: spot, isRealVisit: _isRealVisit),
           const SizedBox(height: AppSpacing.xs),
           const _RewardSubtitle(),
           const SizedBox(height: AppSpacing.xl),
-          _RewardSummaryCard(spot: spot),
+          _RewardSummaryCard(spot: spot, isRealVisit: _isRealVisit),
           const SizedBox(height: AppSpacing.lg),
           _RecommendedFoodCard(
             onTap: () => _todo(context, '추천 음식 정보는 준비 중이에요.'),
@@ -129,15 +156,18 @@ class VisitRewardScreen extends StatelessWidget {
   }
 }
 
-/// "대나무잎 1개 획득" — 재료 이름은 진하게, 개수는 강조색으로.
+/// "대나무잎 1개 획득" — 재료 이름은 진하게, 개수는 강조색으로. 실 방문
+/// 세션([isRealVisit])이면 어떤 재료가 지급됐는지 알 수 없으므로(스펙 §7.4–
+/// §7.5) 재료명을 특정하지 않는 일반 문구를 대신 보여준다.
 class _RewardTitle extends StatelessWidget {
-  const _RewardTitle({required this.spot});
+  const _RewardTitle({required this.spot, required this.isRealVisit});
 
   final MockTouristSpot spot;
+  final bool isRealVisit;
 
   @override
   Widget build(BuildContext context) {
-    if (spot.ingredient == null) {
+    if (isRealVisit || spot.ingredient == null) {
       return Text(
         '방문 인증을 완료했어요!',
         textAlign: TextAlign.center,
@@ -197,14 +227,19 @@ class _RewardSubtitle extends StatelessWidget {
 }
 
 /// "담양 죽녹원 방문 완료 / 대나무잎 1개 획득 / 입장권 10% 할인 혜택" 요약 카드.
+/// 실 방문 세션([isRealVisit])이면 재료 행을 "재료를 획득했어요! 재료
+/// 가방에서 확인해보세요"로 대체한다 — 실제 지급 재료·개수는 관리자 승인
+/// 시점의 GAP 퍼센타일 랜덤 드롭으로 결정되어(스펙 §7.4–§7.5) 이 화면이
+/// 동기적으로 알 수 없기 때문.
 class _RewardSummaryCard extends StatelessWidget {
-  const _RewardSummaryCard({required this.spot});
+  const _RewardSummaryCard({required this.spot, required this.isRealVisit});
 
   final MockTouristSpot spot;
+  final bool isRealVisit;
 
   @override
   Widget build(BuildContext context) {
-    final ingredientPath = _ingredientAssetPath(spot.ingredient);
+    final ingredientPath = isRealVisit ? null : _ingredientAssetPath(spot.ingredient);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(AppSpacing.lg),
@@ -233,9 +268,11 @@ class _RewardSummaryCard extends StatelessWidget {
           _SummaryRow(
             assetPath: ingredientPath,
             fallbackIcon: Symbols.eco_rounded,
-            text: spot.ingredient == null
-                ? '획득 재료 없음'
-                : '${spot.ingredient} ${spot.ingredientCount}개 획득',
+            text: isRealVisit
+                ? '재료를 획득했어요! 재료 가방에서 확인해보세요'
+                : (spot.ingredient == null
+                    ? '획득 재료 없음'
+                    : '${spot.ingredient} ${spot.ingredientCount}개 획득'),
           ),
           const SizedBox(height: AppSpacing.md),
           _SummaryRow(

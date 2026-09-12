@@ -19,12 +19,23 @@ class VisitFailScreen extends StatelessWidget {
     super.key,
     required this.spot,
     this.window = const Duration(minutes: 30),
+    this.status,
+    this.failReason,
   });
 
   final MockTouristSpot spot;
 
   /// 인증 확인 화면에서 설정했던 도착 예정 창 — 안내 카드에 그대로 표시한다.
   final Duration window;
+
+  /// 서버가 내려준 최종 상태 — `EXPIRED`(시간 만료) 또는 `FAILED`(관리자 반려,
+  /// 스펙 §8.4). `null`이면(로컬 타이머 종료 등) 기존처럼 시간 만료로 표시한다.
+  final String? status;
+
+  /// `FAILED`일 때 관리자가 남겼을 수 있는 반려 사유.
+  final String? failReason;
+
+  bool get _isRejected => status == 'FAILED';
 
   String get _windowLabel {
     final minutes = window.inMinutes;
@@ -89,13 +100,17 @@ class VisitFailScreen extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.lg),
           Text(
-            '방문 인증 시간이 지났어요',
+            _isRejected ? '방문 인증이 반려됐어요' : '방문 인증 시간이 지났어요',
             textAlign: TextAlign.center,
             style: AppTextStyles.h1,
           ),
           const SizedBox(height: AppSpacing.xs),
           Text(
-            '설정한 도착 예정 시간 안에 인증이 완료되지 않았어요.\n다음에 다시 도전해 볼까요?',
+            _isRejected
+                ? (failReason?.trim().isNotEmpty ?? false)
+                    ? failReason!.trim()
+                    : '매장에서 이번 방문 인증을 확인하지 못했어요.\n다음에 다시 도전해 볼까요?'
+                : '설정한 도착 예정 시간 안에 인증이 완료되지 않았어요.\n다음에 다시 도전해 볼까요?',
             textAlign: TextAlign.center,
             style: AppTextStyles.bodyMedium.copyWith(
               color: AppColors.textSecondary,
@@ -103,7 +118,11 @@ class VisitFailScreen extends StatelessWidget {
             ),
           ),
           const SizedBox(height: AppSpacing.xl),
-          _FailInfoCard(spot: spot, windowLabel: _windowLabel),
+          _FailInfoCard(
+            spot: spot,
+            windowLabel: _windowLabel,
+            rejected: _isRejected,
+          ),
           const SizedBox(height: AppSpacing.xxl),
           SizedBox(
             width: double.infinity,
@@ -129,10 +148,15 @@ class VisitFailScreen extends StatelessWidget {
 
 /// "담양 죽녹원 / 도착 예정 시간 / 인증 상태" 요약 카드.
 class _FailInfoCard extends StatelessWidget {
-  const _FailInfoCard({required this.spot, required this.windowLabel});
+  const _FailInfoCard({
+    required this.spot,
+    required this.windowLabel,
+    this.rejected = false,
+  });
 
   final MockTouristSpot spot;
   final String windowLabel;
+  final bool rejected;
 
   @override
   Widget build(BuildContext context) {
@@ -187,10 +211,12 @@ class _FailInfoCard extends StatelessWidget {
           const SizedBox(height: AppSpacing.md),
           Row(
             children: [
-              const Icon(
-                Symbols.hourglass_bottom_rounded,
+              Icon(
+                rejected
+                    ? Symbols.cancel_rounded
+                    : Symbols.hourglass_bottom_rounded,
                 size: 28,
-                color: AppColors.iconDisabled,
+                color: rejected ? AppColors.error : AppColors.iconDisabled,
               ),
               const SizedBox(width: AppSpacing.md),
               Text(
@@ -200,9 +226,9 @@ class _FailInfoCard extends StatelessWidget {
                 ),
               ),
               Text(
-                '시간 만료',
+                rejected ? '반려됨' : '시간 만료',
                 style: AppTextStyles.bodyLarge.copyWith(
-                  color: AppColors.warning,
+                  color: rejected ? AppColors.error : AppColors.warning,
                   fontWeight: FontWeight.w700,
                 ),
               ),

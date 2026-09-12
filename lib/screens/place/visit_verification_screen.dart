@@ -68,6 +68,8 @@ class _VisitVerificationScreenState extends State<VisitVerificationScreen> {
   Timer? _poll;
   bool _navigated = false;
   bool _forcing = false;
+  String? _resultStatus;
+  String? _resultFailReason;
 
   bool get _live => widget.session != null;
 
@@ -126,7 +128,9 @@ class _VisitVerificationScreenState extends State<VisitVerificationScreen> {
       final latest = await _service.get(widget.session!.id);
       if (latest.isVerified) {
         _handleSuccess();
-      } else if (latest.isExpired) {
+      } else if (latest.isExpired || latest.isFailed) {
+        _resultStatus = latest.status;
+        _resultFailReason = latest.failReason;
         _handleFailure();
       }
     } on ApiException {
@@ -134,27 +138,65 @@ class _VisitVerificationScreenState extends State<VisitVerificationScreen> {
     }
   }
 
-  /// QA/직원 확인 대체 — 서버에 코드 검증을 요청해 재료를 지급받는다 (스펙 §7.3).
-  Future<void> _verifyNow() async {
-    if (_navigated || _forcing) return;
-    if (!_live) {
-      _handleSuccess();
-      return;
-    }
+  /// "인증 상태 확인" 버튼 — 매장 관리자가 이미 승인/반려했는지 즉시 다시
+  /// 조회한다. 사용자가 직접 인증을 완료시키는 API는 없다(스펙 §7.4/§10).
+  Future<void> _checkNow() async {
+    if (_navigated || _forcing || !_live) return;
     setState(() => _forcing = true);
     try {
-      final result = await _service.verify(
-        verificationId: widget.session!.id,
-        verificationCode: _code,
-      );
-      if (result.isVerified) {
+      final latest = await _service.get(widget.session!.id);
+      if (latest.isVerified) {
         _handleSuccess();
+      } else if (latest.isExpired || latest.isFailed) {
+        _resultStatus = latest.status;
+        _resultFailReason = latest.failReason;
+        _handleFailure();
       } else {
-        _snack('아직 인증이 완료되지 않았어요.');
+        _snack('아직 매장 직원 확인 전이에요.');
       }
     } on ApiException catch (e) {
       _snack(e.message);
     } finally {
+      if (mounted) setState(() => _forcing = false);
+    }
+  }
+
+  /// "신청 취소" — 대기 중(`ISSUED`)인 인증만 취소할 수 있다(스펙 §7.3).
+  Future<void> _cancel() async {
+    if (_navigated || _forcing || !_live) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadius.modal),
+        ),
+        title: const Text('방문 인증을 취소할까요?'),
+        content: const Text('취소하면 이 코드는 더 이상 사용할 수 없어요.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('아니오'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('취소할게요'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _forcing = true);
+    try {
+      await _service.cancel(widget.session!.id);
+      if (_navigated || !mounted) return;
+      _navigated = true;
+      _ticker?.cancel();
+      _poll?.cancel();
+      Navigator.of(context).maybePop();
+    } on ApiException catch (e) {
+      _snack(e.message);
       if (mounted) setState(() => _forcing = false);
     }
   }
@@ -175,7 +217,13 @@ class _VisitVerificationScreenState extends State<VisitVerificationScreen> {
     // 인증 성공 → 재료·인증 횟수가 늘었으니 방앗간 스탯 갱신 예약.
     if (_live) DashboardStore.instance.refresh();
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => VisitRewardScreen(spot: widget.spot)),
+      MaterialPageRoute(
+        builder: (_) => VisitRewardScreen(
+          spot: widget.spot,
+          placeId: widget.session?.placeId,
+          visitVerificationId: widget.session?.id,
+        ),
+      ),
     );
   }
 
@@ -187,8 +235,12 @@ class _VisitVerificationScreenState extends State<VisitVerificationScreen> {
     _activeSessions.remove(widget.spot.name);
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(
-        builder: (_) =>
-            VisitFailScreen(spot: widget.spot, window: widget.window),
+        builder: (_) => VisitFailScreen(
+          spot: widget.spot,
+          window: widget.window,
+          status: _resultStatus,
+          failReason: _resultFailReason,
+        ),
       ),
     );
   }
@@ -245,7 +297,10 @@ class _VisitVerificationScreenState extends State<VisitVerificationScreen> {
           const _StaffHintCard(),
           const SizedBox(height: AppSpacing.xl),
           if (_live)
-            _LiveHintCard(onCheckNow: _forcing ? null : _verifyNow)
+            _LiveHintCard(
+              onCheckNow: _forcing ? null : _checkNow,
+              onCancel: _forcing ? null : _cancel,
+            )
           else
             _DebugTransitionRow(
               onForceSuccess: _handleSuccess,
@@ -533,14 +588,17 @@ class _RewardRow extends StatelessWidget {
 }
 
 /// 백엔드 연동 경로 — 직원이 admin에서 확인하면 자동으로 다음 화면으로 넘어간다.
-/// "인증 상태 확인" 버튼은 즉시 서버에 검증을 요청한다 (스펙 §7.3).
+/// "인증 상태 확인" 버튼은 즉시 `GET /visit-verifications/{id}`를 다시 조회하고,
+/// "신청 취소"는 `POST /visit-verifications/{id}/cancel`을 호출한다 (스펙 §8).
 class _LiveHintCard extends StatelessWidget {
-  const _LiveHintCard({required this.onCheckNow});
+  const _LiveHintCard({required this.onCheckNow, required this.onCancel});
 
   final VoidCallback? onCheckNow;
+  final VoidCallback? onCancel;
 
   @override
   Widget build(BuildContext context) {
+    final busy = onCheckNow == null && onCancel == null;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(AppSpacing.lg),
@@ -567,13 +625,19 @@ class _LiveHintCard extends StatelessWidget {
           const SizedBox(height: AppSpacing.md),
           OutlinedButton(
             onPressed: onCheckNow,
-            child: onCheckNow == null
+            child: busy
                 ? const SizedBox(
                     width: 18,
                     height: 18,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Text('인증 상태 확인'),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          TextButton(
+            onPressed: onCancel,
+            style: TextButton.styleFrom(foregroundColor: AppColors.error),
+            child: const Text('신청 취소'),
           ),
         ],
       ),

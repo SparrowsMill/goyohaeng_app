@@ -1,41 +1,86 @@
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
-import '../../data/mock_ingredients.dart';
+import '../../api/api.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_radius.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
+import 'food_info_screen.dart';
 
 /// `<재료 상세 페이지>` (user_flow §5) — 재료 가방에서 재료 하나를 눌렀을 때 뜨는
-/// 모달. 재료 이름·보유 개수·재료 특성·사용되는 음식·획득 가능한 장소를 보여준다.
+/// 모달. 재료 이름·보유 개수·재료 특성·사용되는 음식·GAP 기반 획득 방법을
+/// 보여준다.
 ///
-/// 뼈대만 구현 — 데이터는 `mock_ingredients` placeholder. "사용되는 음식" /
-/// "획득 가능한 장소" 항목 탭 시 스낵바로 안내한다.
+/// `GET /ingredients/{ingredientId}` (스펙 §9.1) 로 실 데이터를 읽는다.
+/// "사용되는 음식" 탭 시 실제 `foodId` 로 `<음식 정보>` 로 이동한다.
 ///
-/// * TODO: 사용되는 음식 탭 → `<음식 정보>` (§4).
-/// * TODO: 획득 가능한 장소 탭 → `<장소 정보 페이지>` (§6) / `<방앗간>` 등.
-/// * TODO(backend): 재료 상세 조회 API 연동 (mock_ingredients TODO 참고).
+/// * TODO(backend gap): 예전 mock 의 "획득 가능한 장소"(구체적인 장소 이름 목록)
+///   에 대응하는 API 필드가 없다 — `acquisitionPlaces` 는 스펙상 일반 GAP 방문
+///   보상 출처로 쓰지 않게 명시되어 있음. 대신 `acquisition.description` +
+///   `dropProbabilities` (GAP 구간별 확률) 을 그대로 표시한다.
 Future<void> showIngredientDetail(
-  BuildContext context,
-  MockIngredient ingredient,
-) {
+  BuildContext context, {
+  required int ingredientId,
+  String? initialName,
+}) {
   return showDialog<void>(
     context: context,
     barrierColor: const Color(0x8C1E160E),
-    builder: (_) => _IngredientDetailDialog(ingredient: ingredient),
+    builder: (_) => _IngredientDetailDialog(
+      ingredientId: ingredientId,
+      initialName: initialName,
+    ),
   );
 }
 
-class _IngredientDetailDialog extends StatelessWidget {
-  const _IngredientDetailDialog({required this.ingredient});
+/// GAP 정책 코드 → 화면에 보여줄 한국어 라벨.
+const _policyLabels = <String, String>{
+  'NO_GAP': '갭지수 정보 없음',
+  'GAP_LOW': '갭지수 하위 (0~50%)',
+  'GAP_MID': '갭지수 중위 (50~80%)',
+  'GAP_HIGH': '갭지수 상위 (80~95%)',
+  'GAP_TOP': '갭지수 최상위 (95%~)',
+};
 
-  final MockIngredient ingredient;
+const _rarityLabels = <String, String>{
+  'COMMON': '일반',
+  'UNCOMMON': '고급',
+  'RARE': '희귀',
+  'LEGENDARY': '전설',
+};
 
-  void _todo(BuildContext context, String message) {
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
+class _IngredientDetailDialog extends StatefulWidget {
+  const _IngredientDetailDialog({
+    required this.ingredientId,
+    this.initialName,
+  });
+
+  final int ingredientId;
+  final String? initialName;
+
+  @override
+  State<_IngredientDetailDialog> createState() =>
+      _IngredientDetailDialogState();
+}
+
+class _IngredientDetailDialogState extends State<_IngredientDetailDialog> {
+  late Future<IngredientDetail> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = _load();
   }
+
+  Future<IngredientDetail> _load() async {
+    if (!AuthStore.instance.isSignedIn) {
+      throw ApiException('로그인이 필요해요.');
+    }
+    return IngredientService().detail(widget.ingredientId);
+  }
+
+  void _reload() => setState(() => _future = _load());
 
   @override
   Widget build(BuildContext context) {
@@ -52,65 +97,90 @@ class _IngredientDetailDialog extends StatelessWidget {
       ),
       child: ConstrainedBox(
         constraints: BoxConstraints(maxHeight: maxHeight),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _Header(
-              title: ingredient.name,
-              onClose: () => Navigator.of(context).maybePop(),
-            ),
-            Flexible(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.xxl,
-                  AppSpacing.lg,
-                  AppSpacing.xxl,
-                  AppSpacing.xxl,
+        child: FutureBuilder<IngredientDetail>(
+          future: _future,
+          builder: (context, snapshot) {
+            final detail = snapshot.data;
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _Header(
+                  title: detail?.name ?? widget.initialName ?? '재료 정보',
+                  onClose: () => Navigator.of(context).maybePop(),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _CharacteristicsSection(ingredient: ingredient),
-                    if (ingredient.usedInFoods.isNotEmpty) ...[
-                      const SizedBox(height: AppSpacing.xxl),
-                      const _SectionLabel('사용되는 음식'),
-                      const SizedBox(height: AppSpacing.md),
-                      _UsedInFoodsGrid(
-                        foods: ingredient.usedInFoods,
-                        onTapFood: (food) =>
-                            _todo(context, '${food.name} 정보는 준비 중이에요.'),
-                      ),
-                    ],
-                    if (ingredient.sources.isNotEmpty) ...[
-                      const SizedBox(height: AppSpacing.xxl),
-                      const _SectionLabel('획득 가능한 장소'),
-                      const SizedBox(height: AppSpacing.md),
-                      for (final source in ingredient.sources) ...[
-                        _SourceRow(
-                          source: source,
-                          onTap: () =>
-                              _todo(context, '${source.name} 정보는 준비 중이에요.'),
-                        ),
-                        if (source != ingredient.sources.last)
-                          const SizedBox(height: AppSpacing.sm),
-                      ],
-                    ],
-                    if (ingredient.usedInFoods.isEmpty &&
-                        ingredient.sources.isEmpty) ...[
-                      const SizedBox(height: AppSpacing.xl),
-                      Text(
-                        '사용되는 음식 · 획득 장소 정보는 준비 중이에요.',
-                        style: AppTextStyles.bodySmall
-                            .copyWith(color: AppColors.textSecondary),
-                      ),
-                    ],
-                  ],
+                Flexible(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(
+                      AppSpacing.xxl,
+                      AppSpacing.lg,
+                      AppSpacing.xxl,
+                      AppSpacing.xxl,
+                    ),
+                    child: _buildBody(context, snapshot),
+                  ),
                 ),
-              ),
-            ),
-          ],
+              ],
+            );
+          },
         ),
       ),
+    );
+  }
+
+  Widget _buildBody(
+    BuildContext context,
+    AsyncSnapshot<IngredientDetail> snapshot,
+  ) {
+    if (snapshot.connectionState != ConnectionState.done) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: AppSpacing.xxxl),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (snapshot.hasError) {
+      final message = snapshot.error is ApiException
+          ? (snapshot.error as ApiException).message
+          : '재료 정보를 불러오지 못했어요.';
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: AppSpacing.xl),
+        child: Column(
+          children: [
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: AppTextStyles.bodyMedium
+                  .copyWith(color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            OutlinedButton(onPressed: _reload, child: const Text('다시 시도')),
+          ],
+        ),
+      );
+    }
+
+    final detail = snapshot.data!;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _CharacteristicsSection(detail: detail),
+        if (detail.usedFoods.isNotEmpty) ...[
+          const SizedBox(height: AppSpacing.xxl),
+          const _SectionLabel('사용되는 음식'),
+          const SizedBox(height: AppSpacing.md),
+          _UsedInFoodsGrid(
+            foods: detail.usedFoods,
+            onTapFood: (food) => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => FoodInfoScreen(foodId: food.foodId),
+              ),
+            ),
+          ),
+        ],
+        const SizedBox(height: AppSpacing.xxl),
+        const _SectionLabel('획득 방법'),
+        const SizedBox(height: AppSpacing.md),
+        _AcquisitionSection(acquisition: detail.acquisition),
+      ],
     );
   }
 }
@@ -167,30 +237,26 @@ class _Header extends StatelessWidget {
 
 /// 재료 일러스트 + "재료 특성" 카드.
 class _CharacteristicsSection extends StatelessWidget {
-  const _CharacteristicsSection({required this.ingredient});
+  const _CharacteristicsSection({required this.detail});
 
-  final MockIngredient ingredient;
+  final IngredientDetail detail;
 
   @override
   Widget build(BuildContext context) {
+    final regionName = detail.acquisition?.region?['name'] as String?;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Opacity(
-          opacity: ingredient.owned ? 1 : 0.4,
+          opacity: detail.obtained ? 1 : 0.4,
           child: SizedBox(
             width: 108,
             height: 108,
-            child: Image.asset(
-              ingredient.illustrationPath,
-              fit: BoxFit.contain,
-              errorBuilder: (context, error, stackTrace) => Icon(
-                Symbols.grocery_rounded,
-                size: 56,
-                color: ingredient.owned
-                    ? AppColors.primary
-                    : AppColors.iconDisabled,
-              ),
+            child: _NetOrIcon(
+              url: detail.imageUrl ?? detail.illustrationUrl,
+              icon: Symbols.grocery_rounded,
+              color: detail.obtained ? AppColors.primary : AppColors.iconDisabled,
+              iconSize: 56,
             ),
           ),
         ),
@@ -217,30 +283,40 @@ class _CharacteristicsSection extends StatelessWidget {
                 _CharRow(
                   icon: Symbols.inventory_2_rounded,
                   label: '보유 수량',
-                  trailing: '${ingredient.count}개',
-                  trailingColor: ingredient.owned
+                  trailing: '${detail.quantity}개',
+                  trailingColor: detail.obtained
                       ? AppColors.success
                       : AppColors.textDisabled,
                 ),
                 const SizedBox(height: AppSpacing.sm),
                 _CharRow(
                   icon: Symbols.eco_rounded,
-                  label: ingredient.category == IngredientCategory.basic
-                      ? '기본 재료'
-                      : '지역별 재료',
+                  label: detail.ingredientType == 'REGIONAL'
+                      ? '지역별 재료'
+                      : '기본 재료',
                 ),
-                if (ingredient.flavor != null) ...[
+                if (detail.rarity != null) ...[
+                  const SizedBox(height: AppSpacing.sm),
+                  _CharRow(
+                    icon: Symbols.auto_awesome_rounded,
+                    label: '희귀도: ${_rarityLabels[detail.rarity] ?? detail.rarity}',
+                  ),
+                ],
+                if (detail.description != null &&
+                    detail.description!.trim().isNotEmpty) ...[
                   const SizedBox(height: AppSpacing.sm),
                   _CharRow(
                     icon: Symbols.nutrition_rounded,
-                    label: ingredient.flavor!,
+                    label: detail.description!,
                   ),
                 ],
                 const SizedBox(height: AppSpacing.sm),
                 _CharRow(
                   icon: Symbols.location_on_rounded,
-                  label: ingredient.isRegionalSpecialty
-                      ? '${ingredient.specialtyRegion} 특산 재료'
+                  label: detail.regionId != null
+                      ? (regionName != null
+                          ? '$regionName 특산 재료'
+                          : '지역 특산 재료')
                       : '지역 특산 재료 아님',
                 ),
               ],
@@ -313,8 +389,8 @@ class _SectionLabel extends StatelessWidget {
 class _UsedInFoodsGrid extends StatelessWidget {
   const _UsedInFoodsGrid({required this.foods, required this.onTapFood});
 
-  final List<IngredientFood> foods;
-  final ValueChanged<IngredientFood> onTapFood;
+  final List<IngredientUsedFood> foods;
+  final ValueChanged<IngredientUsedFood> onTapFood;
 
   @override
   Widget build(BuildContext context) {
@@ -340,7 +416,7 @@ class _UsedInFoodsGrid extends StatelessWidget {
 class _UsedFoodTile extends StatelessWidget {
   const _UsedFoodTile({required this.food, required this.onTap});
 
-  final IngredientFood food;
+  final IngredientUsedFood food;
   final VoidCallback onTap;
 
   @override
@@ -366,16 +442,12 @@ class _UsedFoodTile extends StatelessWidget {
                   child: Container(
                     width: double.infinity,
                     color: AppColors.surfaceSelected,
-                    child: Image.asset(
-                      food.illustrationPath,
+                    child: _NetOrIcon(
+                      url: food.imageUrl ?? food.illustrationUrl,
+                      icon: Symbols.dinner_dining_rounded,
+                      color: AppColors.iconInactive,
                       fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) => const Center(
-                        child: Icon(
-                          Symbols.dinner_dining_rounded,
-                          size: 22,
-                          color: AppColors.iconInactive,
-                        ),
-                      ),
+                      iconSize: 22,
                     ),
                   ),
                 ),
@@ -398,62 +470,69 @@ class _UsedFoodTile extends StatelessWidget {
   }
 }
 
-class _SourceRow extends StatelessWidget {
-  const _SourceRow({required this.source, required this.onTap});
+/// GAP 기반 획득 방법 — 서버 설명 + 정책별 확률을 그대로 표시한다(스펙 §9.1,
+/// §14-14: 프론트에서 확률을 계산하거나 예측하지 않는다).
+class _AcquisitionSection extends StatelessWidget {
+  const _AcquisitionSection({required this.acquisition});
 
-  final IngredientSource source;
-  final VoidCallback onTap;
-
-  IconData get _icon => switch (source.type) {
-        IngredientSourceType.market => Symbols.storefront_rounded,
-        IngredientSourceType.shop => Symbols.cottage_rounded,
-        IngredientSourceType.millReward => Symbols.grain_rounded,
-      };
+  final IngredientAcquisition? acquisition;
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: AppColors.surface,
-      borderRadius: BorderRadius.circular(AppRadius.listRow),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(AppRadius.listRow),
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.md,
-            vertical: AppSpacing.md,
-          ),
-          decoration: BoxDecoration(
-            border: Border.all(color: AppColors.border),
-            borderRadius: BorderRadius.circular(AppRadius.listRow),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 32,
-                height: 32,
-                decoration: const BoxDecoration(
-                  color: AppColors.surfaceSelected,
-                  shape: BoxShape.circle,
+    final acq = acquisition;
+    if (acq == null ||
+        ((acq.description == null || acq.description!.trim().isEmpty) &&
+            acq.dropProbabilities.isEmpty)) {
+      return Text(
+        '획득 방법 정보가 없어요.',
+        style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
+      );
+    }
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.lg),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        border: Border.all(color: AppColors.border),
+        borderRadius: BorderRadius.circular(AppRadius.card),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (acq.description != null && acq.description!.trim().isNotEmpty)
+            Text(
+              acq.description!,
+              style: AppTextStyles.bodyMedium.copyWith(height: 1.5),
+            ),
+          if (acq.dropProbabilities.isNotEmpty) ...[
+            if (acq.description != null && acq.description!.trim().isNotEmpty)
+              const SizedBox(height: AppSpacing.md),
+            const Divider(height: 1, color: AppColors.divider),
+            const SizedBox(height: AppSpacing.md),
+            for (final p in acq.dropProbabilities) ...[
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        _policyLabels[p.policyCode] ?? p.policyCode,
+                        style: AppTextStyles.bodySmall,
+                      ),
+                    ),
+                    Text(
+                      '${(p.probability * 100).toStringAsFixed(1)}%',
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: AppColors.primaryPressed,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
                 ),
-                child: Icon(_icon, size: 18, color: AppColors.primary),
-              ),
-              const SizedBox(width: AppSpacing.md),
-              Expanded(
-                child: Text(
-                  source.name,
-                  style: AppTextStyles.bodyLarge
-                      .copyWith(fontWeight: FontWeight.w600),
-                ),
-              ),
-              const Icon(
-                Symbols.chevron_right_rounded,
-                size: 20,
-                color: AppColors.iconInactive,
               ),
             ],
-          ),
-        ),
+          ],
+        ],
       ),
     );
   }
@@ -474,5 +553,37 @@ class _Leaf extends StatelessWidget {
       errorBuilder: (context, error, stackTrace) => const SizedBox(width: 16),
     );
     return flip ? Transform.flip(flipX: true, child: img) : img;
+  }
+}
+
+/// 서버 이미지 URL 이 있으면 네트워크 이미지를, 없거나 로드 실패 시 아이콘을
+/// 보여준다 (§6 — placeholder 대신 기존 errorBuilder 패턴 유지).
+class _NetOrIcon extends StatelessWidget {
+  const _NetOrIcon({
+    required this.url,
+    required this.icon,
+    required this.color,
+    this.fit = BoxFit.contain,
+    this.iconSize,
+  });
+
+  final String? url;
+  final IconData icon;
+  final Color color;
+  final BoxFit fit;
+  final double? iconSize;
+
+  @override
+  Widget build(BuildContext context) {
+    final u = url;
+    if (u == null || u.isEmpty) {
+      return Center(child: Icon(icon, size: iconSize, color: color));
+    }
+    return Image.network(
+      u,
+      fit: fit,
+      errorBuilder: (context, error, stackTrace) =>
+          Center(child: Icon(icon, size: iconSize, color: color)),
+    );
   }
 }

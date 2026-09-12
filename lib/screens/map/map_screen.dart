@@ -164,7 +164,8 @@ class _MapScreenState extends State<MapScreen> {
                   onFocusSpot: _focusFavorite,
                   onOpenDetail: (spot) => Navigator.of(context).push(
                     MaterialPageRoute(
-                      builder: (_) => PlaceInfoScreen(spot: spot),
+                      builder: (_) =>
+                          PlaceInfoScreen(spot: spot, placeId: spot.placeId),
                     ),
                   ),
                 ),

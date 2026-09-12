@@ -91,7 +91,11 @@ class PlaceInfoScreen extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.only(right: AppSpacing.sm),
             child: Center(
-              child: FavoriteStarButton(spotName: spot.name, size: 26),
+              child: FavoriteStarButton(
+                spotName: spot.name,
+                size: 26,
+                placeId: placeId,
+              ),
             ),
           ),
         ],
@@ -136,7 +140,11 @@ class PlaceInfoScreen extends StatelessWidget {
             },
           ),
           const SizedBox(height: AppSpacing.lg),
-          _DetailCard(spot: spot, onDirections: () => _openDirections(context)),
+          _DetailCard(
+            spot: spot,
+            placeId: placeId,
+            onDirections: () => _openDirections(context),
+          ),
           if (hasContact) ...[
             const SizedBox(height: AppSpacing.xl),
             _ContactSection(
@@ -158,13 +166,16 @@ class PlaceInfoScreen extends StatelessWidget {
             spot: spot,
             onOpenTrend: () => Navigator.of(context).push(
               MaterialPageRoute(
-                builder: (_) => TrendSummaryScreen(spot: spot),
+                builder: (_) => TrendSummaryScreen(spot: spot, placeId: placeId),
               ),
             ),
             onKeyword: (keyword) => Navigator.of(context).push(
               MaterialPageRoute(
-                builder: (_) =>
-                    TrendSummaryScreen(spot: spot, focusKeyword: keyword),
+                builder: (_) => TrendSummaryScreen(
+                  spot: spot,
+                  focusKeyword: keyword,
+                  placeId: placeId,
+                ),
               ),
             ),
           ),
@@ -591,15 +602,70 @@ class _RewardBox extends StatelessWidget {
   }
 }
 
-/// The 카테고리 / 주소 / 운영시간 / 주인의 소개 block.
-class _DetailCard extends StatelessWidget {
-  const _DetailCard({required this.spot, required this.onDirections});
+/// The 카테고리 / 주소 / 운영시간 / 주인의 소개 block. [placeId]가 있으면
+/// `GET /places/{id}`로 실제 소개(`overview`)·주소(`roadAddress`)·영업 여부
+/// (`isOpenNow`)를 덮어쓴다. `operatingHours`는 스펙 문서에 항목 구조가 아직
+/// 확정돼 있지 않아(예시가 항상 빈 배열) 알려진 필드명만 방어적으로 시도하고,
+/// 알아볼 수 없으면 목업 [spot.hours]로 그대로 남긴다.
+class _DetailCard extends StatefulWidget {
+  const _DetailCard({
+    required this.spot,
+    required this.onDirections,
+    this.placeId,
+  });
 
   final MockTouristSpot spot;
   final VoidCallback onDirections;
+  final int? placeId;
+
+  @override
+  State<_DetailCard> createState() => _DetailCardState();
+}
+
+class _DetailCardState extends State<_DetailCard> {
+  Place? _place;
+
+  @override
+  void initState() {
+    super.initState();
+    final id = widget.placeId;
+    if (id != null) {
+      PlaceService().detail(id).then((p) {
+        if (mounted) setState(() => _place = p);
+      }).catchError((_) {/* keep the mock spot values */});
+    }
+  }
+
+  List<String>? _formatHours(Place place) {
+    if (place.operatingHours.isEmpty) return null;
+    final lines = <String>[];
+    for (final h in place.operatingHours) {
+      final day = h['dayOfWeek'] ?? h['day'] ?? h['dayLabel'];
+      if (day == null) continue;
+      final closed = h['isClosed'] == true || h['closed'] == true;
+      final open = h['openTime'] ?? h['open'];
+      final close = h['closeTime'] ?? h['close'];
+      lines.add(
+        closed || open == null || close == null
+            ? '$day 휴무'
+            : '$day $open - $close',
+      );
+    }
+    return lines.isEmpty ? null : lines;
+  }
 
   @override
   Widget build(BuildContext context) {
+    final spot = widget.spot;
+    final place = _place;
+
+    final address = place?.address ?? spot.address;
+    final ownerIntro = (place?.overview?.trim().isNotEmpty ?? false)
+        ? place!.overview!.trim()
+        : spot.ownerIntro;
+    final hours = (place == null ? null : _formatHours(place)) ?? spot.hours;
+    final isOpenNow = place?.isOpenNow;
+
     return _Card(
       padding: const EdgeInsets.symmetric(
         horizontal: AppSpacing.lg,
@@ -623,13 +689,13 @@ class _DetailCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(
-                  child: Text(spot.address, style: AppTextStyles.bodyMedium),
+                  child: Text(address, style: AppTextStyles.bodyMedium),
                 ),
                 const SizedBox(width: AppSpacing.sm),
                 _MiniButton(
                   icon: Symbols.navigation_rounded,
                   label: '길찾기',
-                  onTap: onDirections,
+                  onTap: widget.onDirections,
                 ),
               ],
             ),
@@ -641,7 +707,11 @@ class _DetailCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                for (final line in spot.hours)
+                if (isOpenNow != null) ...[
+                  _BusinessStatusChip(isOpenNow: isOpenNow),
+                  const SizedBox(height: AppSpacing.xs),
+                ],
+                for (final line in hours)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 2),
                     child: Text(line, style: AppTextStyles.bodyMedium),
@@ -654,11 +724,38 @@ class _DetailCard extends StatelessWidget {
             icon: Symbols.person_rounded,
             label: '주인의 소개',
             child: Text(
-              spot.ownerIntro,
+              ownerIntro,
               style: AppTextStyles.bodyMedium.copyWith(height: 1.5),
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// "영업 중" / "영업 종료" — small status chip driven by the live `isOpenNow`.
+class _BusinessStatusChip extends StatelessWidget {
+  const _BusinessStatusChip({required this.isOpenNow});
+
+  final bool isOpenNow;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = isOpenNow ? AppColors.success : AppColors.error;
+    final bg = isOpenNow ? AppColors.successBackground : AppColors.errorBackground;
+    return Container(
+      height: 22,
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(AppRadius.pill),
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        isOpenNow ? '영업 중' : '영업 종료',
+        style: AppTextStyles.caption
+            .copyWith(color: color, fontWeight: FontWeight.w600),
       ),
     );
   }

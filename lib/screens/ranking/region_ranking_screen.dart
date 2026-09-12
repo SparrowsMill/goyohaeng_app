@@ -54,8 +54,10 @@ class RegionRankingScreen extends StatefulWidget {
 }
 
 class _RegionRankingScreenState extends State<RegionRankingScreen> {
-  /// 선택된 카테고리명 (`GET /categories` level 1). `null` == 전체.
-  String? _category;
+  /// 선택된 카테고리 id (`GET /categories` level 1). `null` == 전체. 서버가
+  /// `/places/gap/map`에서 이 id의 하위 categoryId까지 cascade로 걸러준다
+  /// (2026-09-12 배포로 검증됨) — 그래서 값이 바뀌면 [_loadSpots]를 다시 호출한다.
+  int? _category;
   bool _descending = true;
 
   /// 이 지역의 스팟. 목업으로 즉시 채우고, GAP API(`/places/gap/map` + 폴리곤
@@ -101,7 +103,8 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
   }
 
   Future<void> _loadSpots() async {
-    final spots = await GapSpots.instance.spotsInRegion(widget.regionKey);
+    final spots = await GapSpots.instance
+        .spotsInRegion(widget.regionKey, categoryId: _category);
     if (!mounted) return;
     setState(() {
       _allSpots = spots;
@@ -114,7 +117,18 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
           }
         }
       }
+      // 카테고리 필터가 바뀌어 선택된 스팟이 결과에서 빠졌으면 선택 해제.
+      final selected = _selected;
+      if (selected != null && !spots.any((s) => s.name == selected.name)) {
+        _selected = null;
+      }
     });
+  }
+
+  /// 카테고리 필터 변경 — 서버가 걸러주므로 다시 조회한다.
+  void _onCategoryChanged(int? categoryId) {
+    setState(() => _category = categoryId);
+    _loadSpots();
   }
 
   @override
@@ -139,10 +153,11 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
     });
   }
 
+  /// 카테고리 필터는 이미 서버(`GapSpots.spotsInRegion`)가 적용해서 [_allSpots]로
+  /// 들어오므로, 여기서는 즐겨찾기 필터 + 정렬만 한다.
   List<MockTouristSpot> get _visibleSpots {
     final favOnly = _favoritesOnly.value;
     final spots = _allSpots
-        .where((s) => _category == null || _categoryLabel(s) == _category)
         .where((s) => !favOnly || Favorites.instance.contains(s.name))
         .toList()
       ..sort((a, b) => _descending
@@ -150,9 +165,6 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
           : a.gapIndex.compareTo(b.gapIndex));
     return spots;
   }
-
-  static String _categoryLabel(MockTouristSpot s) =>
-      s.categoryName ?? s.category.label;
 
   void _openSpot(MockTouristSpot spot) {
     Navigator.of(context).push(
@@ -236,7 +248,7 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
           _FilterBar(
             category: _category,
             categories: _categories,
-            onCategory: (value) => setState(() => _category = value),
+            onCategory: _onCategoryChanged,
             descending: _descending,
             onSort: (value) => setState(() => _descending = value),
             hint: favOnly
@@ -322,12 +334,12 @@ class _FilterBar extends StatelessWidget {
     required this.hint,
   });
 
-  /// 선택된 카테고리명, `null` == 전체.
-  final String? category;
+  /// 선택된 카테고리 id, `null` == 전체.
+  final int? category;
 
   /// `GET /categories` level 1.
   final List<Category> categories;
-  final ValueChanged<String?> onCategory;
+  final ValueChanged<int?> onCategory;
   final bool descending;
   final ValueChanged<bool> onSort;
   final String hint;
@@ -351,13 +363,13 @@ class _FilterBar extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: _PillDropdown<String?>(
+                child: _PillDropdown<int?>(
                   value: category,
                   onChanged: onCategory,
                   items: [
                     const DropdownMenuItem(value: null, child: Text('전체')),
                     for (final c in categories)
-                      DropdownMenuItem(value: c.name, child: Text(c.name)),
+                      DropdownMenuItem(value: c.id, child: Text(c.name)),
                   ],
                 ),
               ),

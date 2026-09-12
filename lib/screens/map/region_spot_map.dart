@@ -269,7 +269,9 @@ class _RegionSpotMapState extends State<RegionSpotMap> {
         selected: false,
         favorite: true,
         onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => PlaceInfoScreen(spot: spot)),
+          MaterialPageRoute(
+            builder: (_) => PlaceInfoScreen(spot: spot, placeId: spot.placeId),
+          ),
         ),
       ),
     );

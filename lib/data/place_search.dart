@@ -1,11 +1,14 @@
 import 'package:flutter/foundation.dart' show immutable;
 
+import 'gap_spots.dart';
 import 'korea_map_geo.dart';
 import 'mock_map_regions.dart' show statsForRegion;
 import 'mock_region_ranking.dart';
 
-/// * TODO(backend): 지역·장소 검색 API 연동 — 지금은 GeoJSON 행정구역 +
-///   `mock_region_ranking.dart` 스팟으로 만든 인메모리 인덱스로만 매칭.
+/// 지역(시도/시군구)은 GeoJSON 행정구역에서, 장소는 실 GAP 데이터
+/// (`GapSpots.instance.allSpotsWithRegion`)에서 인메모리 인덱스를 만든다.
+/// GAP API/geo 로드가 실패하거나 빈 응답이면 `mock_region_ranking.dart`로
+/// 폴백해 검색이 비지 않게 한다 (`GapSpots`의 다른 메서드들과 같은 패턴).
 ///
 /// One hit from the `<지도>` search bar — either a region (시도/시군구) or a
 /// mock 관광 스팟. Both resolve to a [regionCode] that opens `<지역별 랭킹>`;
@@ -88,20 +91,37 @@ class PlaceSearchIndex {
       ));
     }
 
-    for (final entry in mockRegionRankings.entries) {
-      final code = entry.key;
-      final regionName = names[code] ?? '';
-      for (final spot in entry.value) {
+    final hits = await GapSpots.instance.allSpotsWithRegion();
+    if (hits.isNotEmpty) {
+      for (final hit in hits) {
+        final spot = hit.spot;
+        final typeLabel = spot.categoryName ?? spot.category.label;
         entries.add(PlaceSearchResult(
-          regionCode: code,
-          regionName: regionName.isEmpty ? spot.address : regionName,
+          regionCode: hit.regionCode,
+          regionName: hit.regionName,
           title: spot.name,
-          subtitle: regionName.isEmpty
-              ? spot.spotType
-              : '$regionName · ${spot.spotType}',
+          subtitle: '${hit.regionName} · $typeLabel',
           gapIndex: spot.gapIndex,
           spot: spot,
         ));
+      }
+    } else {
+      // GAP API/geo 실패 또는 빈 응답 — 목업 스팟으로 폴백.
+      for (final entry in mockRegionRankings.entries) {
+        final code = entry.key;
+        final regionName = names[code] ?? '';
+        for (final spot in entry.value) {
+          entries.add(PlaceSearchResult(
+            regionCode: code,
+            regionName: regionName.isEmpty ? spot.address : regionName,
+            title: spot.name,
+            subtitle: regionName.isEmpty
+                ? spot.spotType
+                : '$regionName · ${spot.spotType}',
+            gapIndex: spot.gapIndex,
+            spot: spot,
+          ));
+        }
       }
     }
 

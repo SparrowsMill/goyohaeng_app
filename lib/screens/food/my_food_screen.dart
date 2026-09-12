@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
-import '../../data/mock_food_history.dart';
-import '../../data/mock_foods.dart';
+import '../../api/api.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_radius.dart';
 import '../../theme/app_shadows.dart';
@@ -19,34 +18,51 @@ import 'ingredient_bag_screen.dart';
 /// `<본인 음식 보기>` (user_flow §4) — 지금까지 만든 음식을 보고, 재료 가방 /
 /// 음식 도감으로 이동할 수 있는 페이지. 방앗간 홈의 "내 음식 보기" CTA 에서 진입.
 ///
-/// 현재는 뼈대만 구현 — 목록은 `mock_myFoods` placeholder. 재료 가방 · 음식
-/// 도감 · 완성 음식 탭(음식 히스토리, `mock_food_history` 데이터 있는 slug) 모두
-/// 화면 연결됨.
+/// `GET /users/me/foods` (스펙 §3.9) 로 실 데이터를 읽는다. 같은 음식을 여러 번
+/// 만들었으면 각각 별개의 `UserFood` 카드로 보여준다. 카드 탭 시 실제
+/// `UserFood.id` 로 `<음식 히스토리>` 로 이동한다.
 ///
 /// * TODO(asset): 이 화면 배경 scene 미납품 —
 ///   `assets/illustrations/scenes/my_food_bg.png` (§9, 불투명 헤더 밴드 PNG,
 ///   #FAE7C0 위에 그려진 채로 납품). 그 전까지 평면 #FAE7C0 위에 콘텐츠만 표시.
-class MyFoodScreen extends StatelessWidget {
+class MyFoodScreen extends StatefulWidget {
   const MyFoodScreen({super.key});
 
-  /// 셰프의 주방에서 요리 완성 후 이 화면까지 `popUntil` 로 돌아오기 위한 라우트 이름.
+  /// 셰프의 주방에서 요리 완성 후 이 화면까지 돌아오기 위한 라우트 이름
+  /// (`mill_home_screen.dart` 에서 사용).
   static const routeName = 'my_food';
 
   static const _sceneHeight = 220.0;
 
-  void _todo(BuildContext context, String message) {
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
+  @override
+  State<MyFoodScreen> createState() => _MyFoodScreenState();
+}
+
+class _MyFoodScreenState extends State<MyFoodScreen> {
+  /// 목록 화면이라 한 번에 최대 100개까지 불러온다 — 그보다 많이 만든 사용자는
+  /// 아직 페이지네이션(무한 스크롤)이 없어 최신 100개만 보인다.
+  static const _limit = 100;
+
+  late Future<Paged<UserFood>> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = _load();
   }
 
-  void _openHistory(BuildContext context, MockFood food) {
-    final history = foodHistoryFor(food.slug);
-    if (history == null) {
-      _todo(context, '${food.name} 히스토리는 준비 중이에요.');
-      return;
+  Future<Paged<UserFood>> _load() async {
+    if (!AuthStore.instance.isSignedIn) {
+      throw ApiException('로그인이 필요해요.');
     }
+    return UserService().getFoods(limit: _limit);
+  }
+
+  void _reload() => setState(() => _future = _load());
+
+  void _openHistory(BuildContext context, UserFood food) {
     Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => FoodHistoryScreen(history: history)),
+      MaterialPageRoute(builder: (_) => FoodHistoryScreen(userFoodId: food.id)),
     );
   }
 
@@ -64,12 +80,12 @@ class MyFoodScreen extends StatelessWidget {
             right: 0,
             child: Image.asset(
               'assets/illustrations/scenes/my_food_bg.png',
-              height: _sceneHeight,
+              height: MyFoodScreen._sceneHeight,
               width: double.infinity,
               fit: BoxFit.cover,
               alignment: Alignment.topCenter,
               errorBuilder: (context, error, stackTrace) =>
-                  const SizedBox(height: _sceneHeight),
+                  const SizedBox(height: MyFoodScreen._sceneHeight),
             ),
           ),
           SafeArea(
@@ -90,34 +106,10 @@ class MyFoodScreen extends StatelessWidget {
                       AppSpacing.xl,
                       AppSpacing.xxl,
                     ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const _CompletedSummaryCard(),
-                        const SizedBox(height: AppSpacing.lg),
-                        _ShortcutRow(
-                          onOpenBag: () => Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => const IngredientBagScreen(),
-                            ),
-                          ),
-                          onOpenDex: () => Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => const FoodDexScreen(),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: AppSpacing.xxl),
-                        const _SectionLabel('내가 만든 음식'),
-                        const SizedBox(height: AppSpacing.md),
-                        ListenableBuilder(
-                          listenable: MyFoodsStore.instance,
-                          builder: (context, _) => _MyFoodsGrid(
-                            foods: MyFoodsStore.instance.foods,
-                            onTapFood: (food) => _openHistory(context, food),
-                          ),
-                        ),
-                      ],
+                    child: FutureBuilder<Paged<UserFood>>(
+                      future: _future,
+                      builder: (context, snapshot) =>
+                          _buildBody(context, snapshot),
                     ),
                   ),
                 ],
@@ -143,6 +135,73 @@ class MyFoodScreen extends StatelessWidget {
           // * TODO: 랭킹 탭 — 해당 화면 구현 후 연결.
         },
       ),
+    );
+  }
+
+  Widget _buildBody(
+    BuildContext context,
+    AsyncSnapshot<Paged<UserFood>> snapshot,
+  ) {
+    if (snapshot.connectionState != ConnectionState.done) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: AppSpacing.huge),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (snapshot.hasError) {
+      final message = snapshot.error is ApiException
+          ? (snapshot.error as ApiException).message
+          : '내가 만든 음식을 불러오지 못했어요.';
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: AppSpacing.xxxl),
+        child: Column(
+          children: [
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: AppTextStyles.bodyMedium
+                  .copyWith(color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            OutlinedButton(onPressed: _reload, child: const Text('다시 시도')),
+          ],
+        ),
+      );
+    }
+
+    final page = snapshot.data!;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _CompletedSummaryCard(count: page.total),
+        const SizedBox(height: AppSpacing.lg),
+        _ShortcutRow(
+          onOpenBag: () => Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => const IngredientBagScreen(),
+            ),
+          ),
+          onOpenDex: () => Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => const FoodDexScreen(),
+            ),
+          ),
+        ),
+        const SizedBox(height: AppSpacing.xxl),
+        const _SectionLabel('내가 만든 음식'),
+        const SizedBox(height: AppSpacing.md),
+        if (page.items.isEmpty)
+          Text(
+            '아직 만든 음식이 없어요.',
+            style: AppTextStyles.bodyMedium
+                .copyWith(color: AppColors.textSecondary),
+          )
+        else
+          _MyFoodsGrid(
+            foods: page.items,
+            onTapFood: (food) => _openHistory(context, food),
+          ),
+      ],
     );
   }
 }
@@ -192,7 +251,9 @@ class _HeaderBar extends StatelessWidget {
 
 /// "완성한 음식 N개" 요약 카드 — 왼쪽에 잎 장식 + 큰 숫자, 오른쪽에 안내 문구.
 class _CompletedSummaryCard extends StatelessWidget {
-  const _CompletedSummaryCard();
+  const _CompletedSummaryCard({required this.count});
+
+  final int count;
 
   @override
   Widget build(BuildContext context) {
@@ -227,7 +288,7 @@ class _CompletedSummaryCard extends StatelessWidget {
                   TextSpan(
                     style: AppTextStyles.h1.copyWith(color: AppColors.success),
                     children: [
-                      TextSpan(text: '$mockCompletedFoodCount'),
+                      TextSpan(text: '$count'),
                       TextSpan(
                         text: '개',
                         style: AppTextStyles.title.copyWith(
@@ -407,8 +468,8 @@ class _SectionLabel extends StatelessWidget {
 class _MyFoodsGrid extends StatelessWidget {
   const _MyFoodsGrid({required this.foods, required this.onTapFood});
 
-  final List<MockFood> foods;
-  final ValueChanged<MockFood> onTapFood;
+  final List<UserFood> foods;
+  final ValueChanged<UserFood> onTapFood;
 
   @override
   Widget build(BuildContext context) {
@@ -434,7 +495,7 @@ class _MyFoodsGrid extends StatelessWidget {
 class _FoodCard extends StatelessWidget {
   const _FoodCard({required this.food, required this.onTap});
 
-  final MockFood food;
+  final UserFood food;
   final VoidCallback onTap;
 
   @override
@@ -462,16 +523,12 @@ class _FoodCard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(AppRadius.smallButton),
                   child: Container(
                     color: AppColors.surfaceSelected,
-                    child: Image.asset(
-                      food.illustrationPath,
+                    child: _NetOrIcon(
+                      url: food.imageUrl ?? food.illustrationUrl,
+                      icon: Symbols.dinner_dining_rounded,
+                      color: AppColors.iconInactive,
                       fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) => const Center(
-                        child: Icon(
-                          Symbols.dinner_dining_rounded,
-                          size: 32,
-                          color: AppColors.iconInactive,
-                        ),
-                      ),
+                      iconSize: 32,
                     ),
                   ),
                 ),
@@ -485,7 +542,7 @@ class _FoodCard extends StatelessWidget {
               ),
               const SizedBox(height: 2),
               Text(
-                food.description,
+                food.description ?? '',
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: AppTextStyles.bodySmall.copyWith(
@@ -552,5 +609,37 @@ class _Leaf extends StatelessWidget {
       errorBuilder: (context, error, stackTrace) => const SizedBox(width: 16),
     );
     return flip ? Transform.flip(flipX: true, child: img) : img;
+  }
+}
+
+/// 서버 이미지 URL 이 있으면 네트워크 이미지를, 없거나 로드 실패 시 아이콘을
+/// 보여준다 (§6 — placeholder 대신 기존 errorBuilder 패턴 유지).
+class _NetOrIcon extends StatelessWidget {
+  const _NetOrIcon({
+    required this.url,
+    required this.icon,
+    required this.color,
+    this.fit = BoxFit.contain,
+    this.iconSize,
+  });
+
+  final String? url;
+  final IconData icon;
+  final Color color;
+  final BoxFit fit;
+  final double? iconSize;
+
+  @override
+  Widget build(BuildContext context) {
+    final u = url;
+    if (u == null || u.isEmpty) {
+      return Center(child: Icon(icon, size: iconSize, color: color));
+    }
+    return Image.network(
+      u,
+      fit: fit,
+      errorBuilder: (context, error, stackTrace) =>
+          Center(child: Icon(icon, size: iconSize, color: color)),
+    );
   }
 }

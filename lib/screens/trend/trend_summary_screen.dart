@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
+import '../../api/api.dart';
 import '../../data/mock_region_ranking.dart';
 import '../../data/mock_trend_summary.dart';
 import '../../theme/app_colors.dart';
@@ -17,26 +18,95 @@ import '../record/my_footprint_screen.dart';
 /// keywords / SNS search links the summary was built from. A place's first
 /// open grants one basic ingredient (쌀알).
 ///
-/// * TODO(backend): 최초 확인 재료 지급 처리 — 지금은 항상 "처음 확인" 상태로 표시
+/// [placeId]가 있으면 `GET /places/{id}/trends`로 실제 키워드/AI 요약을 덮어쓰고,
+/// 로그인 상태면 `POST /places/{id}/trends/first-view`로 최초 확인 보상을 청구해
+/// 실제로 지급됐을 때만(스펙 §6.5) 스낵바로 알린다. `placeId`가 없으면(목업 스팟)
+/// 항상 "처음 확인" 상태로 보여주는 기존 목업 동작을 그대로 유지한다.
+///
 /// * TODO: 원문 보기 / SNS 검색 / 더 찾아보기 — 외부 브라우저·앱 연동
+/// * TODO(backend): 외부 게시글(`contents`)·검색어 트렌드(`searchInterest`) 구조가
+///   스펙에 예시만 빈 배열로 나와 있어, 게시글/함께 검색하는 키워드/SNS 섹션은
+///   당분간 스팟 목업 데이터를 계속 사용한다.
 /// * TODO(asset): 이 화면 배경 scenes/{name}.png 미납품 — 지금은 평면 #FAE7C0.
-class TrendSummaryScreen extends StatelessWidget {
-  const TrendSummaryScreen({super.key, required this.spot, this.focusKeyword});
+class TrendSummaryScreen extends StatefulWidget {
+  const TrendSummaryScreen({
+    super.key,
+    required this.spot,
+    this.focusKeyword,
+    this.placeId,
+  });
 
   final MockTouristSpot spot;
 
   /// 키워드 칩으로 진입한 경우 강조할 키워드.
   final String? focusKeyword;
 
+  /// 실 장소 ID가 있으면 실제 트렌드/최초 확인 보상 API를 사용한다.
+  final int? placeId;
+
+  @override
+  State<TrendSummaryScreen> createState() => _TrendSummaryScreenState();
+}
+
+class _TrendSummaryScreenState extends State<TrendSummaryScreen> {
+  late final MockTrendSummary _mockSummary = trendSummaryForSpot(widget.spot);
+
+  /// 실 API 응답. `null`이면 목업 경로이거나, 아직 응답 전이거나, 조회에
+  /// 실패한 것 — 어느 쪽이든 위 목업 값으로 조용히 대체한다.
+  PlaceTrends? _trends;
+
+  @override
+  void initState() {
+    super.initState();
+    final id = widget.placeId;
+    if (id == null) return;
+
+    PlaceService().trends(id).then((t) {
+      if (mounted) setState(() => _trends = t);
+    }).catchError((_) {/* keep the mock fallback */});
+
+    if (AuthStore.instance.isSignedIn) {
+      // 최초 1회만 실지급되므로(스펙 §6.5) 여기서 한 번만 호출한다.
+      PlaceService().claimTrendFirstView(id).then((result) {
+        if (!mounted || !result.rewarded) return;
+        final name = result.ingredientName ?? '재료';
+        final qty = result.ingredientQuantity ?? 1;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('트렌드 요약을 처음 확인했어요! 기본 재료 · $name $qty개 획득')),
+        );
+      }).catchError((_) {/* best-effort — 지급 실패해도 화면은 그대로 */});
+    }
+  }
+
   void _todo(BuildContext context, String message) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 
+  List<TrendInsight> _insightsFor(PlaceTrends t) {
+    final text = t.summaryText?.trim();
+    if (text != null && text.isNotEmpty) {
+      return [TrendInsight(icon: Symbols.auto_awesome_rounded, text: text)];
+    }
+    return [
+      TrendInsight(
+        icon: Symbols.pin_drop_rounded,
+        text: t.keywords.isNotEmpty
+            ? '#${t.keywords.first} 키워드가 최근 자주 언급되고 있어요.'
+            : '트렌드 데이터를 모으고 있어요.',
+      ),
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
-    final summary = trendSummaryForSpot(spot);
-    final highlight = focusKeyword ??
-        (summary.risingKeywords.isNotEmpty ? summary.risingKeywords.first : null);
+    final spot = widget.spot;
+    final trends = _trends;
+    final hasRealData = trends != null && trends.hasData;
+    final showEmptyState = trends != null && !trends.hasData;
+
+    final keywords = hasRealData ? trends.keywords : _mockSummary.risingKeywords;
+    final highlight = widget.focusKeyword ??
+        (keywords.isNotEmpty ? keywords.first : null);
 
     return Scaffold(
       backgroundColor: AppColors.appBackground,
@@ -57,19 +127,30 @@ class TrendSummaryScreen extends StatelessWidget {
         children: [
           _TitleBlock(spot: spot),
           const SizedBox(height: AppSpacing.lg),
-          _RewardCard(ingredient: summary.rewardIngredient),
-          const SizedBox(height: AppSpacing.lg),
-          _RisingKeywordsCard(
-            keywords: summary.risingKeywords,
-            highlight: highlight,
-            onKeyword: (keyword) =>
-                _todo(context, '#$keyword 관련 글은 준비 중이에요.'),
-          ),
-          const SizedBox(height: AppSpacing.lg),
-          _InsightCard(insights: summary.insights),
+          // 실 장소는 최초 확인 보상 여부를 서버 응답이 오기 전까지 알 수 없으니
+          // 항상-첫확인으로 가정하는 카드를 보여주지 않는다 — 대신 initState의
+          // 스낵바로만(rewarded == true일 때) 알린다. 목업 스팟은 기존 그대로.
+          if (widget.placeId == null) ...[
+            _RewardCard(ingredient: _mockSummary.rewardIngredient),
+            const SizedBox(height: AppSpacing.lg),
+          ],
+          if (showEmptyState)
+            const _TrendEmptyCard()
+          else ...[
+            _RisingKeywordsCard(
+              keywords: keywords,
+              highlight: highlight,
+              onKeyword: (keyword) =>
+                  _todo(context, '#$keyword 관련 글은 준비 중이에요.'),
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            _InsightCard(
+              insights: hasRealData ? _insightsFor(trends) : _mockSummary.insights,
+            ),
+          ],
           const SizedBox(height: AppSpacing.xl),
           _PostsSection(
-            summary: summary,
+            summary: _mockSummary,
             onOpenPost: (post) =>
                 _todo(context, '"${post.title}" 원문은 브라우저 연동 후 열 수 있어요.'),
             onSearchMore: () =>
@@ -77,7 +158,7 @@ class TrendSummaryScreen extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.xl),
           _RelatedQueriesSection(
-            queries: summary.relatedQueries,
+            queries: _mockSummary.relatedQueries,
             onQuery: (query) => _todo(context, '#$query 검색은 준비 중이에요.'),
           ),
           const SizedBox(height: AppSpacing.xl),
@@ -162,6 +243,45 @@ class _Card extends StatelessWidget {
         boxShadow: AppShadows.card,
       ),
       child: child,
+    );
+  }
+}
+
+/// "아직 트렌드 데이터가 없어요" — shown instead of the keyword/insight cards
+/// when a real place's `PlaceTrends.hasData` comes back false (스펙 §6.4).
+class _TrendEmptyCard extends StatelessWidget {
+  const _TrendEmptyCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return _Card(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(
+            Symbols.auto_awesome_rounded,
+            size: 20,
+            color: AppColors.iconInactive,
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('아직 트렌드 데이터가 없어요', style: AppTextStyles.title),
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  '이곳을 이야기하는 글이 더 모이면 트렌드 요약이 채워질 거예요.',
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: AppColors.textSecondary,
+                    height: 1.5,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

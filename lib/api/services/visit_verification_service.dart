@@ -30,16 +30,13 @@ class VisitVerificationService {
     return VisitVerification.fromJson((res as Map).cast<String, dynamic>());
   }
 
-  /// `POST /visit-verifications/{verificationId}/verify` — 인증번호 검증 +
-  /// (성공 시) `EVERY_VISIT` 재료 지급. 응답은 `VERIFIED` 세션.
-  Future<VisitVerification> verify({
-    required int verificationId,
-    required String verificationCode,
-  }) async {
-    final res = await _client.post(
-      '/visit-verifications/$verificationId/verify',
-      body: {'verificationCode': verificationCode},
-    );
+  /// `POST /visit-verifications/{verificationId}/cancel` — 대기 중(`ISSUED`)
+  /// 신청 취소. Request body 없음. 성공 시 `status = CANCELLED`.
+  ///
+  /// > `/visit-verifications/{id}/verify`(자가 인증)는 스펙에서 제거되었다.
+  /// > 최종 승인/반려는 관리자 웹에서 처리하고, 앱은 [get]으로 상태를 폴링한다.
+  Future<VisitVerification> cancel(int verificationId) async {
+    final res = await _client.post('/visit-verifications/$verificationId/cancel');
     return VisitVerification.fromJson((res as Map).cast<String, dynamic>());
   }
 }

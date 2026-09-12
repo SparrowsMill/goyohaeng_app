@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
-import '../../data/mock_food_history.dart';
+import '../../api/api.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_radius.dart';
-import '../../theme/app_shadows.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
 import '../../theme/app_theme.dart';
@@ -13,28 +12,45 @@ import '../map/map_screen.dart';
 import '../record/my_footprint_screen.dart';
 
 /// `<음식 히스토리>` (user_flow §4) — 음식 도감에서 이미 만든 음식을 눌렀을 때.
-/// 만든 날짜, 사용된 재료(특별/일반), 특별 재료를 얻은 관광 스팟, 음식의 특징을
-/// 보여준다.
+/// 만든 날짜, 사용된 재료(특별/일반)를 보여준다.
 ///
-/// 뼈대만 구현 — 데이터는 `mock_food_history` placeholder. 관광 스팟 탭 →
-/// `<장소 정보 페이지>` 는 미구현이라 스낵바로 안내한다.
+/// `GET /food-histories/{historyId}` (스펙 §11.1) 로 실 데이터를 읽는다.
+/// `historyId` 는 `foodId` 가 아니라 실제 `UserFood.id` 다.
 ///
-/// * TODO: 관광 스팟 탭 → `<장소 정보 페이지>` (§6).
-/// * TODO(asset): 이 화면 배경 scene — 음식 도감과 같은 펼친 책 밴드
-///   (`assets/illustrations/scenes/food_dex_bg.png`) 재사용. 별도 파일이 필요하면
-///   `food_history_bg.png` 로 교체.
-class FoodHistoryScreen extends StatelessWidget {
-  const FoodHistoryScreen({super.key, required this.history});
+/// * TODO(backend gap): 예전 mock 의 "특별 재료를 얻은 관광 스팟" 절은 대응하는
+///   API 가 없다 — 재료 획득처를 FIFO 단위로 추적하지 않아 특정 관광 스팟을
+///   짚어줄 수 없다(스펙 §11.1, §15). 대신 특별 재료 카드에 `obtainedPlace`
+///   (없으면 "정보 없음") 를 함께 보여준다. "음식의 특징" 절도 대응 필드가
+///   없어(설명은 `food.description` 하나뿐) 제거했다.
+class FoodHistoryScreen extends StatefulWidget {
+  const FoodHistoryScreen({super.key, required this.userFoodId});
 
-  final FoodHistory history;
+  final int userFoodId;
 
-  void _todo(BuildContext context, String message) {
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
+  @override
+  State<FoodHistoryScreen> createState() => _FoodHistoryScreenState();
+}
+
+class _FoodHistoryScreenState extends State<FoodHistoryScreen> {
+  late Future<FoodHistoryDetail> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = _load();
   }
 
-  String get _dateText {
-    final d = history.madeDate;
+  Future<FoodHistoryDetail> _load() async {
+    if (!AuthStore.instance.isSignedIn) {
+      throw ApiException('로그인이 필요해요.');
+    }
+    return FoodHistoryService().detail(widget.userFoodId);
+  }
+
+  void _reload() => setState(() => _future = _load());
+
+  String _dateText(DateTime? d) {
+    if (d == null) return '정보 없음';
     final m = d.month.toString().padLeft(2, '0');
     final day = d.day.toString().padLeft(2, '0');
     return '${d.year}.$m.$day';
@@ -68,43 +84,9 @@ class FoodHistoryScreen extends StatelessWidget {
                   AppSpacing.xl,
                   AppSpacing.xxl,
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _HeroCard(history: history),
-                    const SizedBox(height: AppSpacing.lg),
-                    _MadeDateCard(dateText: _dateText),
-                    if (history.specialIngredients.isNotEmpty) ...[
-                      const SizedBox(height: AppSpacing.xxl),
-                      const _SectionLabel('사용된 특별 재료'),
-                      const SizedBox(height: AppSpacing.md),
-                      _WideIngredientRow(items: history.specialIngredients),
-                    ],
-                    if (history.normalIngredients.isNotEmpty) ...[
-                      const SizedBox(height: AppSpacing.xxl),
-                      const _SectionLabel('일반 재료'),
-                      const SizedBox(height: AppSpacing.md),
-                      _IngredientGrid(items: history.normalIngredients),
-                    ],
-                    if (history.sourceSpots.isNotEmpty) ...[
-                      const SizedBox(height: AppSpacing.xxl),
-                      const _SectionLabel('특별 재료를 얻은 관광 스팟'),
-                      const SizedBox(height: AppSpacing.md),
-                      for (final spot in history.sourceSpots) ...[
-                        _SpotCard(
-                          spot: spot,
-                          onTap: () =>
-                              _todo(context, '${spot.name} 정보는 준비 중이에요.'),
-                        ),
-                        if (spot != history.sourceSpots.last)
-                          const SizedBox(height: AppSpacing.sm),
-                      ],
-                    ],
-                    const SizedBox(height: AppSpacing.xxl),
-                    const _SectionLabel('음식의 특징'),
-                    const SizedBox(height: AppSpacing.md),
-                    _CharacteristicCard(text: history.characteristic),
-                  ],
+                child: FutureBuilder<FoodHistoryDetail>(
+                  future: _future,
+                  builder: (context, snapshot) => _buildBody(context, snapshot),
                 ),
               ),
             ],
@@ -128,6 +110,60 @@ class FoodHistoryScreen extends StatelessWidget {
           // * TODO: 랭킹 탭 — 해당 화면 구현 후 연결.
         },
       ),
+    );
+  }
+
+  Widget _buildBody(
+    BuildContext context,
+    AsyncSnapshot<FoodHistoryDetail> snapshot,
+  ) {
+    if (snapshot.connectionState != ConnectionState.done) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: AppSpacing.huge),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (snapshot.hasError) {
+      final message = snapshot.error is ApiException
+          ? (snapshot.error as ApiException).message
+          : '음식 히스토리를 불러오지 못했어요.';
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: AppSpacing.xxxl),
+        child: Column(
+          children: [
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: AppTextStyles.bodyMedium
+                  .copyWith(color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            OutlinedButton(onPressed: _reload, child: const Text('다시 시도')),
+          ],
+        ),
+      );
+    }
+
+    final history = snapshot.data!;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _HeroCard(food: history.food),
+        const SizedBox(height: AppSpacing.lg),
+        _MadeDateCard(dateText: _dateText(history.food.madeAt)),
+        if (history.specialIngredients.isNotEmpty) ...[
+          const SizedBox(height: AppSpacing.xxl),
+          const _SectionLabel('사용된 특별 재료'),
+          const SizedBox(height: AppSpacing.md),
+          _WideIngredientRow(items: history.specialIngredients),
+        ],
+        if (history.normalIngredients.isNotEmpty) ...[
+          const SizedBox(height: AppSpacing.xxl),
+          const _SectionLabel('일반 재료'),
+          const SizedBox(height: AppSpacing.md),
+          _IngredientGrid(items: history.normalIngredients),
+        ],
+      ],
     );
   }
 }
@@ -174,9 +210,9 @@ class _HeaderBar extends StatelessWidget {
 
 /// 음식 일러스트 + 이름 + 설명.
 class _HeroCard extends StatelessWidget {
-  const _HeroCard({required this.history});
+  const _HeroCard({required this.food});
 
-  final FoodHistory history;
+  final FoodHistoryFoodRef food;
 
   @override
   Widget build(BuildContext context) {
@@ -192,16 +228,12 @@ class _HeroCard extends StatelessWidget {
               width: 116,
               height: 116,
               color: AppColors.surfaceSelected,
-              child: Image.asset(
-                history.illustrationPath,
+              child: _NetOrIcon(
+                url: food.imageUrl ?? food.illustrationUrl,
+                icon: Symbols.dinner_dining_rounded,
+                color: AppColors.iconInactive,
                 fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) => const Center(
-                  child: Icon(
-                    Symbols.dinner_dining_rounded,
-                    size: 40,
-                    color: AppColors.iconInactive,
-                  ),
-                ),
+                iconSize: 40,
               ),
             ),
           ),
@@ -213,7 +245,7 @@ class _HeroCard extends StatelessWidget {
                 Row(
                   children: [
                     Flexible(
-                      child: Text(history.name, style: AppTextStyles.h2),
+                      child: Text(food.name, style: AppTextStyles.h2),
                     ),
                     const SizedBox(width: AppSpacing.xs),
                     _Leaf(flip: false),
@@ -221,7 +253,7 @@ class _HeroCard extends StatelessWidget {
                 ),
                 const SizedBox(height: AppSpacing.sm),
                 Text(
-                  history.description,
+                  food.description ?? '',
                   style: AppTextStyles.bodyMedium
                       .copyWith(color: AppColors.textSecondary),
                 ),
@@ -282,11 +314,12 @@ class _MadeDateCard extends StatelessWidget {
   }
 }
 
-/// 특별 재료 — 아이콘 + 이름을 가로로 나열한 넓은 카드 3개.
+/// 특별 재료 — 아이콘 + 이름 + 획득 장소(없으면 "정보 없음") 를 가로로 나열한
+/// 넓은 카드들. 서버가 재료별 이미지 URL 을 내려주지 않아 항상 범용 아이콘.
 class _WideIngredientRow extends StatelessWidget {
   const _WideIngredientRow({required this.items});
 
-  final List<HistoryIngredient> items;
+  final List<FoodHistoryIngredient> items;
 
   @override
   Widget build(BuildContext context) {
@@ -307,7 +340,7 @@ class _WideIngredientRow extends StatelessWidget {
 class _WideIngredientCard extends StatelessWidget {
   const _WideIngredientCard({required this.item});
 
-  final HistoryIngredient item;
+  final FoodHistoryIngredient item;
 
   @override
   Widget build(BuildContext context) {
@@ -325,7 +358,11 @@ class _WideIngredientCard extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          _IngredientImage(item: item, size: 36),
+          const Icon(
+            Symbols.grocery_rounded,
+            size: 36,
+            color: AppColors.primary,
+          ),
           const SizedBox(height: AppSpacing.xs),
           Text(
             item.name,
@@ -333,17 +370,25 @@ class _WideIngredientCard extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             style: AppTextStyles.bodySmall.copyWith(fontWeight: FontWeight.w600),
           ),
+          const SizedBox(height: 2),
+          Text(
+            item.obtainedPlace ?? '정보 없음',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary),
+          ),
         ],
       ),
     );
   }
 }
 
-/// 일반 재료 — 4열 그리드(아이콘 + 이름).
+/// 일반 재료 — 4열 그리드(아이콘 + 이름). 서버가 재료별 이미지 URL 을 내려주지
+/// 않아 항상 범용 아이콘.
 class _IngredientGrid extends StatelessWidget {
   const _IngredientGrid({required this.items});
 
-  final List<HistoryIngredient> items;
+  final List<FoodHistoryIngredient> items;
 
   @override
   Widget build(BuildContext context) {
@@ -370,7 +415,11 @@ class _IngredientGrid extends StatelessWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              _IngredientImage(item: item, size: 32),
+              const Icon(
+                Symbols.grocery_rounded,
+                size: 26,
+                color: AppColors.primary,
+              ),
               const SizedBox(height: 4),
               Text(
                 item.name,
@@ -385,133 +434,6 @@ class _IngredientGrid extends StatelessWidget {
           ),
         );
       },
-    );
-  }
-}
-
-/// 재료 일러스트 — 없으면 범용 아이콘 placeholder.
-class _IngredientImage extends StatelessWidget {
-  const _IngredientImage({required this.item, required this.size});
-
-  final HistoryIngredient item;
-  final double size;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: size,
-      height: size,
-      child: Image.asset(
-        item.illustrationPath,
-        fit: BoxFit.contain,
-        errorBuilder: (context, error, stackTrace) => Icon(
-          Symbols.grocery_rounded,
-          size: size * 0.8,
-          color: AppColors.primary,
-        ),
-      ),
-    );
-  }
-}
-
-/// 특별 재료를 얻은 관광 스팟 카드 — 이름 + 설명 + 썸네일.
-class _SpotCard extends StatelessWidget {
-  const _SpotCard({required this.spot, required this.onTap});
-
-  final HistorySpot spot;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: AppColors.surface,
-      borderRadius: BorderRadius.circular(AppRadius.card),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(AppRadius.card),
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.all(AppSpacing.md),
-          decoration: BoxDecoration(
-            border: Border.all(color: AppColors.border),
-            borderRadius: BorderRadius.circular(AppRadius.card),
-            boxShadow: AppShadows.card,
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        const Icon(
-                          Symbols.location_on_rounded,
-                          size: 18,
-                          color: AppColors.primary,
-                        ),
-                        const SizedBox(width: AppSpacing.xs),
-                        Flexible(
-                          child: Text(
-                            spot.name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: AppTextStyles.title,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: AppSpacing.xs),
-                    Text(
-                      spot.description,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTextStyles.caption,
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: AppSpacing.md),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(AppRadius.smallButton),
-                child: Container(
-                  width: 72,
-                  height: 56,
-                  color: AppColors.surfaceSelected,
-                  child: Image.asset(
-                    spot.thumbnailPath,
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) => const Icon(
-                      Symbols.image_rounded,
-                      size: 24,
-                      color: AppColors.iconInactive,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// "음식의 특징" 문단 카드.
-class _CharacteristicCard extends StatelessWidget {
-  const _CharacteristicCard({required this.text});
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(AppSpacing.lg),
-      decoration: AppDecorations.card(radius: AppRadius.largeCard),
-      child: Text(
-        text,
-        style: AppTextStyles.bodyMedium.copyWith(height: 1.7),
-      ),
     );
   }
 }
@@ -549,5 +471,37 @@ class _Leaf extends StatelessWidget {
       errorBuilder: (context, error, stackTrace) => const SizedBox(width: 18),
     );
     return flip ? Transform.flip(flipX: true, child: img) : img;
+  }
+}
+
+/// 서버 이미지 URL 이 있으면 네트워크 이미지를, 없거나 로드 실패 시 아이콘을
+/// 보여준다 (§6 — placeholder 대신 기존 errorBuilder 패턴 유지).
+class _NetOrIcon extends StatelessWidget {
+  const _NetOrIcon({
+    required this.url,
+    required this.icon,
+    required this.color,
+    this.fit = BoxFit.contain,
+    this.iconSize,
+  });
+
+  final String? url;
+  final IconData icon;
+  final Color color;
+  final BoxFit fit;
+  final double? iconSize;
+
+  @override
+  Widget build(BuildContext context) {
+    final u = url;
+    if (u == null || u.isEmpty) {
+      return Center(child: Icon(icon, size: iconSize, color: color));
+    }
+    return Image.network(
+      u,
+      fit: fit,
+      errorBuilder: (context, error, stackTrace) =>
+          Center(child: Icon(icon, size: iconSize, color: color)),
+    );
   }
 }

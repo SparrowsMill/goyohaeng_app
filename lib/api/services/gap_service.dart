@@ -13,13 +13,14 @@ import '../models.dart';
 /// [regionId] / [categoryId] 필터에 대한 백엔드 실측(2026-09-11):
 ///
 /// * `regionId` — `GET /regions`는 `{id, parentId, regionType, name}`만 준다
-///   (행정표준코드 필드 없음). `regionType`은 `PROVINCE`(서울 1개) /
+///   (지역 코드 필드 없음). `regionType`은 `PROVINCE`(서울 1개) /
 ///   `DISTRICT`(서울 자치구 25개) / `FOOD_REGION`(6개)뿐이라, 앱의 전국
-///   GeoJSON(시도 2자리·시군구 5자리 행정표준코드)과 매핑할 값이 DB에 없다.
+///   GeoJSON(시도 2자리·시군구 5자리 — 통계청 SGIS 행정구역코드, 행정안전부
+///   법정동코드/행정동코드와는 다른 별개 체계)과 매핑할 값이 DB에 없다.
 ///   `region_external_codes`의 코드는 TourAPI 순번(서울="1", 강남구="1"…)이지
-///   행정표준코드가 아니다. → `<지도>` 지역 색·지역 필터 랭킹은 백엔드가
-///   `GET /regions`에 행정코드 필드를 추가하기 전까지 보류. 필터 없이 호출하면
-///   전국 기준으로 내려온다.
+///   SGIS 행정구역코드가 아니다. → `<지도>` 지역 색·지역 필터 랭킹은 백엔드가
+///   `GET /regions`에 SGIS 행정구역코드 필드를 추가하기 전까지 보류. 필터
+///   없이 호출하면 전국 기준으로 내려온다.
 /// * `categoryId` — `GET /categories`는 2레벨 15행 트리. level 1:
 ///   FOOD(음식)/STAY(숙박)/ATTRACTION(관광지)/CULTURE(문화)/FESTIVAL(축제·행사)/
 ///   LEISURE(레저·오락)/SHOPPING(쇼핑). CAFE는 FOOD의 하위(소분류)다. 앱의

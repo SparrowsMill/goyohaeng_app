@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
-import '../../data/mock_ingredients.dart';
+import '../../api/api.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_radius.dart';
 import '../../theme/app_shadows.dart';
@@ -11,16 +11,17 @@ import '../../theme/app_theme.dart';
 import '../../widgets/app_bottom_nav_bar.dart';
 import '../map/map_screen.dart';
 import '../record/my_footprint_screen.dart';
+import 'food_info_screen.dart';
 import 'ingredient_detail_sheet.dart';
 
 /// `<재료 가방>` (user_flow §5) — 모은 재료를 확인하는 페이지. 기본 재료 /
 /// 지역별 재료 탭으로 구분하고, 미획득 재료는 실루엣 + 이름, 획득 재료는 보유
 /// 개수를 표시한다. 하단에 보유 재료로 만들 수 있는 음식 추천 코너.
 ///
-/// 현재는 뼈대만 구현 — 데이터는 `mock_ingredients` placeholder. 재료 탭 시
-/// `<재료 상세 페이지>` 모달(`ingredient_detail_sheet.dart`)을 띄운다.
+/// `GET /users/me/ingredients` (스펙 §3.8) + `GET /foods` (스펙 §10.1) 로 실 데이터를
+/// 읽는다. 재료 탭 시 실제 `ingredientId` 로 `<재료 상세 페이지>`
+/// (`ingredient_detail_sheet.dart`) 모달을 띄운다.
 ///
-/// * TODO: 추천 음식 탭 → `<음식 정보>` (§4).
 /// * TODO(asset): 이 화면 배경 scene 미납품 —
 ///   `assets/illustrations/scenes/ingredient_bag_bg.png` (§9, 불투명 헤더 밴드
 ///   PNG). 그 전까지 평면 #FAE7C0 위에 콘텐츠만 표시.
@@ -31,75 +32,84 @@ class IngredientBagScreen extends StatefulWidget {
   State<IngredientBagScreen> createState() => _IngredientBagScreenState();
 }
 
-class _IngredientBagScreenState extends State<IngredientBagScreen> {
-  IngredientCategory _category = IngredientCategory.basic;
+enum _Category { basic, regional }
 
-  void _todo(String message) {
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
+/// 재료 가방 화면이 한 번에 필요로 하는 두 응답 — 보유 재료 + 음식 목록
+/// (하단 "이 재료로 만들 수 있어요" 추천용).
+typedef _BagData = ({UserIngredients ingredients, List<Food> foods});
+
+class _IngredientBagScreenState extends State<IngredientBagScreen> {
+  _Category _category = _Category.basic;
+  late Future<_BagData> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = _load();
   }
+
+  Future<_BagData> _load() async {
+    if (!AuthStore.instance.isSignedIn) {
+      throw ApiException('로그인이 필요해요.');
+    }
+    final results = await Future.wait([
+      UserService().getIngredients(),
+      FoodService().list(),
+    ]);
+    return (
+      ingredients: results[0] as UserIngredients,
+      foods: results[1] as List<Food>,
+    );
+  }
+
+  void _reload() => setState(() => _future = _load());
+
+  /// 음식이 "곧 만들 수 있는" 상태인지 판단하는 휴리스틱 — 서버는 `canMake`
+  /// (완전히 충분함) 만 내려주고 "거의 다 됐어요" 같은 중간 단계는 없으므로,
+  /// canMake 는 아니지만 재료 중 하나 이상은 이미 충분히 모은 경우를 "거의"로
+  /// 취급한다.
+  bool _isAlmost(Food food) =>
+      !food.canMake && food.ingredients.any((i) => i.enough);
 
   @override
   Widget build(BuildContext context) {
-    final ingredients = ingredientsByCategory(_category);
-
     return Scaffold(
       backgroundColor: AppColors.appBackground,
       body: SafeArea(
         bottom: false,
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _HeaderBar(onBack: () => Navigator.of(context).maybePop()),
-              // 상단 헤더 밴드 scene. 납품 전까지 errorBuilder 로 아무것도
-              // 그리지 않고 #FAE7C0 base 가 그대로 보이게 둔다.
-              Image.asset(
-                'assets/illustrations/scenes/ingredient_bag_bg.png',
-                height: 200,
-                width: double.infinity,
-                fit: BoxFit.cover,
-                alignment: Alignment.topCenter,
-                errorBuilder: (context, error, stackTrace) => const SizedBox(),
+        child: FutureBuilder<_BagData>(
+          future: _future,
+          builder: (context, snapshot) {
+            return SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _HeaderBar(onBack: () => Navigator.of(context).maybePop()),
+                  // 상단 헤더 밴드 scene. 납품 전까지 errorBuilder 로 아무것도
+                  // 그리지 않고 #FAE7C0 base 가 그대로 보이게 둔다.
+                  Image.asset(
+                    'assets/illustrations/scenes/ingredient_bag_bg.png',
+                    height: 200,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                    alignment: Alignment.topCenter,
+                    errorBuilder: (context, error, stackTrace) =>
+                        const SizedBox(),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(
+                      AppSpacing.xl,
+                      AppSpacing.lg,
+                      AppSpacing.xl,
+                      AppSpacing.xxl,
+                    ),
+                    child: _buildBody(context, snapshot),
+                  ),
+                ],
               ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.xl,
-                  AppSpacing.lg,
-                  AppSpacing.xl,
-                  AppSpacing.xxl,
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _CollectedSummaryCard(
-                      onTapRecommendation: () =>
-                          _todo('추천 음식 정보는 준비 중이에요.'),
-                    ),
-                    const SizedBox(height: AppSpacing.lg),
-                    _CategoryTabs(
-                      selected: _category,
-                      onChanged: (c) => setState(() => _category = c),
-                    ),
-                    const SizedBox(height: AppSpacing.lg),
-                    _IngredientGrid(
-                      ingredients: ingredients,
-                      onTapIngredient: (ing) =>
-                          showIngredientDetail(context, ing),
-                    ),
-                    const SizedBox(height: AppSpacing.xxxl),
-                    const _SectionLabel('이 재료로 만들 수 있어요'),
-                    const SizedBox(height: AppSpacing.md),
-                    _MakeableFoodRow(
-                      foods: mockMakeableFoods,
-                      onTapFood: (food) =>
-                          _todo('${food.name} 정보는 준비 중이에요.'),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
+            );
+          },
         ),
       ),
       bottomNavigationBar: AppBottomNavBar(
@@ -118,6 +128,107 @@ class _IngredientBagScreenState extends State<IngredientBagScreen> {
           }
           // * TODO: 랭킹 탭 — 해당 화면 구현 후 연결.
         },
+      ),
+    );
+  }
+
+  Widget _buildBody(BuildContext context, AsyncSnapshot<_BagData> snapshot) {
+    if (snapshot.connectionState != ConnectionState.done) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: AppSpacing.huge),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (snapshot.hasError) {
+      final message = snapshot.error is ApiException
+          ? (snapshot.error as ApiException).message
+          : '재료 정보를 불러오지 못했어요.';
+      return _ErrorState(message: message, onRetry: _reload);
+    }
+
+    final data = snapshot.data!;
+    final ingredients = data.ingredients.items
+        .where((i) => _category == _Category.basic ? !i.isRegional : i.isRegional)
+        .toList();
+    final makeable = data.foods
+        .where((f) => f.canMake || _isAlmost(f))
+        .toList();
+    final recommended = makeable.isEmpty
+        ? null
+        : (makeable.firstWhere((f) => f.canMake, orElse: () => makeable.first));
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _CollectedSummaryCard(
+          totalQuantity: data.ingredients.totalQuantity,
+          recommended: recommended,
+          onTapRecommendation: recommended == null
+              ? null
+              : () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => FoodInfoScreen(foodId: recommended.id),
+                    ),
+                  ),
+        ),
+        const SizedBox(height: AppSpacing.lg),
+        _CategoryTabs(
+          selected: _category,
+          onChanged: (c) => setState(() => _category = c),
+        ),
+        const SizedBox(height: AppSpacing.lg),
+        _IngredientGrid(
+          ingredients: ingredients,
+          onTapIngredient: (ing) => showIngredientDetail(
+            context,
+            ingredientId: ing.id,
+            initialName: ing.name,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.xxxl),
+        const _SectionLabel('이 재료로 만들 수 있어요'),
+        const SizedBox(height: AppSpacing.md),
+        _MakeableFoodRow(
+          foods: makeable,
+          isAlmost: _isAlmost,
+          onTapFood: (food) => Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => FoodInfoScreen(foodId: food.id),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ErrorState extends StatelessWidget {
+  const _ErrorState({required this.message, required this.onRetry});
+
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.xxxl),
+      child: Column(
+        children: [
+          const Icon(
+            Symbols.error_outline_rounded,
+            size: 32,
+            color: AppColors.iconInactive,
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: AppTextStyles.bodyMedium
+                .copyWith(color: AppColors.textSecondary),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          OutlinedButton(onPressed: onRetry, child: const Text('다시 시도')),
+        ],
       ),
     );
   }
@@ -169,13 +280,18 @@ class _HeaderBar extends StatelessWidget {
 
 /// "모은 재료 N개" 요약 카드 — 왼쪽 큰 숫자, 오른쪽 추천 음식 pill + 참새.
 class _CollectedSummaryCard extends StatelessWidget {
-  const _CollectedSummaryCard({required this.onTapRecommendation});
+  const _CollectedSummaryCard({
+    required this.totalQuantity,
+    required this.recommended,
+    required this.onTapRecommendation,
+  });
 
-  final VoidCallback onTapRecommendation;
+  final int totalQuantity;
+  final Food? recommended;
+  final VoidCallback? onTapRecommendation;
 
   @override
   Widget build(BuildContext context) {
-    final recommended = recommendedMakeableFood;
     return Container(
       padding: const EdgeInsets.all(AppSpacing.xl),
       decoration: AppDecorations.card(radius: AppRadius.largeCard),
@@ -205,7 +321,7 @@ class _CollectedSummaryCard extends StatelessWidget {
                   TextSpan(
                     style: AppTextStyles.h1.copyWith(color: AppColors.success),
                     children: [
-                      TextSpan(text: '$mockCollectedIngredientCount'),
+                      TextSpan(text: '$totalQuantity'),
                       TextSpan(
                         text: '개',
                         style: AppTextStyles.title
@@ -234,8 +350,8 @@ class _CollectedSummaryCard extends StatelessWidget {
                   if (recommended != null) ...[
                     const SizedBox(height: AppSpacing.sm),
                     _RecommendationPill(
-                      label: '추천: ${recommended.name}',
-                      onTap: onTapRecommendation,
+                      label: '추천: ${recommended!.name}',
+                      onTap: onTapRecommendation!,
                     ),
                   ],
                 ],
@@ -308,8 +424,8 @@ class _RecommendationPill extends StatelessWidget {
 class _CategoryTabs extends StatelessWidget {
   const _CategoryTabs({required this.selected, required this.onChanged});
 
-  final IngredientCategory selected;
-  final ValueChanged<IngredientCategory> onChanged;
+  final _Category selected;
+  final ValueChanged<_Category> onChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -322,10 +438,10 @@ class _CategoryTabs extends StatelessWidget {
       ),
       child: Row(
         children: [
-          for (final c in IngredientCategory.values)
+          for (final c in _Category.values)
             Expanded(
               child: _TabButton(
-                label: c == IngredientCategory.basic ? '기본 재료' : '지역별 재료',
+                label: c == _Category.basic ? '기본 재료' : '지역별 재료',
                 selected: c == selected,
                 onTap: () => onChanged(c),
               ),
@@ -379,11 +495,21 @@ class _IngredientGrid extends StatelessWidget {
     required this.onTapIngredient,
   });
 
-  final List<MockIngredient> ingredients;
-  final ValueChanged<MockIngredient> onTapIngredient;
+  final List<UserIngredient> ingredients;
+  final ValueChanged<UserIngredient> onTapIngredient;
 
   @override
   Widget build(BuildContext context) {
+    if (ingredients.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: AppSpacing.xl),
+        child: Text(
+          '아직 모은 재료가 없어요.',
+          style: AppTextStyles.bodyMedium
+              .copyWith(color: AppColors.textSecondary),
+        ),
+      );
+    }
     return GridView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
@@ -409,12 +535,12 @@ class _IngredientGrid extends StatelessWidget {
 class _IngredientTile extends StatelessWidget {
   const _IngredientTile({required this.ingredient, required this.onTap});
 
-  final MockIngredient ingredient;
+  final UserIngredient ingredient;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final owned = ingredient.owned;
+    final owned = ingredient.quantity > 0;
     return Material(
       color: owned ? AppColors.surface : AppColors.surfaceDisabled,
       borderRadius: BorderRadius.circular(AppRadius.listRow),
@@ -439,16 +565,11 @@ class _IngredientTile extends StatelessWidget {
                 child: SizedBox(
                   width: 40,
                   height: 40,
-                  child: Image.asset(
-                    ingredient.illustrationPath,
-                    fit: BoxFit.contain,
-                    errorBuilder: (context, error, stackTrace) => Icon(
-                      Symbols.grocery_rounded,
-                      size: 28,
-                      color: owned
-                          ? AppColors.primary
-                          : AppColors.iconDisabled,
-                    ),
+                  child: _NetOrIcon(
+                    url: ingredient.imageUrl ?? ingredient.illustrationUrl,
+                    icon: Symbols.grocery_rounded,
+                    color: owned ? AppColors.primary : AppColors.iconDisabled,
+                    iconSize: 28,
                   ),
                 ),
               ),
@@ -465,7 +586,7 @@ class _IngredientTile extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 4),
-              _CountChip(count: ingredient.count),
+              _CountChip(count: ingredient.quantity),
             ],
           ),
         ),
@@ -523,13 +644,25 @@ class _SectionLabel extends StatelessWidget {
 
 /// 보유 재료로 만들 수 있는 음식 — 가로 스크롤 카드 리스트.
 class _MakeableFoodRow extends StatelessWidget {
-  const _MakeableFoodRow({required this.foods, required this.onTapFood});
+  const _MakeableFoodRow({
+    required this.foods,
+    required this.isAlmost,
+    required this.onTapFood,
+  });
 
-  final List<MockMakeableFood> foods;
-  final ValueChanged<MockMakeableFood> onTapFood;
+  final List<Food> foods;
+  final bool Function(Food) isAlmost;
+  final ValueChanged<Food> onTapFood;
 
   @override
   Widget build(BuildContext context) {
+    if (foods.isEmpty) {
+      return Text(
+        '아직 만들 수 있는 음식이 없어요.',
+        style: AppTextStyles.bodyMedium
+            .copyWith(color: AppColors.textSecondary),
+      );
+    }
     return SizedBox(
       height: 208,
       child: ListView.separated(
@@ -539,7 +672,11 @@ class _MakeableFoodRow extends StatelessWidget {
         separatorBuilder: (_, _) => const SizedBox(width: AppSpacing.md),
         itemBuilder: (context, index) {
           final food = foods[index];
-          return _MakeableFoodCard(food: food, onTap: () => onTapFood(food));
+          return _MakeableFoodCard(
+            food: food,
+            almost: isAlmost(food),
+            onTap: () => onTapFood(food),
+          );
         },
       ),
     );
@@ -547,14 +684,18 @@ class _MakeableFoodRow extends StatelessWidget {
 }
 
 class _MakeableFoodCard extends StatelessWidget {
-  const _MakeableFoodCard({required this.food, required this.onTap});
+  const _MakeableFoodCard({
+    required this.food,
+    required this.almost,
+    required this.onTap,
+  });
 
-  final MockMakeableFood food;
+  final Food food;
+  final bool almost;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final almost = food.status == MakeStatus.almost;
     return SizedBox(
       width: 132,
       child: Material(
@@ -579,17 +720,12 @@ class _MakeableFoodCard extends StatelessWidget {
                     borderRadius: BorderRadius.circular(AppRadius.smallButton),
                     child: Container(
                       color: AppColors.surfaceSelected,
-                      child: Image.asset(
-                        food.illustrationPath,
+                      child: _NetOrIcon(
+                        url: food.imageUrl ?? food.illustrationUrl,
+                        icon: Symbols.dinner_dining_rounded,
+                        color: AppColors.iconInactive,
                         fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) =>
-                            const Center(
-                          child: Icon(
-                            Symbols.dinner_dining_rounded,
-                            size: 28,
-                            color: AppColors.iconInactive,
-                          ),
-                        ),
+                        iconSize: 28,
                       ),
                     ),
                   ),
@@ -648,5 +784,37 @@ class _Leaf extends StatelessWidget {
       errorBuilder: (context, error, stackTrace) => const SizedBox(width: 16),
     );
     return flip ? Transform.flip(flipX: true, child: img) : img;
+  }
+}
+
+/// 서버 이미지 URL 이 있으면 네트워크 이미지를, 없거나 로드 실패 시 아이콘을
+/// 보여준다 (§6 — placeholder 대신 기존 errorBuilder 패턴 유지).
+class _NetOrIcon extends StatelessWidget {
+  const _NetOrIcon({
+    required this.url,
+    required this.icon,
+    required this.color,
+    this.fit = BoxFit.contain,
+    this.iconSize,
+  });
+
+  final String? url;
+  final IconData icon;
+  final Color color;
+  final BoxFit fit;
+  final double? iconSize;
+
+  @override
+  Widget build(BuildContext context) {
+    final u = url;
+    if (u == null || u.isEmpty) {
+      return Center(child: Icon(icon, size: iconSize, color: color));
+    }
+    return Image.network(
+      u,
+      fit: fit,
+      errorBuilder: (context, error, stackTrace) =>
+          Center(child: Icon(icon, size: iconSize, color: color)),
+    );
   }
 }
