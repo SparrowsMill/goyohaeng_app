@@ -14,10 +14,11 @@ import 'place_info_screen.dart';
 
 /// `<방문 불가>` (user_flow §6) — reached when the 방문 인증 button is tapped
 /// for a spot whose admin 방문 인증 toggle is currently off (or that is on
-/// holiday). Explains why, then recommends similar-trend nearby spots that
+/// holiday). `place_info_screen.dart`의 `_VisitCtaSection`이 `GET
+/// /places/{id}`의 `verification.enabled`로 실시간 판단해 이 화면으로
+/// 보낸다. Explains why, then recommends similar-trend nearby spots that
 /// can be visited now. Tapping a recommendation opens its `<장소 정보 페이지>`.
 ///
-/// * TODO(backend): 방문 인증 가능 여부 실시간 조회 (admin 토글)
 /// * TODO: "추천 장소 보기" — 지도/목록 화면 연결 (지금은 첫 추천 장소로 이동)
 class VisitUnavailableScreen extends StatefulWidget {
   const VisitUnavailableScreen({super.key, required this.spot, this.placeId});

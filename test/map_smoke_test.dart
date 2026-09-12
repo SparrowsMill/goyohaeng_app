@@ -497,10 +497,18 @@ void main() {
     expect(find.byType(RegionRankingScreen), findsNothing);
   });
 
-  test('PlaceSearchIndex matches 장소명 and 지역명', () async {
-    final index = await PlaceSearchIndex.load();
+  // `PlaceSearchIndex.load()`는 내부적으로 `GapSpots`를 거쳐
+  // `KoreaGeo.ensureSigungu()`(백그라운드 isolate로 파싱)를 부른다. 이 파일의
+  // 다른 모든 테스트처럼 `testWidgets` + `runAsync`로 감싸야 한다 — 순수
+  // `test()`는 (`testWidgets`가 쓰는) `FakeAsync` 브리지가 없어서, 앞선
+  // 위젯 테스트가 이미 캐시해 둔 isolate 결과를 다시 받아오는 과정에서
+  // 응답을 못 받고 멈춘다(다른 브랜치/isolate에서 정상 동작 확인됨 —
+  // 이 테스트 하나만 단독 실행하면 통과하지만, 스위트 안에서 실행하면
+  // 멈추는 게 그 증거).
+  testWidgets('PlaceSearchIndex matches 장소명 and 지역명', (tester) async {
+    final index = await tester.runAsync(() => PlaceSearchIndex.load());
 
-    final byPlace = index.query('죽녹원');
+    final byPlace = index!.query('죽녹원');
     expect(byPlace.first.isPlace, isTrue);
     expect(byPlace.first.spot?.name, '담양 죽녹원');
     expect(byPlace.first.regionCode, '36310');

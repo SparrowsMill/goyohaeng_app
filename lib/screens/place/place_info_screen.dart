@@ -28,9 +28,10 @@ import 'visit_unavailable_screen.dart';
 ///
 /// [placeId]가 있으면 (실 장소 목록에서 진입) `GET /places/{placeId}/visit-status`로
 /// 방문 인증 완료 여부를 조회해 상단 pill에 반영하고, 방문 인증 흐름에도
-/// 그 ID를 넘겨 실제 세션을 만든다 (스펙 §6.3, §7). 없으면 목업 값 사용.
+/// 그 ID를 넘겨 실제 세션을 만든다 (스펙 §6.3, §7). 영업 여부(`isOpenNow`)와
+/// 방문 인증 가능 여부(`verification.enabled`)도 `GET /places/{id}`로 실시간
+/// 조회한다. placeId가 없으면(목업 스팟) 위 항목 전부 `spot`의 목업 값 사용.
 ///
-/// * TODO(backend): 영업 여부(businessStatus)·방문 인증 가능 여부 실시간 조회.
 /// * TODO(asset): 이 화면 배경 scenes/{name}.png 미납품 — 지금은 평면 #FAE7C0.
 /// * TODO(asset): 장소 대표 이미지 슬롯 없음 (상세 페이지 상단 사진).
 class PlaceInfoScreen extends StatelessWidget {
@@ -118,27 +119,7 @@ class PlaceInfoScreen extends StatelessWidget {
           const SizedBox(height: AppSpacing.xl),
           _GapCard(spot: spot, placeId: placeId),
           const SizedBox(height: AppSpacing.lg),
-          _VisitCtaCard(
-            spot: spot,
-            // user_flow §6: 방문 인증 가능 → 방문 인증 페이지, 불가 → 방문 불가.
-            onVerify: () {
-              if (spot.visitVerifiable) {
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) =>
-                        VisitPrepareScreen(spot: spot, placeId: placeId),
-                  ),
-                );
-              } else {
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) =>
-                        VisitUnavailableScreen(spot: spot, placeId: placeId),
-                  ),
-                );
-              }
-            },
-          ),
+          _VisitCtaSection(spot: spot, placeId: placeId),
           const SizedBox(height: AppSpacing.lg),
           _DetailCard(
             spot: spot,
@@ -445,6 +426,69 @@ class _GapCardState extends State<_GapCard> {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// [_VisitCtaCard] + 방문 인증 가능 여부 분기. [placeId]가 있으면 `GET
+/// /places/{id}`의 `verification.enabled`(관리자 방문 인증 토글, 스펙 §6.2)로
+/// 실제 가능 여부를 확인해 `<방문 인증>`/`<방문 불가>` 중 어디로 보낼지
+/// 정한다. 로드 전·실패·목업 스팟(placeId 없음)이면 `spot.visitVerifiable`을
+/// 그대로 쓴다.
+class _VisitCtaSection extends StatefulWidget {
+  const _VisitCtaSection({required this.spot, this.placeId});
+
+  final MockTouristSpot spot;
+  final int? placeId;
+
+  @override
+  State<_VisitCtaSection> createState() => _VisitCtaSectionState();
+}
+
+class _VisitCtaSectionState extends State<_VisitCtaSection> {
+  bool? _liveEnabled;
+
+  @override
+  void initState() {
+    super.initState();
+    final id = widget.placeId;
+    if (id != null) {
+      PlaceService().detail(id).then((place) {
+        if (mounted) {
+          setState(() => _liveEnabled = place.verification?.enabled);
+        }
+      }).catchError((_) {/* 목업 값 유지 */});
+    }
+  }
+
+  bool get _verifiable => _liveEnabled ?? widget.spot.visitVerifiable;
+
+  @override
+  Widget build(BuildContext context) {
+    return _VisitCtaCard(
+      spot: widget.spot,
+      // user_flow §6: 방문 인증 가능 → 방문 인증 페이지, 불가 → 방문 불가.
+      onVerify: () {
+        if (_verifiable) {
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => VisitPrepareScreen(
+                spot: widget.spot,
+                placeId: widget.placeId,
+              ),
+            ),
+          );
+        } else {
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => VisitUnavailableScreen(
+                spot: widget.spot,
+                placeId: widget.placeId,
+              ),
+            ),
+          );
+        }
+      },
     );
   }
 }
