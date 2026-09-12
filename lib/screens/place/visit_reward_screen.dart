@@ -6,6 +6,8 @@ import '../../theme/app_colors.dart';
 import '../../theme/app_radius.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
+import '../record/footprint_write_screen.dart';
+import '../share/sns_share_sheet.dart';
 
 /// 재료 이름 → 전용 일러스트 경로. 아직 그림이 없는 재료(단풍잎/느티나무잎/갈대/
 /// 홍어 등)는 `null`을 반환해 `_IngredientCard`가 범용 잎사귀 아이콘으로 대체한다.
@@ -28,7 +30,7 @@ String? _ingredientAssetPath(String? ingredient) {
 /// 보여준다.
 ///
 /// * TODO(backend): 추천 음식 연동 (§4 `<음식 정보>` 화면 필요)
-/// * TODO: SNS/기록용 플랫폼 공유 연동 (§7)
+/// * TODO: SNS 공유 연동 (§7)
 class VisitRewardScreen extends StatelessWidget {
   const VisitRewardScreen({super.key, required this.spot});
 
@@ -38,6 +40,19 @@ class VisitRewardScreen extends StatelessWidget {
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  /// "기록 플랫폼" 공유 → `<기록 플랫폼 글쓰기>` (user_flow §6→§8). 방문 날짜·
+  /// 장소·획득 재료 일러스트를 미리 채워 진입한다.
+  void _shareToRecord(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => FootprintWriteScreen(
+          initialPlace: spot.name,
+          initialPhotoAssets: [?_ingredientAssetPath(spot.ingredient)],
+        ),
+      ),
+    );
   }
 
   @override
@@ -73,7 +88,7 @@ class VisitRewardScreen extends StatelessWidget {
                 ),
                 Image.asset(
                   'assets/illustrations/sparrow/sparrow_happy.png',
-                  height: 180,
+                  height: 150,
                   fit: BoxFit.contain,
                   errorBuilder: (context, error, stackTrace) => const Icon(
                     Symbols.celebration_rounded,
@@ -96,8 +111,8 @@ class VisitRewardScreen extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.xl),
           _ShareSection(
-            onShareSns: () => _todo(context, 'SNS 공유는 앱 연동 후 이용할 수 있어요.'),
-            onShareRecord: () => _todo(context, '기록용 플랫폼 공유는 준비 중이에요.'),
+            onShareSns: () => showSnsShareSheet(context),
+            onShareRecord: () => _shareToRecord(context),
           ),
           const SizedBox(height: AppSpacing.xl),
           SizedBox(
@@ -210,7 +225,7 @@ class _RewardSummaryCard extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.md),
           _SummaryRow(
-            assetPath: 'assets/illustrations/icon/main_verified_icon.png',
+            assetPath: 'assets/illustrations/icon/verified.png',
             fallbackIcon: Symbols.verified_rounded,
             text: '${spot.name} 방문 완료',
           ),
@@ -224,7 +239,7 @@ class _RewardSummaryCard extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.md),
           _SummaryRow(
-            assetPath: 'assets/illustrations/icon/reward_benefit_icon.png',
+            assetPath: 'assets/illustrations/icon/benefit.png',
             fallbackIcon: Symbols.redeem_rounded,
             text: spot.storeBenefit == null
                 ? '제공 혜택 없음'
@@ -298,10 +313,15 @@ class _RecommendedFoodCard extends StatelessWidget {
           ),
           child: Row(
             children: [
-              const Icon(
-                Symbols.restaurant_rounded,
-                size: 24,
-                color: AppColors.primary,
+              Image.asset(
+                'assets/illustrations/icon/dish_3.png',
+                width: 24,
+                height: 24,
+                errorBuilder: (context, error, stackTrace) => const Icon(
+                  Symbols.restaurant_rounded,
+                  size: 24,
+                  color: AppColors.primary,
+                ),
               ),
               const SizedBox(width: AppSpacing.md),
               Expanded(

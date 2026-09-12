@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:ui' as ui show Image;
 import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/foundation.dart' show ValueListenable;
@@ -24,6 +25,7 @@ import '../../widgets/gap_index_info_dialog.dart';
 import '../../widgets/my_location_button.dart';
 import '../place/place_info_screen.dart';
 import '../ranking/region_ranking_screen.dart';
+import '../record/my_footprint_screen.dart';
 import 'place_search_screen.dart';
 
 /// `<지도>` (user_flow §6) — the whole country as a continuously zoomable
@@ -90,8 +92,12 @@ class _MapScreenState extends State<MapScreen> {
         onTap: (index) {
           if (index == 0) {
             Navigator.of(context).maybePop();
+          } else if (index == 3) {
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const MyFootprintScreen()),
+            );
           }
-          // * TODO: 랭킹/기록 탭 — 해당 화면 구현 후 연결
+          // * TODO: 랭킹 탭 — 해당 화면 구현 후 연결
         },
       ),
     );
@@ -507,6 +513,7 @@ class _KoreaMapState extends State<_KoreaMap>
     Favorites.instance.addListener(_onFavoritesChanged);
     UserLocation.position.addListener(_onLocation);
     UserLocation.ensure();
+    ensureMyLocationImage();
     _animController = AnimationController(
       vsync: this,
       duration: AppMotion.pageTransition,
@@ -981,6 +988,7 @@ class _KoreaMapState extends State<_KoreaMap>
                                 focusOutline: _focusOutline,
                                 units: _units,
                                 myPoint: _myPoint,
+                                myPin: myLocationImage,
                                 showFavorites: widget.favoritesActive,
                                 favPoints: _favPoints,
                               ),
@@ -1159,11 +1167,19 @@ class _KoreaMapPainter extends CustomPainter {
     required this.focusOutline,
     required this.units,
     required this.myPoint,
+    required this.myPin,
     required this.showFavorites,
     required this.favPoints,
   }) : super(
-          repaint: Listenable.merge(
-              [scale, viewport, focusedSido, focusedGroup, myPoint, favPoints]),
+          repaint: Listenable.merge([
+            scale,
+            viewport,
+            focusedSido,
+            focusedGroup,
+            myPoint,
+            myPin,
+            favPoints,
+          ]),
         );
 
   final KoreaGeo geo;
@@ -1188,6 +1204,10 @@ class _KoreaMapPainter extends CustomPainter {
 
   /// Scene-space position of the device ("내 위치"), or `null` if not located.
   final ValueListenable<Offset?> myPoint;
+
+  /// Decoded `current_location.png` pin, or `null` while it's still loading
+  /// (a plain dot is drawn until then).
+  final ValueListenable<ui.Image?> myPin;
 
   /// "즐겨찾기" — draw an amber star pin at every favorited spot.
   final bool showFavorites;
@@ -1317,11 +1337,26 @@ class _KoreaMapPainter extends CustomPainter {
     return path..close();
   }
 
-  /// The "you are here" dot — a vivid blue disc with a white ring and a soft
-  /// halo, constant on-screen size (÷ z), matching `MyLocationDot`.
+  /// The "you are here" marker — the `current_location.png` pin (tip on the
+  /// point), constant on-screen size (÷ z). Falls back to a blue dot while the
+  /// image is still decoding.
   void _paintMyLocation(Canvas canvas, double z, Rect view) {
     final p = myPoint.value;
     if (p == null || !view.contains(p)) return;
+
+    final img = myPin.value;
+    if (img != null) {
+      final h = 34 / z;
+      final w = h * img.width / img.height;
+      canvas.drawImageRect(
+        img,
+        Rect.fromLTWH(0, 0, img.width.toDouble(), img.height.toDouble()),
+        Rect.fromLTWH(p.dx - w / 2, p.dy - h, w, h),
+        Paint()..filterQuality = FilterQuality.medium,
+      );
+      return;
+    }
+
     final r = 6 / z;
     canvas.drawCircle(
       p,
@@ -1588,6 +1623,7 @@ class _KoreaMapPainter extends CustomPainter {
       old.focusedGroup != focusedGroup ||
       old.focusOutline != focusOutline ||
       old.myPoint != myPoint ||
+      old.myPin != myPin ||
       old.showFavorites != showFavorites ||
       old.favPoints != favPoints ||
       !identical(old.units, units);

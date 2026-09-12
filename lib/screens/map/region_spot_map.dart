@@ -244,8 +244,9 @@ class _RegionSpotMapState extends State<RegionSpotMap> {
             markers: [
               Marker(
                 point: UserLocation.position.value!,
-                width: 32,
-                height: 32,
+                width: 34,
+                height: 42,
+                alignment: Alignment.topCenter,
                 child: const MyLocationDot(),
               ),
             ],

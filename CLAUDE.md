@@ -338,7 +338,8 @@ downsamples cleanly; no `2.0x`/`3.0x` variant folders needed).
 - `assets/branding/`
   - `app_icon.png` — app icon source (1024x1024)
   - `app_logo.png` — in-app logo lockup (wordmark + decorative flourish + tagline,
-    baked in as a single image)
+    baked in as a single image); shown small, centered just below the `start_bg`
+    scene band on the login screen (signup omits it)
   - `splash.png` — splash screen image
   - `leaf_ornament.png` — small decorative leaf/branch flourish used beside section
     headings (e.g. "로그인" / "회원가입" card titles); mirror horizontally in code
@@ -375,10 +376,9 @@ downsamples cleanly; no `2.0x`/`3.0x` variant folders needed).
     screens, painted as a top-anchored header band (full screen width, its
     own aspect ratio sets the height) sitting over the `#FAE7C0` base fill
     that shows through everything below it — not a full-bleed image (e.g.
-    `auth_bg.png` behind signup only — the
-    login screen intentionally omits it in favor of a flat `#FAE7C0` fill so
-    its larger logo reads as the hero element there; conversely signup shows
-    the scene but no logo; `account_bg.png` behind the account center;
+    `start_bg.png` behind both the login and signup screens (login shows a
+    small centered `app_logo.png` just below the band; signup does not);
+    `account_bg.png` behind the account center;
     `mill_bg.png` behind the mill-home screen, with the standalone
     `sparrow/sparrow_default.png` character composited on top in code rather
     than baked into the scene, so it can be reused/repositioned per screen).

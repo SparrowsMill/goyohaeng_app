@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
+import '../../api/api.dart';
+import '../../data/gap_spots.dart';
 import '../../data/mock_nearby_suggestions.dart';
 import '../../data/mock_region_ranking.dart';
 import '../../theme/app_colors.dart';
@@ -17,13 +19,45 @@ import 'place_info_screen.dart';
 ///
 /// * TODO(backend): 방문 인증 가능 여부 실시간 조회 (admin 토글)
 /// * TODO: "추천 장소 보기" — 지도/목록 화면 연결 (지금은 첫 추천 장소로 이동)
-class VisitUnavailableScreen extends StatelessWidget {
-  const VisitUnavailableScreen({super.key, required this.spot});
+class VisitUnavailableScreen extends StatefulWidget {
+  const VisitUnavailableScreen({super.key, required this.spot, this.placeId});
 
   final MockTouristSpot spot;
 
+  /// 실 장소 ID가 있으면 '함께 찾은 관광지'를 `GET /places/{id}/recommendations`
+  /// (같은 지역·카테고리의 비슷한 GAP Score 장소)로 채운다. 없으면 목업.
+  final int? placeId;
+
+  @override
+  State<VisitUnavailableScreen> createState() => _VisitUnavailableScreenState();
+}
+
+class _VisitUnavailableScreenState extends State<VisitUnavailableScreen> {
+  late List<NearbySpotSuggestion> _suggestions =
+      nearbySuggestionsForSpot(widget.spot);
+
+  @override
+  void initState() {
+    super.initState();
+    final id = widget.placeId;
+    if (id != null) {
+      GapService().recommendations(id).then((recs) {
+        if (!mounted || recs.isEmpty) return;
+        setState(() {
+          _suggestions = [
+            for (final p in recs.take(4))
+              NearbySpotSuggestion(
+                spot: gapPlaceToSpot(p),
+                distanceLabel: '같은 지역 · 비슷한 갭지수',
+              ),
+          ];
+        });
+      }).catchError((_) {/* keep the mock suggestions */});
+    }
+  }
+
   ({String label, IconData icon}) get _reason {
-    if (spot.businessStatus == BusinessStatus.holiday) {
+    if (widget.spot.businessStatus == BusinessStatus.holiday) {
       return (label: '오늘은 휴무예요', icon: Symbols.event_busy_rounded);
     }
     return (label: '지금은 방문 인증을 받지 않아요', icon: Symbols.location_off_rounded);
@@ -31,13 +65,15 @@ class VisitUnavailableScreen extends StatelessWidget {
 
   void _openSpot(BuildContext context, MockTouristSpot next) {
     Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => PlaceInfoScreen(spot: next)),
+      MaterialPageRoute(
+        builder: (_) => PlaceInfoScreen(spot: next, placeId: next.placeId),
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final suggestions = nearbySuggestionsForSpot(spot);
+    final suggestions = _suggestions;
     final reason = _reason;
 
     return Scaffold(
@@ -58,12 +94,12 @@ class VisitUnavailableScreen extends StatelessWidget {
         ),
         children: [
           Image.asset(
-            'assets/illustrations/scenes/close_bg.png',
-            height: 220,
+            'assets/illustrations/scenes/visit_fail_bg.png',
+            height: 176,
             fit: BoxFit.contain,
             errorBuilder: (context, error, stackTrace) => Image.asset(
               'assets/illustrations/sparrow/sparrow_default.png',
-              height: 180,
+              height: 120,
               fit: BoxFit.contain,
               errorBuilder: (context, error, stackTrace) => const SizedBox(
                 height: 120,
@@ -242,18 +278,25 @@ class _SuggestionRow extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              // * TODO(asset): 장소 대표 이미지 — 준비 전까지 아이콘 플레이스홀더
               Container(
                 width: 64,
                 height: 64,
+                clipBehavior: Clip.antiAlias,
                 decoration: BoxDecoration(
                   color: AppColors.surfaceSelected,
                   borderRadius: BorderRadius.circular(AppRadius.smallButton),
                 ),
-                child: const Icon(
-                  Symbols.forest_rounded,
-                  size: 26,
-                  color: AppColors.primary,
+                child: Padding(
+                  padding: const EdgeInsets.all(AppSpacing.sm),
+                  child: Image.asset(
+                    'assets/illustrations/icon/spot.png',
+                    fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) => const Icon(
+                      Symbols.forest_rounded,
+                      size: 26,
+                      color: AppColors.primary,
+                    ),
+                  ),
                 ),
               ),
               const SizedBox(width: AppSpacing.md),
@@ -270,7 +313,7 @@ class _SuggestionRow extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      '${spot.category.label} · ${suggestion.distanceLabel}',
+                      '${spot.categoryName ?? spot.category.label} · ${suggestion.distanceLabel}',
                       style: AppTextStyles.bodySmall
                           .copyWith(color: AppColors.textSecondary),
                     ),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
+import '../../api/api.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_radius.dart';
 import '../../theme/app_spacing.dart';
@@ -42,6 +43,9 @@ class _SignupScreenState extends State<SignupScreen> {
 
   bool _idChecking = false;
   String? _idCheckedValue;
+  bool _submitting = false;
+
+  final _authService = AuthService();
 
   @override
   void initState() {
@@ -124,24 +128,24 @@ class _SignupScreenState extends State<SignupScreen> {
       return;
     }
     setState(() => _idChecking = true);
-    final available = await _fakeIdAvailabilityCheck(id);
+    bool? available;
+    String message;
+    try {
+      available = await _authService.isUsernameAvailable(id);
+      message = available ? '사용 가능한 아이디입니다.' : '이미 사용 중인 아이디입니다.';
+    } on ApiException catch (e) {
+      message = e.isConflict ? '이미 사용 중인 아이디입니다.' : e.message;
+      if (e.isConflict) available = false;
+    }
     if (!mounted) return;
     setState(() {
       _idChecking = false;
-      _idCheckedValue = available ? id : null;
+      _idCheckedValue = available == true ? id : null;
     });
     _formKey.currentState?.validate();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(available ? '사용 가능한 아이디입니다.' : '이미 사용 중인 아이디입니다.'),
-      ),
-    );
-  }
-
-  // * TODO(backend): 아이디 중복확인 API 연동 필요 — 현재는 항상 사용 가능으로 응답하는 더미 구현.
-  Future<bool> _fakeIdAvailabilityCheck(String id) async {
-    await Future.delayed(const Duration(milliseconds: 400));
-    return true;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   Future<void> _pickBirthDate() async {
@@ -166,24 +170,63 @@ class _SignupScreenState extends State<SignupScreen> {
     return '$y.$m.$d';
   }
 
-  void _handleSignup() {
+  void _snack(String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  String _formatDate(DateTime d) =>
+      '${d.year.toString().padLeft(4, '0')}-'
+      '${d.month.toString().padLeft(2, '0')}-'
+      '${d.day.toString().padLeft(2, '0')}';
+
+  // * TODO: SNS 플랫폼·아이디 입력 필드 미구현 (user_flow §1 "사용 SNS 플랫폼 및 아이디").
+  Future<void> _handleSignup() async {
+    FocusScope.of(context).unfocus();
     final isValid = _formKey.currentState?.validate() ?? false;
     if (!isValid) return;
     if (_birthDate == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('생년월일을 선택해주세요')),
-      );
+      _snack('생년월일을 선택해주세요');
+      return;
+    }
+    if (_gender == null) {
+      _snack('성별을 선택해주세요');
       return;
     }
     if (!_agreeTerms || !_agreePrivacy) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('필수 약관에 동의해주세요')),
-      );
+      _snack('필수 약관에 동의해주세요');
       return;
     }
-    // * TODO(backend): 회원가입 API 연동 필요 (이름/생년월일/성별/전화번호/이메일/
-    //   SNS 플랫폼·아이디). 성공 시 세션 발급 후 <본인 방앗간>으로 이동 (user_flow §1).
-    // * TODO: SNS 플랫폼·아이디 입력 필드 미구현 (user_flow §1 "사용 SNS 플랫폼 및 아이디").
+
+    final username = _idController.text.trim();
+    final password = _passwordController.text;
+
+    setState(() => _submitting = true);
+    try {
+      await _authService.signup(
+        username: username,
+        password: password,
+        realName: _nameController.text.trim(),
+        email: _emailController.text.trim(),
+        phone: _phoneController.text.trim(),
+        birthDate: _formatDate(_birthDate!),
+        gender: _gender == 'male' ? 'MALE' : 'FEMALE',
+      );
+      // 가입 성공 → 자동 로그인하지 않고 로그인 화면으로 돌아가 직접 입력하게 한다.
+      // 방금 만든 아이디는 채워서 넘긴다.
+      if (!mounted) return;
+      Navigator.of(context).pop(username);
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      if (e.isConflict) {
+        setState(() => _idCheckedValue = null);
+        _formKey.currentState?.validate();
+      }
+      _snack(e.message);
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
   }
 
   @override
@@ -345,8 +388,17 @@ class _SignupScreenState extends State<SignupScreen> {
                 ),
                 const SizedBox(height: AppSpacing.xl),
                 ElevatedButton(
-                  onPressed: _handleSignup,
-                  child: const Text('회원가입'),
+                  onPressed: _submitting ? null : _handleSignup,
+                  child: _submitting
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: AppColors.textOnPrimaryButton,
+                          ),
+                        )
+                      : const Text('회원가입'),
                 ),
               ],
             ),

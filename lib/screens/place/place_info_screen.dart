@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../api/api.dart';
 import '../../data/mock_map_regions.dart' show gapIndexColor;
 import '../../data/mock_region_ranking.dart';
 import '../../theme/app_colors.dart';
@@ -11,6 +12,7 @@ import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
 import '../../widgets/app_bottom_nav_bar.dart';
 import '../../widgets/favorite_star_button.dart';
+import '../record/my_footprint_screen.dart';
 import '../trend/trend_summary_screen.dart';
 import 'visit_prepare_screen.dart';
 import 'visit_unavailable_screen.dart';
@@ -24,17 +26,18 @@ import 'visit_unavailable_screen.dart';
 /// category / 주소 / 운영시간 / 주인의 소개 block, optional 문의처, and the
 /// 트렌드 요약 keywords.
 ///
-/// * TODO: 방문 인증 흐름 연결 (user_flow §6 — admin 토글에 따라 방문 인증
-///   페이지 또는 방문 불가 페이지로 분기)
-/// * TODO(backend): 방문 상태(미방문/방문 인증 완료) 사용자별 조회 — 지금은
-///   항상 VisitState.notVisited.
+/// [placeId]가 있으면 (실 장소 목록에서 진입) `GET /places/{placeId}/visit-status`로
+/// 방문 인증 완료 여부를 조회해 상단 pill에 반영하고, 방문 인증 흐름에도
+/// 그 ID를 넘겨 실제 세션을 만든다 (스펙 §6.3, §7). 없으면 목업 값 사용.
+///
 /// * TODO(backend): 영업 여부(businessStatus)·방문 인증 가능 여부 실시간 조회.
 /// * TODO(asset): 이 화면 배경 scenes/{name}.png 미납품 — 지금은 평면 #FAE7C0.
 /// * TODO(asset): 장소 대표 이미지 슬롯 없음 (상세 페이지 상단 사진).
 class PlaceInfoScreen extends StatelessWidget {
-  const PlaceInfoScreen({super.key, required this.spot});
+  const PlaceInfoScreen({super.key, required this.spot, this.placeId});
 
   final MockTouristSpot spot;
+  final int? placeId;
 
   void _snack(BuildContext context, String message) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
@@ -101,7 +104,7 @@ class PlaceInfoScreen extends StatelessWidget {
           AppSpacing.xxl,
         ),
         children: [
-          _VisitStatePill(state: spot.visitState),
+          _VisitStatePill(state: spot.visitState, placeId: placeId),
           const SizedBox(height: AppSpacing.md),
           Text(spot.name, style: AppTextStyles.h1),
           const SizedBox(height: AppSpacing.xs),
@@ -109,7 +112,7 @@ class PlaceInfoScreen extends StatelessWidget {
           const SizedBox(height: AppSpacing.md),
           _DirectionsButton(onTap: () => _openDirections(context)),
           const SizedBox(height: AppSpacing.xl),
-          _GapCard(spot: spot),
+          _GapCard(spot: spot, placeId: placeId),
           const SizedBox(height: AppSpacing.lg),
           _VisitCtaCard(
             spot: spot,
@@ -118,13 +121,15 @@ class PlaceInfoScreen extends StatelessWidget {
               if (spot.visitVerifiable) {
                 Navigator.of(context).push(
                   MaterialPageRoute(
-                    builder: (_) => VisitPrepareScreen(spot: spot),
+                    builder: (_) =>
+                        VisitPrepareScreen(spot: spot, placeId: placeId),
                   ),
                 );
               } else {
                 Navigator.of(context).push(
                   MaterialPageRoute(
-                    builder: (_) => VisitUnavailableScreen(spot: spot),
+                    builder: (_) =>
+                        VisitUnavailableScreen(spot: spot, placeId: placeId),
                   ),
                 );
               }
@@ -172,22 +177,48 @@ class PlaceInfoScreen extends StatelessWidget {
             Navigator.of(context).popUntil((route) => route.isFirst);
           } else if (index == 1 || index == 2) {
             Navigator.of(context).maybePop();
+          } else if (index == 3) {
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const MyFootprintScreen()),
+            );
           }
-          // * TODO: 기록 탭 — 해당 화면 구현 후 연결
         },
       ),
     );
   }
 }
 
-/// "미방문" / "방문 인증 완료" outlined pill at the top of the page.
-class _VisitStatePill extends StatelessWidget {
-  const _VisitStatePill({required this.state});
+/// "미방문" / "방문 인증 완료" outlined pill at the top of the page. [placeId]가
+/// 있고 로그인 상태면 `GET /places/{placeId}/visit-status`로 실제 값을 덮어쓴다.
+class _VisitStatePill extends StatefulWidget {
+  const _VisitStatePill({required this.state, this.placeId});
 
   final VisitState state;
+  final int? placeId;
+
+  @override
+  State<_VisitStatePill> createState() => _VisitStatePillState();
+}
+
+class _VisitStatePillState extends State<_VisitStatePill> {
+  late VisitState _state = widget.state;
+
+  @override
+  void initState() {
+    super.initState();
+    final id = widget.placeId;
+    if (id != null && AuthStore.instance.isSignedIn) {
+      PlaceService().visitStatus(id).then((status) {
+        if (!mounted) return;
+        setState(() => _state =
+            status.visited ? VisitState.verified : VisitState.notVisited);
+      }).catchError((_) {/* keep the passed-in value */});
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    final state = _state;
     final verified = state == VisitState.verified;
     final color = verified ? AppColors.success : AppColors.textSecondary;
     return Align(
@@ -234,7 +265,7 @@ class _CategoryLine extends StatelessWidget {
       children: [
         Flexible(
           child: Text(
-            '${spot.category.label} · 갭지수 ${spot.gapIndex}',
+            '${spot.categoryName ?? spot.category.label} · 갭지수 ${spot.gapIndex}',
             style: AppTextStyles.bodyMedium.copyWith(
               color: AppColors.textSecondary,
               fontWeight: FontWeight.w600,
@@ -325,14 +356,39 @@ class _Card extends StatelessWidget {
 }
 
 /// The "이곳의 갭지수" card: big number + scale tick on the left, a plain-
-/// language reading of the score on the right.
-class _GapCard extends StatelessWidget {
-  const _GapCard({required this.spot});
+/// language reading of the score on the right. [placeId]가 있으면
+/// `GET /places/{id}/gap`으로 실제 GAP Score·설명을 덮어쓴다 (스펙 §GAP).
+class _GapCard extends StatefulWidget {
+  const _GapCard({required this.spot, this.placeId});
 
   final MockTouristSpot spot;
+  final int? placeId;
+
+  @override
+  State<_GapCard> createState() => _GapCardState();
+}
+
+class _GapCardState extends State<_GapCard> {
+  PlaceGapScore? _gap;
+
+  @override
+  void initState() {
+    super.initState();
+    final id = widget.placeId;
+    if (id != null) {
+      GapService().placeGap(id).then((g) {
+        if (mounted) setState(() => _gap = g);
+      }).catchError((_) {/* keep the passed-in mock value */});
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    final gapIndex = _gap?.gapIndex ?? widget.spot.gapIndex;
+    final reading = (_gap?.explanation?.trim().isNotEmpty ?? false)
+        ? _gap!.explanation!.trim()
+        : widget.spot.gapDescription;
+
     return _Card(
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -342,7 +398,7 @@ class _GapCard extends StatelessWidget {
             height: 56,
             margin: const EdgeInsets.only(top: 2),
             decoration: BoxDecoration(
-              color: gapIndexColor(spot.gapIndex),
+              color: gapIndexColor(gapIndex),
               borderRadius: BorderRadius.circular(2),
             ),
           ),
@@ -358,7 +414,7 @@ class _GapCard extends StatelessWidget {
                 ),
               ),
               Text(
-                '${spot.gapIndex}',
+                '$gapIndex',
                 style: AppTextStyles.display.copyWith(
                   color: AppColors.primaryPressed,
                 ),
@@ -370,7 +426,7 @@ class _GapCard extends StatelessWidget {
             child: Padding(
               padding: const EdgeInsets.only(top: 2),
               child: Text(
-                spot.gapDescription,
+                reading,
                 style: AppTextStyles.bodySmall
                     .copyWith(fontWeight: FontWeight.w600, height: 1.5),
               ),
@@ -437,7 +493,15 @@ class _VisitCtaCard extends StatelessWidget {
             width: double.infinity,
             child: ElevatedButton.icon(
               onPressed: onVerify,
-              icon: const Icon(Symbols.where_to_vote_rounded, size: 22),
+              icon: Image.asset(
+                'assets/illustrations/icon/verified_2.png',
+                width: 32,
+                height: 32,
+                errorBuilder: (context, error, stackTrace) => const Icon(
+                  Symbols.where_to_vote_rounded,
+                  size: 32,
+                ),
+              ),
               label: const Text('방문 인증'),
             ),
           ),
@@ -449,6 +513,7 @@ class _VisitCtaCard extends StatelessWidget {
               Expanded(
                 child: _RewardBox(
                   icon: Symbols.eco_rounded,
+                  iconAsset: 'assets/illustrations/icon/ingredient_4.png',
                   label: ingredientLabel,
                   active: spot.ingredient != null,
                 ),
@@ -457,6 +522,7 @@ class _VisitCtaCard extends StatelessWidget {
               Expanded(
                 child: _RewardBox(
                   icon: Symbols.redeem_rounded,
+                  iconAsset: 'assets/illustrations/icon/benefit.png',
                   label: benefitLabel,
                   active: spot.storeBenefit != null,
                 ),
@@ -475,9 +541,13 @@ class _RewardBox extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.active,
+    this.iconAsset,
   });
 
   final IconData icon;
+
+  /// Illustration asset shown instead of [icon] (takes precedence).
+  final String? iconAsset;
   final String label;
   final bool active;
 
@@ -495,7 +565,16 @@ class _RewardBox extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Icon(icon, size: 18, color: tint),
+          if (iconAsset != null)
+            Image.asset(
+              iconAsset!,
+              width: 22,
+              height: 22,
+              errorBuilder: (context, error, stackTrace) =>
+                  Icon(icon, size: 18, color: tint),
+            )
+          else
+            Icon(icon, size: 18, color: tint),
           const SizedBox(width: AppSpacing.sm),
           Expanded(
             child: Text(
@@ -532,7 +611,7 @@ class _DetailCard extends StatelessWidget {
             icon: Symbols.eco_rounded,
             label: '카테고리',
             child: Text(
-              '${spot.spotType} · ${spot.category.label}',
+              '${spot.spotType} · ${spot.categoryName ?? spot.category.label}',
               style: AppTextStyles.bodyMedium,
             ),
           ),

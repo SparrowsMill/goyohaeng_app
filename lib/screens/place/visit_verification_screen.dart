@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
+import '../../api/api.dart';
 import '../../data/mock_region_ranking.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_radius.dart';
@@ -11,26 +12,27 @@ import '../../theme/app_shadows.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
 import '../../widgets/app_bottom_nav_bar.dart';
+import '../record/my_footprint_screen.dart';
 import 'visit_fail_screen.dart';
 import 'visit_reward_screen.dart';
 
 /// `<방문 인증 확인 페이지>` (user_flow §6) — the screen a visitor shows to a
-/// store employee. A random 6-digit code sits under the place name/address;
-/// the employee checks it on the admin side to complete 방문 인증. Also lists
-/// the visit benefit + obtainable ingredient and counts down the remaining
-/// time.
+/// store employee. A 6-digit code sits under the place name/address; the
+/// employee checks it on the admin side to complete 방문 인증.
 ///
-/// * TODO(backend): 인증번호 발급/검증 API 연동 (지금은 로컬 랜덤 생성)
-/// * TODO(backend): 직원의 인증 완료를 실시간 수신 (폴링/푸시/소켓) — 지금은
-///   화면에서 성공을 감지할 방법이 없음.
-/// * TODO: 인증 성공 → `<방문 인증 보상 페이지>`, 시간 초과 → `<방문 인증 실패>`
-///   (두 화면 모두 미구현)
-/// * TODO(asset): 이 화면 배경 scenes/{name}.png 미납품 — 지금은 평면 #FAE7C0.
+/// 두 가지 모드로 동작한다:
+///
+/// * [session]이 있으면 (백엔드 연동 경로): 서버가 발급한 `verificationCode` /
+///   `expiresAt`을 그대로 쓰고, `GET /visit-verifications/{id}`를 폴링해
+///   `VERIFIED`면 보상 화면, `EXPIRED`면 실패 화면으로 넘어간다 (스펙 §7).
+/// * [session]이 없으면 (목업 경로 — 랭킹/지도가 아직 실 장소 ID를 주지 않음):
+///   기존처럼 로컬 랜덤 코드 + 타이머로만 동작하고, 성공은 QA 버튼으로만 낸다.
 class VisitVerificationScreen extends StatefulWidget {
   const VisitVerificationScreen({
     super.key,
     required this.spot,
     this.window = const Duration(minutes: 15),
+    this.session,
   });
 
   final MockTouristSpot spot;
@@ -38,59 +40,72 @@ class VisitVerificationScreen extends StatefulWidget {
   /// 도착 예정 시간까지 남은 창 (user_flow §6 — 방문 인증 페이지에서 선택).
   final Duration window;
 
+  /// `POST /visit-verifications` 응답. null이면 목업 경로.
+  final VisitVerification? session;
+
   @override
   State<VisitVerificationScreen> createState() =>
       _VisitVerificationScreenState();
 }
 
-/// One in-flight 방문 인증 attempt. Held in [_activeSessions] (in-memory only —
-/// a real backend owns this) so the code and countdown survive leaving the
-/// screen and coming back, instead of resetting each visit.
-///
-/// * TODO(backend): 서버가 발급한 인증번호/만료시각으로 대체
-class _VerificationSession {
-  const _VerificationSession(this.code, this.expiresAt);
-
+/// One in-flight mock 방문 인증 attempt (백엔드 연동 전 경로 전용). Held in
+/// [_activeSessions] so the code/countdown survive leaving and re-entering.
+class _MockSession {
+  const _MockSession(this.code, this.expiresAt);
   final String code;
   final DateTime expiresAt;
 }
 
-final Map<String, _VerificationSession> _activeSessions = {};
+final Map<String, _MockSession> _activeSessions = {};
 
 class _VisitVerificationScreenState extends State<VisitVerificationScreen> {
+  final _service = VisitVerificationService();
+
   late final String _code;
   late final DateTime _expiresAt;
   late Duration _remaining;
-  Timer? _timer;
+  Timer? _ticker;
+  Timer? _poll;
   bool _navigated = false;
+  bool _forcing = false;
+
+  bool get _live => widget.session != null;
 
   @override
   void initState() {
     super.initState();
-    final key = widget.spot.name;
     final now = DateTime.now();
-    final existing = _activeSessions[key];
 
-    if (existing != null && existing.expiresAt.isAfter(now)) {
-      // Resume the attempt already running for this place.
-      _code = existing.code;
-      _expiresAt = existing.expiresAt;
+    if (_live) {
+      final s = widget.session!;
+      _code = s.verificationCode;
+      _expiresAt = s.expiresAt ?? now.add(widget.window);
     } else {
-      // 랜덤 6자리 (100000-999999).
-      _code = (100000 + Random().nextInt(900000)).toString();
-      _expiresAt = now.add(widget.window);
-      _activeSessions[key] = _VerificationSession(_code, _expiresAt);
+      final key = widget.spot.name;
+      final existing = _activeSessions[key];
+      if (existing != null && existing.expiresAt.isAfter(now)) {
+        _code = existing.code;
+        _expiresAt = existing.expiresAt;
+      } else {
+        _code = (100000 + Random().nextInt(900000)).toString();
+        _expiresAt = now.add(widget.window);
+        _activeSessions[key] = _MockSession(_code, _expiresAt);
+      }
     }
 
     _remaining = _computeRemaining();
-    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+    _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
       setState(() => _remaining = _computeRemaining());
       if (_remaining == Duration.zero) {
-        _timer?.cancel();
+        _ticker?.cancel();
         _handleFailure();
       }
     });
+
+    if (_live) {
+      _poll = Timer.periodic(const Duration(seconds: 4), (_) => _pollStatus());
+    }
   }
 
   Duration _computeRemaining() {
@@ -100,18 +115,65 @@ class _VisitVerificationScreenState extends State<VisitVerificationScreen> {
 
   @override
   void dispose() {
-    _timer?.cancel();
+    _ticker?.cancel();
+    _poll?.cancel();
     super.dispose();
   }
 
-  // 실제로는 매장 직원이 admin 쪽에서 인증번호를 확인하면 성공 처리된다
-  // (user_flow §6). 그 연동 전까지 테스트용으로 화면 하단 버튼으로 즉시
-  // 성공/실패 전환을 트리거할 수 있게 해둠 — 백엔드 연동 후 제거 대상.
+  Future<void> _pollStatus() async {
+    if (_navigated || !mounted) return;
+    try {
+      final latest = await _service.get(widget.session!.id);
+      if (latest.isVerified) {
+        _handleSuccess();
+      } else if (latest.isExpired) {
+        _handleFailure();
+      }
+    } on ApiException {
+      // 일시적 네트워크 오류는 다음 폴링에서 재시도.
+    }
+  }
+
+  /// QA/직원 확인 대체 — 서버에 코드 검증을 요청해 재료를 지급받는다 (스펙 §7.3).
+  Future<void> _verifyNow() async {
+    if (_navigated || _forcing) return;
+    if (!_live) {
+      _handleSuccess();
+      return;
+    }
+    setState(() => _forcing = true);
+    try {
+      final result = await _service.verify(
+        verificationId: widget.session!.id,
+        verificationCode: _code,
+      );
+      if (result.isVerified) {
+        _handleSuccess();
+      } else {
+        _snack('아직 인증이 완료되지 않았어요.');
+      }
+    } on ApiException catch (e) {
+      _snack(e.message);
+    } finally {
+      if (mounted) setState(() => _forcing = false);
+    }
+  }
+
+  void _snack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
   void _handleSuccess() {
     if (_navigated || !mounted) return;
     _navigated = true;
-    _timer?.cancel();
+    _ticker?.cancel();
+    _poll?.cancel();
     _activeSessions.remove(widget.spot.name);
+    // 인증 성공 → 재료·인증 횟수가 늘었으니 방앗간 스탯 갱신 예약.
+    if (_live) DashboardStore.instance.refresh();
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(builder: (_) => VisitRewardScreen(spot: widget.spot)),
     );
@@ -120,7 +182,8 @@ class _VisitVerificationScreenState extends State<VisitVerificationScreen> {
   void _handleFailure() {
     if (_navigated || !mounted) return;
     _navigated = true;
-    _timer?.cancel();
+    _ticker?.cancel();
+    _poll?.cancel();
     _activeSessions.remove(widget.spot.name);
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(
@@ -130,7 +193,8 @@ class _VisitVerificationScreenState extends State<VisitVerificationScreen> {
     );
   }
 
-  String get _formattedCode => '${_code.substring(0, 3)} ${_code.substring(3)}';
+  String get _formattedCode =>
+      _code.length >= 6 ? '${_code.substring(0, 3)} ${_code.substring(3)}' : _code;
 
   String get _formattedTime {
     final m = _remaining.inMinutes.toString().padLeft(2, '0');
@@ -180,13 +244,13 @@ class _VisitVerificationScreenState extends State<VisitVerificationScreen> {
           const SizedBox(height: AppSpacing.lg),
           const _StaffHintCard(),
           const SizedBox(height: AppSpacing.xl),
-          // TODO(backend): 실제로는 매장 직원의 admin 확인으로 성공 처리되고
-          // 시간 초과로만 자동 실패 처리됨. 그 연동 전까지 QA용으로 즉시
-          // 전환할 수 있는 버튼 — 백엔드 연동 후 이 블록 통째로 제거.
-          _DebugTransitionRow(
-            onForceSuccess: _handleSuccess,
-            onForceFailure: _handleFailure,
-          ),
+          if (_live)
+            _LiveHintCard(onCheckNow: _forcing ? null : _verifyNow)
+          else
+            _DebugTransitionRow(
+              onForceSuccess: _handleSuccess,
+              onForceFailure: _handleFailure,
+            ),
         ],
       ),
       bottomNavigationBar: AppBottomNavBar(
@@ -196,8 +260,11 @@ class _VisitVerificationScreenState extends State<VisitVerificationScreen> {
             Navigator.of(context).popUntil((route) => route.isFirst);
           } else if (index == 1 || index == 2) {
             Navigator.of(context).maybePop();
+          } else if (index == 3) {
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const MyFootprintScreen()),
+            );
           }
-          // * TODO: 기록 탭 — 해당 화면 구현 후 연결
         },
       ),
     );
@@ -375,7 +442,7 @@ class _RewardsCard extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.lg),
           _RewardRow(
-            assetPath: 'assets/illustrations/icon/reward_benefit_icon.png',
+            assetPath: 'assets/illustrations/icon/benefit.png',
             fallbackIcon: Symbols.redeem_rounded,
             iconColor: AppColors.secondaryAccent,
             label: '방문 혜택',
@@ -384,7 +451,7 @@ class _RewardsCard extends StatelessWidget {
           ),
           const Divider(height: AppSpacing.xl, color: AppColors.divider),
           _RewardRow(
-            assetPath: 'assets/illustrations/icon/reward_ingredient_icon.png',
+            assetPath: 'assets/illustrations/icon/ingredient_4.png',
             fallbackIcon: Symbols.eco_rounded,
             iconColor: AppColors.primary,
             label: '획득 가능한 재료',
@@ -465,8 +532,56 @@ class _RewardRow extends StatelessWidget {
   }
 }
 
-/// QA 전용 — 실제 대기 없이 성공/실패 화면 전환을 즉시 확인하기 위한 버튼.
-/// 매장 직원 admin 확인 연동이 붙으면 통째로 제거한다.
+/// 백엔드 연동 경로 — 직원이 admin에서 확인하면 자동으로 다음 화면으로 넘어간다.
+/// "인증 상태 확인" 버튼은 즉시 서버에 검증을 요청한다 (스펙 §7.3).
+class _LiveHintCard extends StatelessWidget {
+  const _LiveHintCard({required this.onCheckNow});
+
+  final VoidCallback? onCheckNow;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.lg),
+      decoration: BoxDecoration(
+        color: AppColors.infoBackground,
+        borderRadius: BorderRadius.circular(AppRadius.card),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Icon(Symbols.sync_rounded, size: 18, color: AppColors.info),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Text(
+                  '직원 확인을 기다리는 중이에요. 확인되면 자동으로 넘어가요.',
+                  style: AppTextStyles.bodySmall
+                      .copyWith(color: AppColors.textSecondary),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          OutlinedButton(
+            onPressed: onCheckNow,
+            child: onCheckNow == null
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text('인증 상태 확인'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// QA 전용 (목업 경로) — 실제 대기 없이 성공/실패 화면 전환을 확인하는 버튼.
 class _DebugTransitionRow extends StatelessWidget {
   const _DebugTransitionRow({
     required this.onForceSuccess,

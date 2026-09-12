@@ -154,10 +154,13 @@ class _GapIndexInfoBody extends StatelessWidget {
           style: AppTextStyles.h1,
         ),
         const SizedBox(height: AppSpacing.lg),
-        const Center(
-          child: _PlaceholderArt(
-            asset: 'assets/illustrations/map/map_gap_hero.png',
-            height: 104,
+        Center(
+          child: Image.asset(
+            'assets/illustrations/sparrow/sparrow_gap_score_info.png',
+            height: 132,
+            fit: BoxFit.contain,
+            errorBuilder: (context, error, stackTrace) =>
+                const SizedBox(height: 132),
           ),
         ),
         const SizedBox(height: AppSpacing.lg),
@@ -177,10 +180,10 @@ class _GapIndexInfoBody extends StatelessWidget {
             children: [
               Image.asset(
                 'assets/branding/leaf_ornament.png',
-                width: 20,
-                height: 20,
+                width: 30,
+                height: 30,
                 errorBuilder: (context, error, stackTrace) =>
-                    const SizedBox(width: 20),
+                    const SizedBox(width: 30),
               ),
               const SizedBox(width: AppSpacing.sm),
               Expanded(
@@ -343,7 +346,10 @@ class _GapCompareCard extends StatelessWidget {
     final foreground =
         emphasized ? AppColors.textOnPrimaryButton : AppColors.textPrimary;
     return Container(
-      padding: const EdgeInsets.all(AppSpacing.md),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.sm,
+      ),
       decoration: BoxDecoration(
         color: emphasized ? AppColors.primary : AppColors.surfaceSelected,
         borderRadius: BorderRadius.circular(AppRadius.listRow),
@@ -365,10 +371,10 @@ class _GapCompareCard extends StatelessWidget {
                   : AppColors.textSecondary,
             ),
           ),
-          const SizedBox(height: AppSpacing.sm),
+          const SizedBox(height: AppSpacing.xs),
           Align(
             alignment: Alignment.centerRight,
-            child: _PlaceholderArt(asset: art, height: 40),
+            child: _PlaceholderArt(asset: art, height: 30),
           ),
         ],
       ),

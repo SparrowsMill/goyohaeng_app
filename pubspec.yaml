@@ -35,6 +35,13 @@ dependencies:
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
 
+  # NestJS 백엔드 REST 연동 (frontend-api-spec.md) — Auth / Users / Regions /
+  # Categories / Places / Visit Verifications. `lib/api/` 참고.
+  http: ^1.2.2
+
+  # JWT Access Token · 로그인 세션 · "로그인 상태 유지" 영속화 (lib/api/auth_store.dart).
+  shared_preferences: ^2.3.2
+
   # Used to load the "Gowun Batang" / "Noto Serif" design-system fonts.
   google_fonts: ^6.2.1
 

@@ -17,15 +17,17 @@ class PaperTextureOverlay extends StatelessWidget {
     return Stack(
       children: [
         ?child,
-        const Positioned.fill(
+        Positioned.fill(
           child: IgnorePointer(
             child: Opacity(
               opacity: _opacity,
-              child: Image(
-                image: AssetImage('assets/branding/paper_texture.png'),
+              child: Image.asset(
+                'assets/branding/paper_texture.png',
                 repeat: ImageRepeat.repeat,
                 fit: BoxFit.none,
                 alignment: Alignment.topLeft,
+                errorBuilder: (context, error, stackTrace) =>
+                    const SizedBox.shrink(),
               ),
             ),
           ),

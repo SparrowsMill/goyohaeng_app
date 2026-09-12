@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
+import '../../api/api.dart';
 import '../../data/mock_region_ranking.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_radius.dart';
@@ -8,6 +9,7 @@ import '../../theme/app_shadows.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
 import '../../widgets/app_bottom_nav_bar.dart';
+import '../record/my_footprint_screen.dart';
 import 'visit_verification_screen.dart';
 
 /// `<방문 인증 페이지>` (user_flow §6) — the step between `<장소 정보 페이지>`'s
@@ -16,37 +18,72 @@ import 'visit_verification_screen.dart';
 /// (10분 / 30분 / 1시간 이내). "갈 준비 완료!" carries the chosen window into
 /// the verification screen.
 ///
-/// * TODO: 인증 실패 → `<방문 인증 실패>` 연결 (user_flow §6)
+/// [placeId]가 있으면 "갈 준비 완료!"에서 `POST /visit-verifications`로 실제
+/// 세션을 만들어 서버 발급 인증번호/만료시각을 다음 화면에 넘긴다 (스펙 §7.1).
+/// 없으면 (랭킹/지도가 아직 목업) 로컬 시뮬레이션 경로로 진행한다.
+///
 /// * TODO(asset): 이 화면 배경 scenes/{name}.png 미납품 — 지금은 평면 #FAE7C0.
 class VisitPrepareScreen extends StatefulWidget {
-  const VisitPrepareScreen({super.key, required this.spot});
+  const VisitPrepareScreen({super.key, required this.spot, this.placeId});
 
   final MockTouristSpot spot;
+  final int? placeId;
 
   @override
   State<VisitPrepareScreen> createState() => _VisitPrepareScreenState();
 }
 
 class _VisitPrepareScreenState extends State<VisitPrepareScreen> {
-  static const _options = <({String label, Duration window})>[
-    (label: '10분 이내', window: Duration(minutes: 10)),
-    (label: '30분 이내', window: Duration(minutes: 30)),
-    (label: '1시간 이내', window: Duration(minutes: 60)),
+  static const _options = <({String label, int minutes, Duration window})>[
+    (label: '10분 이내', minutes: 10, window: Duration(minutes: 10)),
+    (label: '30분 이내', minutes: 30, window: Duration(minutes: 30)),
+    (label: '1시간 이내', minutes: 60, window: Duration(minutes: 60)),
   ];
 
   int _selected = 1;
+  bool _submitting = false;
 
-  void _confirm() {
-    // * TODO(backend): 선택한 도착 예정 시간으로 방문 인증 세션 생성 요청 —
-    //   서버가 인증번호/만료시각을 발급하도록.
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => VisitVerificationScreen(
-          spot: widget.spot,
-          window: _options[_selected].window,
+  final _service = VisitVerificationService();
+
+  Future<void> _confirm() async {
+    final option = _options[_selected];
+
+    if (widget.placeId == null) {
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => VisitVerificationScreen(
+            spot: widget.spot,
+            window: option.window,
+          ),
         ),
-      ),
-    );
+      );
+      return;
+    }
+
+    setState(() => _submitting = true);
+    try {
+      final session = await _service.create(
+        placeId: widget.placeId!,
+        arrivalOptionMinutes: option.minutes,
+      );
+      if (!mounted) return;
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => VisitVerificationScreen(
+            spot: widget.spot,
+            window: option.window,
+            session: session,
+          ),
+        ),
+      );
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(e.message)));
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
   }
 
   @override
@@ -73,7 +110,7 @@ class _VisitPrepareScreenState extends State<VisitPrepareScreen> {
           _Header(spot: spot),
           const SizedBox(height: AppSpacing.xl),
           _RewardCard(
-            assetPath: 'assets/illustrations/icon/reward_benefit_icon.png',
+            assetPath: 'assets/illustrations/icon/benefit.png',
             fallbackIcon: Symbols.redeem_rounded,
             iconColor: AppColors.secondaryAccent,
             label: '방문 혜택',
@@ -83,7 +120,7 @@ class _VisitPrepareScreenState extends State<VisitPrepareScreen> {
           ),
           const SizedBox(height: AppSpacing.lg),
           _RewardCard(
-            assetPath: 'assets/illustrations/icon/reward_ingredient_icon.png',
+            assetPath: 'assets/illustrations/icon/ingredient_4.png',
             fallbackIcon: Symbols.eco_rounded,
             iconColor: AppColors.primary,
             label: '획득 가능한 재료',
@@ -102,10 +139,25 @@ class _VisitPrepareScreenState extends State<VisitPrepareScreen> {
           const SizedBox(height: AppSpacing.xl),
           SizedBox(
             width: double.infinity,
-            child: ElevatedButton.icon(
-              onPressed: _confirm,
-              icon: const Icon(Symbols.backpack_rounded, size: 22),
-              label: const Text('갈 준비 완료!'),
+            child: ElevatedButton(
+              onPressed: _submitting ? null : _confirm,
+              child: _submitting
+                  ? const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: AppColors.textOnPrimaryButton,
+                          ),
+                        ),
+                        SizedBox(width: AppSpacing.sm),
+                        Text('준비 중...'),
+                      ],
+                    )
+                  : const Text('갈 준비 완료!'),
             ),
           ),
           const SizedBox(height: AppSpacing.md),
@@ -128,8 +180,11 @@ class _VisitPrepareScreenState extends State<VisitPrepareScreen> {
             Navigator.of(context).popUntil((route) => route.isFirst);
           } else if (index == 1 || index == 2) {
             Navigator.of(context).maybePop();
+          } else if (index == 3) {
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const MyFootprintScreen()),
+            );
           }
-          // * TODO: 기록 탭 — 해당 화면 구현 후 연결
         },
       ),
     );
@@ -137,7 +192,7 @@ class _VisitPrepareScreenState extends State<VisitPrepareScreen> {
 
   Widget _leaf({required bool flip}) {
     final img = Image.asset(
-      'assets/branding/leaf_ornament.png',
+      'assets/branding/leaf_ornament_3.png',
       width: 14,
       height: 14,
       errorBuilder: (context, error, stackTrace) => const SizedBox(width: 14),
@@ -166,8 +221,13 @@ class _Header extends StatelessWidget {
             borderRadius: BorderRadius.circular(AppRadius.card),
           ),
           child: Image.asset(
-            'assets/illustrations/icon/place_icon.png',
+            'assets/illustrations/icon/spot.png',
             fit: BoxFit.contain,
+            errorBuilder: (context, error, stackTrace) => const Icon(
+              Symbols.location_on_rounded,
+              size: 36,
+              color: AppColors.primary,
+            ),
           ),
         ),
         const SizedBox(width: AppSpacing.md),
@@ -224,19 +284,14 @@ class _RewardCard extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 64,
-            height: 64,
-            clipBehavior: Clip.antiAlias,
-            decoration: const BoxDecoration(
-              color: AppColors.surfaceSelected,
-              shape: BoxShape.circle,
-            ),
+          SizedBox(
+            width: 34,
+            height: 34,
             child: Opacity(
               opacity: muted ? 0.4 : 1.0,
               child: Image.asset(
                 assetPath,
-                fit: BoxFit.cover,
+                fit: BoxFit.contain,
                 errorBuilder: (context, error, stackTrace) => Icon(
                   fallbackIcon,
                   size: 32,

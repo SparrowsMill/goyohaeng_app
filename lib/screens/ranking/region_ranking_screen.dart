@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:material_symbols_icons/symbols.dart';
 
+import '../../api/api.dart' show Category;
 import '../../data/favorites.dart';
+import '../../data/gap_spots.dart';
 import '../../data/mock_map_regions.dart' show gapIndexAccent;
 import '../../data/mock_region_ranking.dart';
 import '../../theme/app_colors.dart';
@@ -15,6 +17,7 @@ import '../../widgets/favorite_star_button.dart';
 import '../../widgets/gap_index_info_dialog.dart';
 import '../map/region_spot_map.dart';
 import '../place/place_info_screen.dart';
+import '../record/my_footprint_screen.dart';
 
 /// `<지역별 랭킹 페이지>` (user_flow §6) — the tourist spots in one region,
 /// ranked by 갭지수. Reached by tapping a 시군구/구 on `<지도>`. The top ~40%
@@ -51,9 +54,16 @@ class RegionRankingScreen extends StatefulWidget {
 }
 
 class _RegionRankingScreenState extends State<RegionRankingScreen> {
-  /// `null` == 전체.
-  SpotCategory? _category;
+  /// 선택된 카테고리명 (`GET /categories` level 1). `null` == 전체.
+  String? _category;
   bool _descending = true;
+
+  /// 이 지역의 스팟. 목업으로 즉시 채우고, GAP API(`/places/gap/map` + 폴리곤
+  /// 필터) 응답이 오면 교체한다. [_loaded]가 실제 로드 완료를 표시.
+  late List<MockTouristSpot> _allSpots = rankingForRegion(widget.regionKey);
+
+  /// 필터 칩용 level-1 카테고리.
+  List<Category> _categories = const [];
 
   /// The spot highlighted on the map. Tapping a selected spot (card or pin)
   /// again opens its `<장소 정보 페이지>`.
@@ -77,13 +87,34 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
     _favoritesOnly.addListener(_onFavoritesChanged);
     final name = widget.initialSpotName;
     if (name != null) {
-      for (final spot in rankingForRegion(widget.regionKey)) {
+      for (final spot in _allSpots) {
         if (spot.name == name) {
           _selected = spot;
           break;
         }
       }
     }
+    _loadSpots();
+    GapSpots.instance.level1Categories().then((cats) {
+      if (mounted) setState(() => _categories = cats);
+    }).catchError((_) {/* 필터 전체만 노출 */});
+  }
+
+  Future<void> _loadSpots() async {
+    final spots = await GapSpots.instance.spotsInRegion(widget.regionKey);
+    if (!mounted) return;
+    setState(() {
+      _allSpots = spots;
+      final name = widget.initialSpotName;
+      if (name != null && _selected == null) {
+        for (final spot in spots) {
+          if (spot.name == name) {
+            _selected = spot;
+            break;
+          }
+        }
+      }
+    });
   }
 
   @override
@@ -110,8 +141,8 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
 
   List<MockTouristSpot> get _visibleSpots {
     final favOnly = _favoritesOnly.value;
-    final spots = rankingForRegion(widget.regionKey)
-        .where((s) => _category == null || s.category == _category)
+    final spots = _allSpots
+        .where((s) => _category == null || _categoryLabel(s) == _category)
         .where((s) => !favOnly || Favorites.instance.contains(s.name))
         .toList()
       ..sort((a, b) => _descending
@@ -120,9 +151,14 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
     return spots;
   }
 
+  static String _categoryLabel(MockTouristSpot s) =>
+      s.categoryName ?? s.category.label;
+
   void _openSpot(MockTouristSpot spot) {
     Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => PlaceInfoScreen(spot: spot)),
+      MaterialPageRoute(
+        builder: (_) => PlaceInfoScreen(spot: spot, placeId: spot.placeId),
+      ),
     );
   }
 
@@ -199,6 +235,7 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
           // Fixed above the scrolling list — filter/sort stay put as cards move.
           _FilterBar(
             category: _category,
+            categories: _categories,
             onCategory: (value) => setState(() => _category = value),
             descending: _descending,
             onSort: (value) => setState(() => _descending = value),
@@ -218,8 +255,11 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
             Navigator.of(context).popUntil((route) => route.isFirst);
           } else if (index == 1) {
             Navigator.of(context).maybePop();
+          } else if (index == 3) {
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const MyFootprintScreen()),
+            );
           }
-          // * TODO: 기록 탭 — 해당 화면 구현 후 연결
         },
       ),
     );
@@ -275,14 +315,19 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
 class _FilterBar extends StatelessWidget {
   const _FilterBar({
     required this.category,
+    required this.categories,
     required this.onCategory,
     required this.descending,
     required this.onSort,
     required this.hint,
   });
 
-  final SpotCategory? category;
-  final ValueChanged<SpotCategory?> onCategory;
+  /// 선택된 카테고리명, `null` == 전체.
+  final String? category;
+
+  /// `GET /categories` level 1.
+  final List<Category> categories;
+  final ValueChanged<String?> onCategory;
   final bool descending;
   final ValueChanged<bool> onSort;
   final String hint;
@@ -306,13 +351,13 @@ class _FilterBar extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: _PillDropdown<SpotCategory?>(
+                child: _PillDropdown<String?>(
                   value: category,
                   onChanged: onCategory,
                   items: [
                     const DropdownMenuItem(value: null, child: Text('전체')),
-                    for (final c in SpotCategory.values)
-                      DropdownMenuItem(value: c, child: Text(c.label)),
+                    for (final c in categories)
+                      DropdownMenuItem(value: c.name, child: Text(c.name)),
                   ],
                 ),
               ),
@@ -466,7 +511,7 @@ class _RankingCard extends StatelessWidget {
                   physics: const ClampingScrollPhysics(),
                   child: Row(
                     children: [
-                      _Tag(label: spot.category.label),
+                      _Tag(label: spot.categoryName ?? spot.category.label),
                       const SizedBox(width: AppSpacing.xs),
                       _IngredientTag(ingredient: spot.ingredient),
                       const SizedBox(width: AppSpacing.xs),
@@ -566,9 +611,9 @@ class _RankBadge extends StatelessWidget {
   };
 
   static const _medalAsset = {
-    1: 'assets/illustrations/ranking/gold_medal.png',
-    2: 'assets/illustrations/ranking/silver_medal.png',
-    3: 'assets/illustrations/ranking/bronze_medal.png',
+    1: 'assets/illustrations/ranking/first.png',
+    2: 'assets/illustrations/ranking/second.png',
+    3: 'assets/illustrations/ranking/third.png',
   };
 
   @override
@@ -638,10 +683,13 @@ class _GapValue extends StatelessWidget {
 }
 
 class _Tag extends StatelessWidget {
-  const _Tag({required this.label, this.icon});
+  const _Tag({required this.label, this.icon, this.iconAsset});
 
   final String label;
   final IconData? icon;
+
+  /// Illustration asset shown instead of [icon] (takes precedence).
+  final String? iconAsset;
 
   @override
   Widget build(BuildContext context) {
@@ -655,7 +703,19 @@ class _Tag extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (icon != null) ...[
+          if (iconAsset != null) ...[
+            Image.asset(
+              iconAsset!,
+              width: 15,
+              height: 15,
+              errorBuilder: (context, error, stackTrace) => const Icon(
+                Symbols.eco_rounded,
+                size: 13,
+                color: AppColors.textSecondary,
+              ),
+            ),
+            const SizedBox(width: 3),
+          ] else if (icon != null) ...[
             Icon(icon, size: 13, color: AppColors.textSecondary),
             const SizedBox(width: 3),
           ],
@@ -679,7 +739,10 @@ class _IngredientTag extends StatelessWidget {
     if (ingredient == null) {
       return const _Tag(label: '획득 재료 없음', icon: Symbols.do_not_disturb_on_rounded);
     }
-    return _Tag(label: '$ingredient 획득 가능', icon: Symbols.eco_rounded);
+    return _Tag(
+      label: '$ingredient 획득 가능',
+      iconAsset: 'assets/illustrations/icon/ingredient_4.png',
+    );
   }
 }
 

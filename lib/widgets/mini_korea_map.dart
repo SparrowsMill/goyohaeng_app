@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 
 import '../data/korea_crs.dart' show Epsg5179, LatLng;
@@ -27,6 +29,8 @@ class _MiniKoreaMapState extends State<MiniKoreaMap> {
     super.initState();
     UserLocation.position.addListener(_rebuild);
     UserLocation.ensure();
+    myLocationImage.addListener(_rebuild);
+    ensureMyLocationImage();
     KoreaGeo.load().then((geo) {
       if (mounted) setState(() => _geo = geo);
     });
@@ -35,6 +39,7 @@ class _MiniKoreaMapState extends State<MiniKoreaMap> {
   @override
   void dispose() {
     UserLocation.position.removeListener(_rebuild);
+    myLocationImage.removeListener(_rebuild);
     super.dispose();
   }
 
@@ -49,17 +54,22 @@ class _MiniKoreaMapState extends State<MiniKoreaMap> {
       return const ColoredBox(color: kMapSeaColor);
     }
     return CustomPaint(
-      painter: _MiniMapPainter(geo, UserLocation.position.value),
+      painter: _MiniMapPainter(
+        geo,
+        UserLocation.position.value,
+        myLocationImage.value,
+      ),
       size: Size.infinite,
     );
   }
 }
 
 class _MiniMapPainter extends CustomPainter {
-  _MiniMapPainter(this.geo, this.myLatLng);
+  _MiniMapPainter(this.geo, this.myLatLng, this.pin);
 
   final KoreaGeo geo;
   final LatLng? myLatLng;
+  final ui.Image? pin;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -119,14 +129,31 @@ class _MiniMapPainter extends CustomPainter {
     }
 
     if (located) {
-      canvas.drawCircle(
-        centre,
-        13,
-        Paint()..color = myLocationColor.withValues(alpha: 0.22),
-      );
-      canvas.drawCircle(centre, 8, Paint()..color = AppColors.surface);
-      canvas.drawCircle(centre, 5.5, Paint()..color = myLocationColor);
+      _paintPin(canvas, centre, 30);
     }
+  }
+
+  /// The "you are here" pin: [pin] asset with its tip at [tip], or a plain
+  /// dot fallback while the image is still decoding.
+  void _paintPin(Canvas canvas, Offset tip, double height) {
+    final img = pin;
+    if (img != null) {
+      final w = height * img.width / img.height;
+      canvas.drawImageRect(
+        img,
+        Rect.fromLTWH(0, 0, img.width.toDouble(), img.height.toDouble()),
+        Rect.fromLTWH(tip.dx - w / 2, tip.dy - height, w, height),
+        Paint()..filterQuality = FilterQuality.medium,
+      );
+      return;
+    }
+    canvas.drawCircle(
+      tip,
+      13,
+      Paint()..color = myLocationColor.withValues(alpha: 0.22),
+    );
+    canvas.drawCircle(tip, 8, Paint()..color = AppColors.surface);
+    canvas.drawCircle(tip, 5.5, Paint()..color = myLocationColor);
   }
 
   Path _path(GeoRegion region, MapProjector project) {
@@ -140,5 +167,5 @@ class _MiniMapPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_MiniMapPainter old) =>
-      old.geo != geo || old.myLatLng != myLatLng;
+      old.geo != geo || old.myLatLng != myLatLng || old.pin != pin;
 }

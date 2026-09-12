@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
+import '../../api/api.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
@@ -20,14 +21,66 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  bool _keepSignedIn = false;
+  final _formKey = GlobalKey<FormState>();
+  final _usernameController = TextEditingController();
+  final _passwordController = TextEditingController();
+
+  bool _keepSignedIn = true;
+  bool _submitting = false;
+
+  @override
+  void dispose() {
+    _usernameController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  /// 회원가입 화면으로. 가입에 성공하면 방금 만든 아이디를 받아 채우고,
+  /// 비밀번호는 사용자가 직접 입력하도록 둔다.
+  Future<void> _openSignup() async {
+    final username = await Navigator.of(context).push<String>(
+      MaterialPageRoute(builder: (_) => const SignupScreen()),
+    );
+    if (!mounted || username == null) return;
+    setState(() => _usernameController.text = username);
+    _passwordController.clear();
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        const SnackBar(content: Text('회원가입이 완료됐어요. 비밀번호를 입력해 로그인해 주세요.')),
+      );
+  }
+
+  Future<void> _login() async {
+    FocusScope.of(context).unfocus();
+    if (!(_formKey.currentState?.validate() ?? false)) return;
+
+    setState(() => _submitting = true);
+    try {
+      await AuthStore.instance.logIn(
+        username: _usernameController.text.trim(),
+        password: _passwordController.text,
+        keepSignedIn: _keepSignedIn,
+      );
+      if (!mounted) return;
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const MillHomeScreen()),
+        (route) => false,
+      );
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(e.message)));
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return AuthPageBackground(
       showBackButton: false,
-      showSceneImage: false,
-      logoWidth: 400,
       child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(
           AppSpacing.xl,
@@ -40,65 +93,80 @@ class _LoginScreenState extends State<LoginScreen> {
             Container(
               padding: const EdgeInsets.all(AppSpacing.xxl),
               decoration: AppDecorations.elevatedCard(),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const LeafSectionHeader(label: '로그인'),
-                  const SizedBox(height: AppSpacing.xxl),
-                  const AppTextField(
-                    hintText: '이메일 또는 아이디',
-                    prefixIcon: Symbols.person_rounded,
-                  ),
-                  const SizedBox(height: AppSpacing.lg),
-                  const AppPasswordField(hintText: '비밀번호'),
-                  const SizedBox(height: AppSpacing.lg),
-                  Row(
-                    children: [
-                      SizedBox(
-                        height: 24,
-                        width: 24,
-                        child: Checkbox(
-                          // * TODO(backend): "로그인 상태 유지" 선택 시 세션/토큰
-                          //   영속화 필요 — 지금은 화면 상태만 바뀜.
-                          value: _keepSignedIn,
-                          activeColor: AppColors.primary,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          onChanged: (value) =>
-                              setState(() => _keepSignedIn = value ?? false),
-                        ),
-                      ),
-                      const SizedBox(width: AppSpacing.sm),
-                      Text('로그인 상태 유지', style: AppTextStyles.bodySmall),
-                      const Spacer(),
-                      TextButton(
-                        // * TODO(backend): 비밀번호 찾기 API 연동 필요
-                        onPressed: () {},
-                        child: Text(
-                          '비밀번호 찾기',
-                          style: AppTextStyles.bodySmall.copyWith(
-                            color: AppColors.textSecondary,
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const LeafSectionHeader(label: '로그인'),
+                    const SizedBox(height: AppSpacing.xxl),
+                    AppTextField(
+                      controller: _usernameController,
+                      hintText: '이메일 또는 아이디',
+                      prefixIcon: Symbols.person_rounded,
+                      validator: (v) => (v == null || v.trim().isEmpty)
+                          ? '아이디를 입력해주세요'
+                          : null,
+                    ),
+                    const SizedBox(height: AppSpacing.lg),
+                    AppPasswordField(
+                      controller: _passwordController,
+                      hintText: '비밀번호',
+                      validator: (v) => (v == null || v.isEmpty)
+                          ? '비밀번호를 입력해주세요'
+                          : null,
+                    ),
+                    const SizedBox(height: AppSpacing.lg),
+                    Row(
+                      children: [
+                        SizedBox(
+                          height: 24,
+                          width: 24,
+                          child: Checkbox(
+                            value: _keepSignedIn,
+                            activeColor: AppColors.primary,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            onChanged: (value) =>
+                                setState(() => _keepSignedIn = value ?? false),
                           ),
                         ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: AppSpacing.xl),
-                  ElevatedButton(
-                    // * TODO(backend): 로그인 API 연동 필요 — 현재는 입력값 검증 없이 목업
-                    // 사용자로 바로 메인 화면(방앗간)으로 이동.
-                    onPressed: () {
-                      Navigator.of(context).pushAndRemoveUntil(
-                        MaterialPageRoute(
-                          builder: (_) => const MillHomeScreen(),
+                        const SizedBox(width: AppSpacing.sm),
+                        Text('로그인 상태 유지', style: AppTextStyles.bodySmall),
+                        const Spacer(),
+                        TextButton(
+                          // * TODO(backend): 비밀번호 찾기 API 미구현 (스펙 §10)
+                          onPressed: () => ScaffoldMessenger.of(context)
+                            ..hideCurrentSnackBar()
+                            ..showSnackBar(
+                              const SnackBar(content: Text('비밀번호 찾기는 준비 중이에요.')),
+                            ),
+                          child: Text(
+                            '비밀번호 찾기',
+                            style: AppTextStyles.bodySmall.copyWith(
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
                         ),
-                        (route) => false,
-                      );
-                    },
-                    child: const Text('로그인'),
-                  ),
-                ],
+                      ],
+                    ),
+                    const SizedBox(height: AppSpacing.xl),
+                    ElevatedButton(
+                      onPressed: _submitting ? null : _login,
+                      child: _submitting
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: AppColors.textOnPrimaryButton,
+                              ),
+                            )
+                          : const Text('로그인'),
+                    ),
+                  ],
+                ),
               ),
             ),
             const SizedBox(height: AppSpacing.xxl),
@@ -124,9 +192,7 @@ class _LoginScreenState extends State<LoginScreen> {
               children: [
                 Text('계정이 없으신가요? ', style: AppTextStyles.bodyMedium),
                 TextButton(
-                  onPressed: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const SignupScreen()),
-                  ),
+                  onPressed: _openSignup,
                   child: Text(
                     '회원가입',
                     style: AppTextStyles.bodyMedium.copyWith(

@@ -46,6 +46,8 @@ class MockTouristSpot {
     required this.visitVerifiable,
     required this.ingredient,
     required this.businessStatus,
+    this.placeId,
+    this.categoryName,
     this.spotType = '관광명소',
     this.address = '주소 정보를 준비하고 있어요',
     this.hours = const ['운영시간 정보를 준비하고 있어요'],
@@ -63,6 +65,15 @@ class MockTouristSpot {
   final String name;
   final SpotCategory category;
   final int gapIndex;
+
+  /// 실 백엔드 장소 ID — GAP API에서 온 스팟에만 있다. `null`이면 목업 스팟이라
+  /// placeId 기반 조회(`/places/{id}/gap`·`/recommendations`·방문 인증 실경로)를
+  /// 건너뛴다.
+  final int? placeId;
+
+  /// 백엔드 카테고리명(level 1: 음식·숙박·관광지 …). GAP API 스팟에서 채워지며,
+  /// 화면에서는 [category] enum 대신 이 값을 우선 표시한다. `null`이면 목업.
+  final String? categoryName;
 
   /// WGS84 위치 — `<지도>` 상세(타일) 지도의 스팟 마커. `null`이면 마커 없음.
   /// 현재 값은 [address]를 VWorld 지오코더로 변환한 것 (2026-09-07).

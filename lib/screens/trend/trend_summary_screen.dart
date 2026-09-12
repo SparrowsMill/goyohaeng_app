@@ -9,6 +9,7 @@ import '../../theme/app_shadows.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
 import '../../widgets/app_bottom_nav_bar.dart';
+import '../record/my_footprint_screen.dart';
 
 /// `<트렌드요약 페이지>` (user_flow §6) — reached from the "트렌드 요약" button
 /// (or a keyword chip) on `<장소 정보 페이지>`. Shows the rising keywords, the
@@ -93,8 +94,11 @@ class TrendSummaryScreen extends StatelessWidget {
             Navigator.of(context).popUntil((route) => route.isFirst);
           } else if (index == 1 || index == 2) {
             Navigator.of(context).maybePop();
+          } else if (index == 3) {
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const MyFootprintScreen()),
+            );
           }
-          // * TODO: 기록 탭 — 해당 화면 구현 후 연결
         },
       ),
     );
@@ -129,10 +133,10 @@ class _TitleBlock extends StatelessWidget {
         ),
         const SizedBox(width: AppSpacing.sm),
         Image.asset(
-          'assets/branding/leaf_ornament.png',
-          width: 56,
-          height: 56,
-          errorBuilder: (context, error, stackTrace) => const SizedBox(width: 56),
+          'assets/branding/leaf_ornament_3.png',
+          width: 76,
+          height: 76,
+          errorBuilder: (context, error, stackTrace) => const SizedBox(width: 76),
         ),
       ],
     );

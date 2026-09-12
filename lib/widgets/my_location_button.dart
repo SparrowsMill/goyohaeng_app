@@ -1,13 +1,30 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:material_symbols_icons/symbols.dart';
 
 import '../theme/app_colors.dart';
 import '../theme/app_radius.dart';
 import '../theme/app_text_styles.dart';
 
-/// A deliberately vivid blue for the "you are here" marker — off the warm
-/// storybook palette on purpose so it never reads as a spot pin.
+/// Fallback tint for the "you are here" marker when [myLocationAsset] can't be
+/// drawn — off the warm storybook palette so it never reads as a spot pin.
 const myLocationColor = Color(0xFF2E6BFF);
+
+/// Lazily-decoded [myLocationAsset] for the canvas maps (vector `<지도>` and
+/// the mill-home mini map). Null until [ensureMyLocationImage] finishes.
+final ValueNotifier<ui.Image?> myLocationImage = ValueNotifier<ui.Image?>(null);
+Future<void>? _myLocationImageLoad;
+
+/// Kicks off decoding [myLocationAsset] once; safe to call repeatedly.
+void ensureMyLocationImage() {
+  _myLocationImageLoad ??= rootBundle.load(myLocationAsset).then((data) async {
+    final codec =
+        await ui.instantiateImageCodec(data.buffer.asUint8List());
+    myLocationImage.value = (await codec.getNextFrame()).image;
+  }).catchError((_) {});
+}
 
 /// A map-overlay button that recentres the camera on the device location.
 /// The blue "you are here" dot appears on its own when the screen opens; this
@@ -94,29 +111,31 @@ class MapToggleButton extends StatelessWidget {
   }
 }
 
-/// The "you are here" marker — a vivid blue dot with a white ring and a soft
-/// halo. Sized to sit inside a 32x32 box (the vector map draws its own on the
-/// canvas; this is the `flutter_map` marker child).
+/// Asset for the "you are here" marker — a watercolor map pin whose tip is at
+/// the bottom-centre (so a `flutter_map` [Marker] using it wants
+/// `alignment: Alignment.topCenter`).
+const myLocationAsset = 'assets/illustrations/icon/current_location.png';
+
+/// The "you are here" marker — the [myLocationAsset] pin. Fills its marker box
+/// (the vector maps draw the same pin on their canvas).
 class MyLocationDot extends StatelessWidget {
   const MyLocationDot({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Container(
-        width: 20,
-        height: 20,
-        decoration: BoxDecoration(
-          color: myLocationColor,
-          shape: BoxShape.circle,
-          border: Border.all(color: AppColors.surface, width: 3.5),
-          boxShadow: [
-            BoxShadow(
-              color: myLocationColor.withValues(alpha: 0.35),
-              blurRadius: 8,
-              spreadRadius: 4,
-            ),
-          ],
+    return Image.asset(
+      myLocationAsset,
+      fit: BoxFit.contain,
+      alignment: Alignment.topCenter,
+      errorBuilder: (context, error, stackTrace) => Center(
+        child: Container(
+          width: 20,
+          height: 20,
+          decoration: BoxDecoration(
+            color: myLocationColor,
+            shape: BoxShape.circle,
+            border: Border.all(color: AppColors.surface, width: 3.5),
+          ),
         ),
       ),
     );
