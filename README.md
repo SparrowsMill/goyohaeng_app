@@ -6,4 +6,4 @@ A watercolor-styled travel app for discovering quiet, less-crowded tourist spots
 
 - [유저 플로우 화면 구현 체크리스트](https://github.com/SparrowsMill/goyohaeng_app/issues/1)
 - [로그인/회원가입 페이지 구현 완료 — 백엔드 연동 필요 항목](https://github.com/SparrowsMill/goyohaeng_app/issues/2)
-- [맵 → 랭킹 → 장소 정보 → 트렌드 요약 → 방문 인증 페이지 상세 정보 & 백엔드 연동 필요 항목]([https://github.com/SparrowsMill/goyohaeng_app/issues/2](https://github.com/SparrowsMill/goyohaeng_app/issues/4))
+- [맵 → 랭킹 → 장소 정보 → 트렌드 요약 → 방문 인증 페이지 상세 정보 & 백엔드 연동 필요 항목](https://github.com/SparrowsMill/goyohaeng_app/issues/4)
