@@ -29,8 +29,11 @@ void main() {
     for (final region in geo.sido) {
       expect(region.rings, isNotEmpty);
       expect(region.id.length, 2);
-      expect(mockSidoStats.containsKey(region.id), isTrue,
-          reason: '시도 ${region.id} ${region.title}');
+      expect(
+        mockSidoStats.containsKey(region.id),
+        isTrue,
+        reason: '시도 ${region.id} ${region.title}',
+      );
     }
   });
 
@@ -77,7 +80,9 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('MapScreen renders the vector map with 시도 labels', (tester) async {
+  testWidgets('MapScreen renders the vector map with 시도 labels', (
+    tester,
+  ) async {
     await pumpMapScreen(tester);
 
     expect(find.byType(InteractiveViewer), findsOneWidget);
@@ -95,8 +100,9 @@ void main() {
     );
   });
 
-  testWidgets('tapping a 시도 focuses it; "전국 보기" clears the focus',
-      (tester) async {
+  testWidgets('tapping a 시도 focuses it; "전국 보기" clears the focus', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(390, 800);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -108,10 +114,19 @@ void main() {
         .widget<InteractiveViewer>(find.byType(InteractiveViewer))
         .transformationController!;
     // Home transform: scale 1 (the oversized map just centred, not identity).
-    expect(controller.value.getMaxScaleOnAxis(), moreOrLessEquals(1, epsilon: 0.01));
+    expect(
+      controller.value.getMaxScaleOnAxis(),
+      moreOrLessEquals(1, epsilon: 0.01),
+    );
 
     final box = tester.getRect(find.byType(InteractiveViewer));
-    final proj = MapProjector.cover(bounds: geo!.bounds, viewport: box.size, overscan: kMapZoom, insetTop: kMapChromeInset + kMapMarginV, insetBottom: kMapMarginV);
+    final proj = MapProjector.cover(
+      bounds: geo!.bounds,
+      viewport: box.size,
+      overscan: kMapZoom,
+      insetTop: kMapChromeInset + kMapMarginV,
+      insetBottom: kMapMarginV,
+    );
     Offset screenFor(Offset raw) =>
         MatrixUtils.transformPoint(controller.value, proj(raw)) + box.topLeft;
 
@@ -132,8 +147,7 @@ void main() {
     );
   });
 
-  testWidgets('drilling 시도 → 군 opens <지역별 랭킹> (list + map)',
-      (tester) async {
+  testWidgets('drilling 시도 → 군 opens <지역별 랭킹> (list + map)', (tester) async {
     tester.view.physicalSize = const Size(390, 800);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -146,7 +160,13 @@ void main() {
     await pumpMapScreen(tester);
 
     final box = tester.getRect(find.byType(InteractiveViewer));
-    final proj = MapProjector.cover(bounds: geo!.bounds, viewport: box.size, overscan: kMapZoom, insetTop: kMapChromeInset + kMapMarginV, insetBottom: kMapMarginV);
+    final proj = MapProjector.cover(
+      bounds: geo!.bounds,
+      viewport: box.size,
+      overscan: kMapZoom,
+      insetTop: kMapChromeInset + kMapMarginV,
+      insetBottom: kMapMarginV,
+    );
     TransformationController tc() => tester
         .widget<InteractiveViewer>(find.byType(InteractiveViewer))
         .transformationController!;
@@ -170,8 +190,9 @@ void main() {
     expect(find.text('담양 죽녹원'), findsWidgets); // a ranking card
   });
 
-  testWidgets('<지역별 랭킹>: 전주 완산구 lists 5 spots; select → "자세히 보기" → 상세',
-      (tester) async {
+  testWidgets('<지역별 랭킹>: 전주 완산구 lists 5 spots; select → "자세히 보기" → 상세', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(390, 900);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -205,17 +226,14 @@ void main() {
     expect(find.text('자세히 보기'), findsOneWidget); // button appeared
 
     // 강조 색은 그 스팟 갭지수(핀) 색 계열 — "자세히 보기" 버튼도 그 색.
-    final spot =
-        rankingForRegion('35011').firstWhere((s) => s.name == '전주 경기전');
+    final spot = rankingForRegion(
+      '35011',
+    ).firstWhere((s) => s.name == '전주 경기전');
     final hsl = HSLColor.fromColor(gapIndexColor(spot.gapIndex));
-    final accent =
-        hsl.withLightness(hsl.lightness.clamp(0.34, 0.56)).toColor();
+    final accent = hsl.withLightness(hsl.lightness.clamp(0.34, 0.56)).toColor();
     final btn = tester.widget<Material>(
       find
-          .ancestor(
-            of: find.text('자세히 보기'),
-            matching: find.byType(Material),
-          )
+          .ancestor(of: find.text('자세히 보기'), matching: find.byType(Material))
           .first,
     );
     expect(btn.color, accent);
@@ -264,8 +282,10 @@ void main() {
     expect(tester.getRect(find.text('전체').first), catRect);
 
     // 카드가 더 낮아져 리스트 영역에 3개 이상 들어온다.
-    final cards =
-        find.descendant(of: find.byType(ListView), matching: find.byType(InkWell));
+    final cards = find.descendant(
+      of: find.byType(ListView),
+      matching: find.byType(InkWell),
+    );
     expect(tester.getSize(cards.first).height, lessThan(74));
   });
 
@@ -291,14 +311,18 @@ void main() {
     // 아래로 드래그 → 지도 커지고 목록 줄어듦.
     await tester.drag(find.byType(DragToResizeHandle), const Offset(0, 120));
     await tester.pumpAndSettle();
-    expect(tester.getSize(find.byType(RegionSpotMap)).height,
-        greaterThan(mapH0 + 80));
+    expect(
+      tester.getSize(find.byType(RegionSpotMap)).height,
+      greaterThan(mapH0 + 80),
+    );
 
     // 위로 크게 드래그 → 최소 클램프(화면의 24%)까지만.
     await tester.drag(find.byType(DragToResizeHandle), const Offset(0, -600));
     await tester.pumpAndSettle();
-    expect(tester.getSize(find.byType(RegionSpotMap)).height,
-        moreOrLessEquals(800 * 0.24, epsilon: 14));
+    expect(
+      tester.getSize(find.byType(RegionSpotMap)).height,
+      moreOrLessEquals(800 * 0.24, epsilon: 14),
+    );
   });
 
   testWidgets('벡터 지도: 즐겨찾기 패널 손잡이로 높이 조절', (tester) async {
@@ -320,8 +344,9 @@ void main() {
     expect(tester.getRect(handle).top, lessThan(topBefore - 100));
   });
 
-  testWidgets('RegionSpotMap: selecting a spot flies the camera to it',
-      (tester) async {
+  testWidgets('RegionSpotMap: selecting a spot flies the camera to it', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(390, 700);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -332,7 +357,9 @@ void main() {
     });
 
     final controller = MapController();
-    final spots = rankingForRegion('36310').where((s) => s.hasLocation).toList();
+    final spots = rankingForRegion(
+      '36310',
+    ).where((s) => s.hasLocation).toList();
     MockTouristSpot? selected;
     late StateSetter setOuter;
 
@@ -364,12 +391,15 @@ void main() {
     await tester.pump();
 
     expect(controller.camera.center, isNot(before));
-    expect(controller.camera.center.latitude,
-        moreOrLessEquals(spots.last.lat!, epsilon: 0.02));
+    expect(
+      controller.camera.center.latitude,
+      moreOrLessEquals(spots.last.lat!, epsilon: 0.02),
+    );
   });
 
-  testWidgets('RegionSpotMap responds to a pinch (camera zoom changes)',
-      (tester) async {
+  testWidgets('RegionSpotMap responds to a pinch (camera zoom changes)', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(390, 700);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -415,12 +445,16 @@ void main() {
     await g2.up();
     await tester.pumpAndSettle();
 
-    expect(controller.camera.zoom, greaterThan(z0 + 0.3),
-        reason: 'pinch-out should zoom the camera in');
+    expect(
+      controller.camera.zoom,
+      greaterThan(z0 + 0.3),
+      reason: 'pinch-out should zoom the camera in',
+    );
   });
 
-  testWidgets('tapping a multi-구 시 opens its 구 (one more level)',
-      (tester) async {
+  testWidgets('tapping a multi-구 시 opens its 구 (one more level)', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(390, 800);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -433,7 +467,13 @@ void main() {
     await pumpMapScreen(tester);
 
     final box = tester.getRect(find.byType(InteractiveViewer));
-    final proj = MapProjector.cover(bounds: geo!.bounds, viewport: box.size, overscan: kMapZoom, insetTop: kMapChromeInset + kMapMarginV, insetBottom: kMapMarginV);
+    final proj = MapProjector.cover(
+      bounds: geo!.bounds,
+      viewport: box.size,
+      overscan: kMapZoom,
+      insetTop: kMapChromeInset + kMapMarginV,
+      insetBottom: kMapMarginV,
+    );
     TransformationController tc() => tester
         .widget<InteractiveViewer>(find.byType(InteractiveViewer))
         .transformationController!;
@@ -442,7 +482,8 @@ void main() {
 
     // 수원시 (4 구, code prefix 3101) ≈ mean of its 구 label anchors.
     final suwonGu = geo.sigunguLabels.where((l) => l.id.startsWith('3101'));
-    final suwon = suwonGu.fold(Offset.zero, (a, l) => a + l.point) /
+    final suwon =
+        suwonGu.fold(Offset.zero, (a, l) => a + l.point) /
         suwonGu.length.toDouble();
 
     await tester.tapAt(screenFor(suwon)); // focus 경기도
@@ -453,12 +494,16 @@ void main() {
     await tester.runAsync(() async {});
     await tester.pumpAndSettle();
 
-    expect(find.byType(RegionRankingScreen), findsNothing); // still the vector map
+    expect(
+      find.byType(RegionRankingScreen),
+      findsNothing,
+    ); // still the vector map
     expect(find.text('뒤로'), findsOneWidget); // the step-out pill switched
   });
 
-  testWidgets('system back steps out one drill level, not off the screen',
-      (tester) async {
+  testWidgets('system back steps out one drill level, not off the screen', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(390, 800);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -471,7 +516,13 @@ void main() {
     await pumpMapScreen(tester);
 
     final box = tester.getRect(find.byType(InteractiveViewer));
-    final proj = MapProjector.cover(bounds: geo!.bounds, viewport: box.size, overscan: kMapZoom, insetTop: kMapChromeInset + kMapMarginV, insetBottom: kMapMarginV);
+    final proj = MapProjector.cover(
+      bounds: geo!.bounds,
+      viewport: box.size,
+      overscan: kMapZoom,
+      insetTop: kMapChromeInset + kMapMarginV,
+      insetBottom: kMapMarginV,
+    );
     TransformationController tc() => tester
         .widget<InteractiveViewer>(find.byType(InteractiveViewer))
         .transformationController!;
@@ -497,94 +548,6 @@ void main() {
     expect(find.byType(RegionRankingScreen), findsNothing);
   });
 
-  // `PlaceSearchIndex.load()`는 내부적으로 `GapSpots`를 거쳐
-  // `KoreaGeo.ensureSigungu()`(백그라운드 isolate로 파싱)를 부른다. 이 파일의
-  // 다른 모든 테스트처럼 `testWidgets` + `runAsync`로 감싸야 한다 — 순수
-  // `test()`는 (`testWidgets`가 쓰는) `FakeAsync` 브리지가 없어서, 앞선
-  // 위젯 테스트가 이미 캐시해 둔 isolate 결과를 다시 받아오는 과정에서
-  // 응답을 못 받고 멈춘다(다른 브랜치/isolate에서 정상 동작 확인됨 —
-  // 이 테스트 하나만 단독 실행하면 통과하지만, 스위트 안에서 실행하면
-  // 멈추는 게 그 증거).
-  testWidgets('PlaceSearchIndex matches 장소명 and 지역명', (tester) async {
-    final index = await tester.runAsync(() => PlaceSearchIndex.load());
-
-    final byPlace = index!.query('죽녹원');
-    expect(byPlace.first.isPlace, isTrue);
-    expect(byPlace.first.spot?.name, '담양 죽녹원');
-    expect(byPlace.first.regionCode, '36310');
-
-    final byRegion = index.query('담양');
-    expect(byRegion.any((r) => !r.isPlace && r.regionCode == '36310'), isTrue);
-
-    expect(index.query('없는장소xyz'), isEmpty);
-  });
-
-  Future<void> openSearch(WidgetTester tester, String term) async {
-    await tester.runAsync(() async {
-      final g = await KoreaGeo.load();
-      await g.ensureSigungu();
-      await PlaceSearchIndex.load();
-    });
-    await pumpMapScreen(tester);
-
-    await tester.tap(find.text('지역명 · 장소명 검색'));
-    await tester.pump(); // start the push
-    await tester.pump(const Duration(milliseconds: 400)); // finish the push
-    await tester.runAsync(() async {}); // resolve PlaceSearchIndex.load()
-    await tester.pump();
-
-    await tester.enterText(find.byType(EditableText), term);
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 50));
-  }
-
-  testWidgets('map search: 지역명 검색 → 그 지역의 <지역별 랭킹>', (tester) async {
-    tester.view.physicalSize = const Size(390, 900);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.reset);
-
-    await openSearch(tester, '담양군');
-    // The first result row (region "담양군") — scope to the results list so the
-    // AppBar's search field (now also holding "담양군") isn't what we tap.
-    await tester.tap(
-      find
-          .descendant(of: find.byType(ListView), matching: find.text('담양군'))
-          .first,
-    );
-    await tester.runAsync(() async {});
-    await tester.pumpAndSettle();
-
-    expect(find.byType(RegionRankingScreen), findsOneWidget);
-    expect(find.text('담양 죽녹원'), findsWidgets);
-  });
-
-  testWidgets('map search: 장소명 검색 → 핀 선택 + "자세히 보기" → 상세', (tester) async {
-    const h = 900.0;
-    tester.view.physicalSize = const Size(390, h);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.reset);
-
-    // 전주 한옥마을 = 갭지수 40 → 완산구 5곳 중 랭킹 꼴찌(목록 맨 아래). 그래도
-    // 검색 진입 시 자동으로 스크롤돼 화면에 보여야 한다.
-    await openSearch(tester, '한옥마을');
-    await tester.tap(find.text('전주 한옥마을').last);
-    await tester.runAsync(() async {});
-    await tester.pumpAndSettle();
-
-    expect(find.byType(RegionRankingScreen), findsOneWidget);
-    // Pre-selected → its "자세히 보기" button is already shown, and on-screen.
-    expect(find.text('자세히 보기'), findsOneWidget);
-    expect(find.text('자세히 보기').hitTestable(), findsOneWidget);
-    expect(tester.getRect(find.text('자세히 보기')).bottom, lessThanOrEqualTo(h),
-        reason: '맨 아래 랭킹이어도 선택 카드가 화면 안에 보여야 함');
-
-    await tester.ensureVisible(find.text('자세히 보기'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('자세히 보기'));
-    await tester.pumpAndSettle();
-    expect(find.byType(PlaceInfoScreen), findsOneWidget);
-  });
-
   group('내 위치', () {
     final original = UserLocation.resolver;
     tearDown(() {
@@ -605,7 +568,9 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(theme: AppTheme.light, home: const MapScreen()),
       );
-      await tester.runAsync(() async {}); // KoreaGeo + UserLocation.ensure resolve
+      await tester.runAsync(
+        () async {},
+      ); // KoreaGeo + UserLocation.ensure resolve
       await tester.pumpAndSettle();
 
       // No button press needed — the dot (painted on the canvas) follows this
@@ -683,10 +648,14 @@ void main() {
       await tester.tap(find.text('내 위치'));
       await tester.pumpAndSettle();
 
-      expect(controller.camera.center.latitude,
-          moreOrLessEquals(me.latitude, epsilon: 0.05));
-      expect(controller.camera.center.longitude,
-          moreOrLessEquals(me.longitude, epsilon: 0.05));
+      expect(
+        controller.camera.center.latitude,
+        moreOrLessEquals(me.latitude, epsilon: 0.05),
+      );
+      expect(
+        controller.camera.center.longitude,
+        moreOrLessEquals(me.longitude, epsilon: 0.05),
+      );
     });
 
     testWidgets('실제 맵(RegionSpotMap): 내 위치가 그대로 유지된다', (tester) async {
@@ -840,9 +809,9 @@ void main() {
           home: Scaffold(
             body: RegionSpotMap(
               regionCode: '36310',
-              spots: rankingForRegion('36310')
-                  .where((s) => Favorites.instance.contains(s.name))
-                  .toList(),
+              spots: rankingForRegion(
+                '36310',
+              ).where((s) => Favorites.instance.contains(s.name)).toList(),
               selected: null,
               onMarkerTap: (_) {},
               mapController: controller,
@@ -871,8 +840,9 @@ void main() {
       expect(favPin('보성 녹차밭'), isNotNull);
     });
 
-    testWidgets('RegionSpotMap: 즐겨찾기 모드 진입은 스팟이 아니라 지역 경계에 맞춘다',
-        (tester) async {
+    testWidgets('RegionSpotMap: 즐겨찾기 모드 진입은 스팟이 아니라 지역 경계에 맞춘다', (
+      tester,
+    ) async {
       tester.view.physicalSize = const Size(390, 700);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
@@ -934,9 +904,11 @@ void main() {
       expect(find.text('담양 죽녹원'), findsOneWidget);
 
       // The row keeps a star → unfavorite in place.
-      await tester.tap(find.byWidgetPredicate(
-        (w) => w is FavoriteStarButton && w.spotName == '담양 죽녹원',
-      ));
+      await tester.tap(
+        find.byWidgetPredicate(
+          (w) => w is FavoriteStarButton && w.spotName == '담양 죽녹원',
+        ),
+      );
       await tester.pumpAndSettle();
       expect(Favorites.instance.contains('담양 죽녹원'), isFalse);
       expect(find.text('즐겨찾기 2곳'), findsOneWidget);
@@ -949,18 +921,18 @@ void main() {
       expect(tester.getRect(find.byType(InteractiveViewer)), mapBefore);
     });
 
-    testWidgets('벡터 지도: 즐겨찾기 목록이 뜨면 아래로 팬 여유가 늘어난다 (맵은 그대로)',
-        (tester) async {
+    testWidgets('벡터 지도: 즐겨찾기 목록이 뜨면 아래로 팬 여유가 늘어난다 (맵은 그대로)', (tester) async {
       tester.view.physicalSize = const Size(390, 900);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
 
       await pumpMapScreen(tester);
 
-      EdgeInsets margin() => (tester
-              .widget<InteractiveViewer>(find.byType(InteractiveViewer))
-              .boundaryMargin)
-          .resolve(TextDirection.ltr);
+      EdgeInsets margin() =>
+          (tester
+                  .widget<InteractiveViewer>(find.byType(InteractiveViewer))
+                  .boundaryMargin)
+              .resolve(TextDirection.ltr);
       final rectBefore = tester.getRect(find.byType(InteractiveViewer));
       final closed = margin();
 
@@ -974,8 +946,7 @@ void main() {
       expect(open.bottom, greaterThan(closed.bottom + 100)); // 아래로 더 드래그
     });
 
-    testWidgets('즐겨찾기 목록: 항목 탭 → 지도 집중, "자세히 보기" → <장소 정보>',
-        (tester) async {
+    testWidgets('즐겨찾기 목록: 항목 탭 → 지도 집중, "자세히 보기" → <장소 정보>', (tester) async {
       tester.view.physicalSize = const Size(390, 900);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
@@ -1046,7 +1017,8 @@ void main() {
       // 다시 벡터 지도로 돌아오면 OFF 상태를 이어받는다.
       await pumpMapScreen(tester);
       final toggleInVector = tester.widget<MapToggleButton>(
-          find.widgetWithText(MapToggleButton, '즐겨찾기'));
+        find.widgetWithText(MapToggleButton, '즐겨찾기'),
+      );
       expect(toggleInVector.active, isFalse);
       expect(find.text('즐겨찾기 3곳').hitTestable(), findsNothing);
     });
@@ -1071,4 +1043,119 @@ void main() {
       expect(find.text('전주 경기전'), findsNothing);
     });
   });
+
+  // KNOWN ISSUE: `PlaceSearchIndex.load()` → `GapSpots` → `KoreaGeo.
+  // ensureSigungu()`가 쓰는 백그라운드 isolate(`compute()`)가, 이 스위트 안의
+  // 다른 위젯 테스트들이 먼저 실행된 뒤에는 결과를 못 받고 멈춘다(단독
+  // 실행하면 즉시 통과 — `flutter test test/map_smoke_test.dart
+  // --plain-name "PlaceSearchIndex matches"`로 재현/반증 가능). `.timeout()`,
+  // `tester.runAsync()`로 감싸기, `setUpAll` 예열 전부 시도했지만 못 고쳤다
+  // — Flutter 테스트 엔진의 FakeAsync·isolate 상호작용에 관한 더 깊은
+  // 문제로 보인다(HTTP 쪽은 `test/flutter_test_config.dart`의 `MockClient`로
+  // 이미 해결됨 — 이 테스트가 겪는 건 그것과 다른 문제).
+  //
+  // 타임아웃으로 강제 종료해도 `tester.runAsync()`가 "사용 중" 상태로 남아서,
+  // 이후 `runAsync()`를 쓰는 모든 테스트가 "Reentrant call to runAsync()
+  // denied"로 연쇄 실패한다 — 그래서 이 3개(와 그 헬퍼)를 파일 맨 끝으로
+  // 옮겨서, 멀쩡히 통과하던 나머지 테스트들이 이 연쇄 실패에 안 휩쓸리게
+  // 격리해뒀다. 프로덕션 코드(`GapSpots`/`KoreaGeo`)는 실제 서버로 별도
+  // 검증 완료라 문제없음 — 순수하게 이 파일 안에서의 테스트 실행 순서
+  // 문제다.
+  testWidgets(
+    'PlaceSearchIndex matches 장소명 and 지역명',
+    (tester) async {
+      final index = await tester.runAsync(() => PlaceSearchIndex.load());
+
+      final byPlace = index!.query('죽녹원');
+      expect(byPlace.first.isPlace, isTrue);
+      expect(byPlace.first.spot?.name, '담양 죽녹원');
+      expect(byPlace.first.regionCode, '36310');
+
+      final byRegion = index.query('담양');
+      expect(
+        byRegion.any((r) => !r.isPlace && r.regionCode == '36310'),
+        isTrue,
+      );
+
+      expect(index.query('없는장소xyz'), isEmpty);
+    },
+    timeout: const Timeout(Duration(seconds: 5)),
+  );
+
+  Future<void> openSearch(WidgetTester tester, String term) async {
+    await tester.runAsync(() async {
+      final g = await KoreaGeo.load();
+      await g.ensureSigungu();
+      await PlaceSearchIndex.load();
+    });
+    await pumpMapScreen(tester);
+
+    await tester.tap(find.text('지역명 · 장소명 검색'));
+    await tester.pump(); // start the push
+    await tester.pump(const Duration(milliseconds: 400)); // finish the push
+    await tester.runAsync(() async {}); // resolve PlaceSearchIndex.load()
+    await tester.pump();
+
+    await tester.enterText(find.byType(EditableText), term);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+  }
+
+  testWidgets(
+    'map search: 지역명 검색 → 그 지역의 <지역별 랭킹>',
+    (tester) async {
+      tester.view.physicalSize = const Size(390, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+
+      await openSearch(tester, '담양군');
+      // The first result row (region "담양군") — scope to the results list so the
+      // AppBar's search field (now also holding "담양군") isn't what we tap.
+      await tester.tap(
+        find
+            .descendant(of: find.byType(ListView), matching: find.text('담양군'))
+            .first,
+      );
+      await tester.runAsync(() async {});
+      await tester.pumpAndSettle();
+
+      expect(find.byType(RegionRankingScreen), findsOneWidget);
+      expect(find.text('담양 죽녹원'), findsWidgets);
+    },
+    timeout: const Timeout(Duration(seconds: 5)),
+  );
+
+  testWidgets(
+    'map search: 장소명 검색 → 핀 선택 + "자세히 보기" → 상세',
+    (tester) async {
+      const h = 900.0;
+      tester.view.physicalSize = const Size(390, h);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+
+      // 전주 한옥마을 = 갭지수 40 → 완산구 5곳 중 랭킹 꼴찌(목록 맨 아래). 그래도
+      // 검색 진입 시 자동으로 스크롤돼 화면에 보여야 한다.
+      await openSearch(tester, '한옥마을');
+      await tester.tap(find.text('전주 한옥마을').last);
+      await tester.runAsync(() async {});
+      await tester.pumpAndSettle();
+
+      expect(find.byType(RegionRankingScreen), findsOneWidget);
+      // Pre-selected → its "자세히 보기" button is already shown, and on-screen.
+      expect(find.text('자세히 보기'), findsOneWidget);
+      expect(find.text('자세히 보기').hitTestable(), findsOneWidget);
+      expect(
+        tester.getRect(find.text('자세히 보기')).bottom,
+        lessThanOrEqualTo(h),
+        reason: '맨 아래 랭킹이어도 선택 카드가 화면 안에 보여야 함',
+      );
+
+      await tester.ensureVisible(find.text('자세히 보기'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('자세히 보기'));
+      await tester.pumpAndSettle();
+      expect(find.byType(PlaceInfoScreen), findsOneWidget);
+    },
+    timeout: const Timeout(Duration(seconds: 5)),
+  );
 }

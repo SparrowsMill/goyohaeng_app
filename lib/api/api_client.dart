@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:http/http.dart' as http;
 
 import 'api_config.dart';
@@ -14,7 +15,15 @@ class ApiClient {
 
   static final ApiClient instance = ApiClient._();
 
-  final http.Client _http = http.Client();
+  http.Client _http = http.Client();
+
+  /// 테스트 전용 — 실제 소켓을 쓰는 기본 [http.Client] 대신 순수 Dart Future만
+  /// 쓰는 가짜 클라이언트(예: `MockClient`)로 바꿔치기한다. `flutter_test`의
+  /// `HttpOverrides` 기반 자동 스텁은 `testWidgets`의 FakeAsync 존과 타이밍이
+  /// 안 맞아 응답이 늦게 도착해 엉뚱한 테스트를 오염시키는 문제가 있었다
+  /// (`test/flutter_test_config.dart` 참고).
+  @visibleForTesting
+  set debugHttpClient(http.Client client) => _http = client;
 
   /// 로그인 후 발급받은 JWT Access Token. [AuthStore]가 로그인/로그아웃/부팅 시
   /// 갱신한다. `null`이면 인증 헤더 없이 요청한다.
