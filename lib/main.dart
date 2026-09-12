@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'api/auth_store.dart';
+import 'data/mock_map_regions.dart' show loadRealRegionStats;
 import 'screens/auth/login_screen.dart';
 import 'screens/mill/mill_home_screen.dart';
 import 'screens/splash/splash_screen.dart';
@@ -43,6 +44,14 @@ class _BootstrapState extends State<_Bootstrap> {
     AuthStore.instance.bootstrap(),
     Future<void>.delayed(const Duration(milliseconds: 1500)),
   ]);
+
+  @override
+  void initState() {
+    super.initState();
+    // 인증 불필요 API라 스플래시를 막지 않고 백그라운드로 미리 받아둔다
+    // (<지도>/방앗간 미니맵이 열릴 때쯤엔 대부분 이미 도착해 있다).
+    loadRealRegionStats();
+  }
 
   @override
   Widget build(BuildContext context) {

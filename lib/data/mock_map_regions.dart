@@ -1,15 +1,19 @@
 import 'package:flutter/material.dart';
 
-/// Placeholder 갭지수 / 관광 스팟 수 for the `<지도>` screen, keyed by the
-/// 행정구역 codes in `assets/maps/` (시도 = 2자리, 시군구 = 5자리).
+import '../api/api.dart';
+import 'korea_map_geo.dart';
+
+/// 갭지수 / 관광 스팟 수 for the `<지도>` screen, keyed by the 행정구역 codes
+/// in `assets/maps/` (시도 = 2자리, 시군구 = 5자리).
 ///
-/// The map is drawn from GeoJSON (`korea_map_geo.dart`); this file only
-/// supplies the numbers each region is shaded and labelled by. Real values
-/// come from the backend later — [mockSidoStats] is hand-set to match the
-/// approved mockup, and the 250 시군구 fall back to [_deterministicStats] so
-/// the mid-zoom view looks alive without authoring 250 rows by hand.
-///
-/// * TODO(backend): 지역별 평균 갭지수 / 스팟 수 API 연동
+/// The map is drawn from GeoJSON (`korea_map_geo.dart`); this file supplies
+/// the numbers each region is shaded and labelled by. [loadRealRegionStats]
+/// fetches `GET /regions/gap-scores`(서울만, 인증 불필요) once and matches
+/// each 지역명을 GeoJSON 라벨 이름으로 대조해 실제 값을 덮어쓴다 — 서울은
+/// 지금 25개 자치구뿐이라 이름이 전부 고유해서 행정코드 매핑 없이도 안전하게
+/// 매칭된다([[category-taxonomy-alignment]]의 지역 코드 이슈와 별개).
+/// 로드 전/실패 시, 또는 서울 밖 지역은 여전히 [mockSidoStats]/
+/// [_deterministicStats] 목업으로 채운다.
 class RegionStats {
   const RegionStats({required this.avgGapIndex, required this.spotCount});
   final int avgGapIndex;
@@ -58,9 +62,52 @@ const _sigunguOverrides = <String, RegionStats>{
   '35020': RegionStats(avgGapIndex: 54, spotCount: 2), // 군산시
 };
 
-/// Stats for any region code — 시도, 시군구, or an unknown key.
+/// `GET /regions/gap-scores`로 채워지는 실 통계 캐시. `null`이면 아직 로드
+/// 전이거나 실패한 것 — 그 사이엔 [statsForRegion]이 기존 목업을 쓴다.
+Map<String, RegionStats>? _realStats;
+Future<void>? _realStatsLoading;
+
+/// `<지도>` 등 진입 시 한 번 호출. 실패하면 다음 호출에서 재시도할 수 있게
+/// 캐시를 비워두고 조용히 목업을 유지한다(인증 불필요 API라 로그인 여부와
+/// 무관하게 호출 가능).
+Future<void> loadRealRegionStats() =>
+    _realStatsLoading ??= _loadRealRegionStats();
+
+Future<void> _loadRealRegionStats() async {
+  try {
+    final results = await Future.wait([
+      GapService().regionGapScores(),
+      KoreaGeo.load().then((geo) async {
+        await geo.ensureSigungu();
+        return geo;
+      }),
+    ]);
+    final scores = results[0] as List<RegionGapScore>;
+    final geo = results[1] as KoreaGeo;
+
+    final codeByName = <String, String>{
+      for (final l in geo.sidoLabels) l.title: l.id,
+      for (final l in geo.sigunguLabels) l.title: l.id,
+    };
+
+    final stats = <String, RegionStats>{};
+    for (final s in scores) {
+      final code = codeByName[s.regionName];
+      if (code == null) continue;
+      stats[code] =
+          RegionStats(avgGapIndex: s.gapIndex, spotCount: s.placeCount);
+    }
+    _realStats = stats;
+  } catch (_) {
+    _realStatsLoading = null;
+  }
+}
+
+/// Stats for any region code — 시도, 시군구, or an unknown key. [_realStats]에
+/// 있으면 그 값을, 없으면(로드 전·실패·서울 밖 지역) 목업을 쓴다.
 RegionStats statsForRegion(String code) {
-  return mockSidoStats[code] ??
+  return _realStats?[code] ??
+      mockSidoStats[code] ??
       _sigunguOverrides[code] ??
       _deterministicStats(code);
 }

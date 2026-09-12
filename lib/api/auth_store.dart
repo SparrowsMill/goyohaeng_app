@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../data/favorites.dart';
 import 'api_client.dart';
 import 'dashboard_store.dart';
 import 'models.dart';
@@ -68,6 +70,7 @@ class AuthStore extends ChangeNotifier {
         realName: _me!.realName,
       );
       notifyListeners();
+      unawaited(Favorites.instance.loadFromServer());
     } catch (_) {
       // 토큰 만료/무효 — 세션 정리.
       await signOut();
@@ -87,6 +90,7 @@ class AuthStore extends ChangeNotifier {
       _me = await _users.getMe();
     } catch (_) {/* 프로필은 계정 센터 진입 시 다시 시도 */}
     notifyListeners();
+    unawaited(Favorites.instance.loadFromServer());
   }
 
   Future<void> _apply(
@@ -123,6 +127,7 @@ class AuthStore extends ChangeNotifier {
     _me = null;
     ApiClient.instance.authToken = null;
     DashboardStore.instance.clear();
+    Favorites.instance.clear();
     final prefs = await SharedPreferences.getInstance();
     await _clear(prefs);
     notifyListeners();

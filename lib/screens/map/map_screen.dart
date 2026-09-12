@@ -526,6 +526,11 @@ class _KoreaMapState extends State<_KoreaMap>
     KoreaGeo.load().then((geo) {
       if (mounted) setState(() => _geo = geo);
     });
+    // main.dart에서 이미 시작됐을 수 있는 로드 — 끝나면(이미 끝났어도 즉시)
+    // 실 갭지수로 다시 칠하도록 한 번 더 리페인트한다.
+    loadRealRegionStats().then((_) {
+      if (mounted) setState(() {});
+    });
   }
 
   @override
