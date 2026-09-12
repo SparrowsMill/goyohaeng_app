@@ -70,6 +70,7 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.4
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -121,3 +122,19 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
+# 홈 화면 앱 아이콘 생성 (CLAUDE.md §9). 소스 1장을 넣고
+#   dart run flutter_launcher_icons
+# 를 실행하면 android mipmap-* / iOS AppIcon.appiconset 을 전부 덮어쓴다.
+flutter_launcher_icons:
+  image_path: "assets/branding/app_icon.png"
+  android: true
+  ios: true
+  # iOS 아이콘은 투명도 불가 — 앱 배경색으로 평탄화.
+  remove_alpha_ios: true
+  background_color_ios: "#FAE7C0"
+  # 안드로이드 8+ 적응형 아이콘 — 배경은 앱 배경색(#FAE7C0), 전경은 같은
+  # 소스(가운데 여백을 둔 로고 기준). 전용 전경 이미지를 따로 주면
+  # assets/branding/app_icon_foreground.png 로 교체.
+  adaptive_icon_background: "#FAE7C0"
+  adaptive_icon_foreground: "assets/branding/app_icon.png"
