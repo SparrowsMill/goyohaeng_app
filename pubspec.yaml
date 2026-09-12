@@ -60,6 +60,10 @@ dependencies:
   # <지도> 내 위치 표시 + "내 위치" 오버레이 버튼 (벡터맵·실제 타일맵 공통).
   geolocator: ^14.0.0
 
+  # <SNS에 공유> — OS 공유 시트로 텍스트/이미지 공유 (인스타그램/카카오톡/X/블로그
+  # 앱을 대상으로 특정 앱 딥링크는 아니고, 사용자가 공유 시트에서 앱을 선택).
+  share_plus: ^13.3.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

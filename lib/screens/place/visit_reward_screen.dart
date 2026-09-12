@@ -138,7 +138,10 @@ class VisitRewardScreen extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.xl),
           _ShareSection(
-            onShareSns: () => showSnsShareSheet(context),
+            onShareSns: () => showSnsShareSheet(
+              context,
+              shareText: '고요행에서 ${spot.name} 방문 인증을 완료했어요!',
+            ),
             onShareRecord: () => _shareToRecord(context),
           ),
           const SizedBox(height: AppSpacing.xl),

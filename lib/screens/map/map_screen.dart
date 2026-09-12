@@ -23,6 +23,7 @@ import '../../widgets/drag_to_resize_handle.dart';
 import '../../widgets/favorites_list.dart';
 import '../../widgets/gap_index_info_dialog.dart';
 import '../../widgets/my_location_button.dart';
+import '../account/account_center_screen.dart';
 import '../place/place_info_screen.dart';
 import '../ranking/region_ranking_screen.dart';
 import '../record/my_footprint_screen.dart';
@@ -268,9 +269,11 @@ class _NotificationBell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return IconButton(
-      onPressed: () {
-        // * TODO(backend): 알림 목록 화면 연동 필요
-      },
+      // * TODO(backend): 알림 목록 화면 연동 필요 — 그 전까지는 계정 센터의
+      // 알림 설정 섹션으로 안내한다.
+      onPressed: () => Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const AccountCenterScreen()),
+      ),
       icon: Stack(
         clipBehavior: Clip.none,
         children: [

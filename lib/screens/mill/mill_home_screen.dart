@@ -10,6 +10,7 @@ import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
 import '../../widgets/app_bottom_nav_bar.dart';
 import '../../widgets/mini_korea_map.dart';
+import '../account/account_center_screen.dart';
 import '../food/my_food_screen.dart';
 import '../map/map_screen.dart';
 import '../record/my_footprint_screen.dart';
@@ -181,9 +182,11 @@ class _TopBar extends StatelessWidget {
             ),
             const Spacer(),
             IconButton(
-              onPressed: () {
-                // * TODO(backend): 알림 목록 화면 연동 필요
-              },
+              // * TODO(backend): 알림 목록 화면 연동 필요 — 그 전까지는 계정
+              // 센터의 알림 설정 섹션으로 안내한다.
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const AccountCenterScreen()),
+              ),
               icon: const Icon(Symbols.notifications_rounded),
               color: AppColors.textPrimary,
             ),

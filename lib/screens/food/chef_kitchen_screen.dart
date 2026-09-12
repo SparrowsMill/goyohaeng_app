@@ -153,7 +153,10 @@ class _ChefKitchenScreenState extends State<ChefKitchenScreen> {
                           ? _DoneCard(
                               food: food,
                               result: _result,
-                              onShareSns: () => showSnsShareSheet(context),
+                              onShareSns: () => showSnsShareSheet(
+                                context,
+                                shareText: '고요행에서 ${food.name}을(를) 만들었어요!',
+                              ),
                               onShareRecord: () => _shareToRecord(context),
                               onConfirm: () => _finish(context),
                             )

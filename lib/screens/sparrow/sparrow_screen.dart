@@ -20,10 +20,10 @@ import '../record/my_footprint_screen.dart';
 /// 진입한다. 참새 캐릭터·닉네임·레벨, 활동 요약(방문 지역/방문 인증/완성 음식/
 /// 모은 재료), 최근 일기 미리보기, 계정 센터 연결을 제공한다.
 ///
-/// 뼈대만 구현 — 데이터는 `mock_sparrow` placeholder. 닉네임 수정·일기 쓰기
-/// (`<기록 플랫폼 글쓰기>` §8) 는 미구현이라 스낵바로 안내한다.
+/// 뼈대만 구현 — 레벨/경험치/함께한 날수/일기는 여전히 `mock_sparrow`
+/// placeholder(§5 신규 백엔드 필드 필요). 닉네임 연필 아이콘은 계정 센터의
+/// `realName` 수정 화면으로 이동한다(별도 nickname 필드 없이 재사용).
 ///
-/// * TODO: 닉네임 수정 (프로필 편집 — 계정 센터 §3).
 /// * TODO(asset): 이 화면 배경 scene 미납품 —
 ///   `assets/illustrations/scenes/sparrow_bg.png` (§9, 참새 + 방앗간 헤더 밴드).
 ///   그 전까지 `sparrow/sparrow_default.png` 만 코드로 얹는다.
@@ -39,11 +39,6 @@ class _SparrowScreenState extends State<SparrowScreen> {
   void initState() {
     super.initState();
     DashboardStore.instance.ensureLoaded();
-  }
-
-  void _todo(BuildContext context, String message) {
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -74,8 +69,11 @@ class _SparrowScreenState extends State<SparrowScreen> {
               children: [
                 _ProfileCard(
                   profile: p,
-                  onEditName: () =>
-                      _todo(context, '닉네임은 계정 센터에서 수정할 수 있어요.'),
+                  onEditName: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const AccountCenterScreen(),
+                    ),
+                  ),
                 ),
                 const SizedBox(height: AppSpacing.xxl),
                 const _MiniLabel('참새의 활동 요약'),

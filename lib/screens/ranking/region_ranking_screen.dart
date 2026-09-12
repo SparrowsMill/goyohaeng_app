@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:material_symbols_icons/symbols.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../api/api.dart' show Category;
 import '../../data/favorites.dart';
@@ -31,7 +32,10 @@ import '../record/my_footprint_screen.dart';
 /// [Favorites.mapOverlayActive], so arriving here with it already on (from
 /// `<지도>`) starts filtered, and flipping it anywhere keeps map + list in sync.
 ///
-/// * TODO(backend): 필터·정렬 설정 영속화 (user_flow §6 "다음 방문 시에도 유지")
+/// 카테고리·정렬 필터는 기기 로컬(`SharedPreferences`)에 저장돼 다음 방문 시에도
+/// 유지된다(user_flow §6) — 서버 동기화가 필요한 값이 아니라 지역 무관 전역
+/// 설정 하나로 취급한다.
+///
 /// * TODO(asset): 이 화면 배경 scenes/{name}.png 미납품 — 지금은 평면 #FAE7C0.
 class RegionRankingScreen extends StatefulWidget {
   const RegionRankingScreen({
@@ -54,6 +58,9 @@ class RegionRankingScreen extends StatefulWidget {
 }
 
 class _RegionRankingScreenState extends State<RegionRankingScreen> {
+  static const _kPrefCategory = 'ranking.filter.categoryId';
+  static const _kPrefDescending = 'ranking.filter.descending';
+
   /// 선택된 카테고리 id (`GET /categories` level 1). `null` == 전체. 서버가
   /// `/places/gap/map`에서 이 id의 하위 categoryId까지 cascade로 걸러준다
   /// (2026-09-12 배포로 검증됨) — 그래서 값이 바뀌면 [_loadSpots]를 다시 호출한다.
@@ -96,10 +103,37 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
         }
       }
     }
-    _loadSpots();
+    _restoreFilterPrefs();
     GapSpots.instance.level1Categories().then((cats) {
       if (mounted) setState(() => _categories = cats);
     }).catchError((_) {/* 필터 전체만 노출 */});
+  }
+
+  /// 저장된 필터·정렬을 불러온 뒤 그 값으로 첫 조회를 시작한다. 저장된 값이
+  /// 없으면 기본값(전체·내림차순)으로 곧장 [_loadSpots]를 부른다.
+  Future<void> _restoreFilterPrefs() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() {
+      _category =
+          prefs.containsKey(_kPrefCategory) ? prefs.getInt(_kPrefCategory) : null;
+      _descending = prefs.getBool(_kPrefDescending) ?? true;
+    });
+    _loadSpots();
+  }
+
+  Future<void> _saveCategoryPref(int? categoryId) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (categoryId == null) {
+      await prefs.remove(_kPrefCategory);
+    } else {
+      await prefs.setInt(_kPrefCategory, categoryId);
+    }
+  }
+
+  Future<void> _saveDescendingPref(bool descending) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_kPrefDescending, descending);
   }
 
   Future<void> _loadSpots() async {
@@ -129,6 +163,12 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
   void _onCategoryChanged(int? categoryId) {
     setState(() => _category = categoryId);
     _loadSpots();
+    _saveCategoryPref(categoryId);
+  }
+
+  void _onSortChanged(bool descending) {
+    setState(() => _descending = descending);
+    _saveDescendingPref(descending);
   }
 
   @override
@@ -250,7 +290,7 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
             categories: _categories,
             onCategory: _onCategoryChanged,
             descending: _descending,
-            onSort: (value) => setState(() => _descending = value),
+            onSort: _onSortChanged,
             hint: favOnly
                 ? '즐겨찾기한 장소만 보고 있어요 · 지도 별 핀과 연동돼요'
                 : hasPins

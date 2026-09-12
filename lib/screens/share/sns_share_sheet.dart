@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:material_symbols_icons/symbols.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../theme/app_colors.dart';
 import '../../theme/app_radius.dart';
@@ -9,17 +10,15 @@ import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
 
 /// `<SNS에 공유>` (user_flow §7) — 셰프의 주방 / 방문 인증 보상 화면의 "SNS 공유"
-/// 에서 공통으로 쓰는 공유 대상 선택 모달. 대상을 고르면 해당 SNS 앱의 글쓰기
-/// 화면으로 이동하고 완성 일러스트가 자동 첨부된다.
+/// 에서 공통으로 쓰는 공유 대상 선택 모달. 대상을 고르면 OS 공유 시트가 열리고
+/// [shareText]가 미리 채워진다 — 특정 SNS 앱으로 바로 딥링크하는 것은 아니고
+/// (그러려면 앱별 SDK/키가 필요), 사용자가 공유 시트에서 원하는 앱을 고른다.
 ///
-/// 뼈대만 구현 — 실제 SNS 앱 딥링크 / 공유 인텐트는 미구현이라 스낵바로 안내
-/// 한다. "링크 복사"만 placeholder 링크를 클립보드에 복사한다.
-///
-/// * TODO: 각 SNS 앱 공유 인텐트 / 딥링크 연동 (일러스트·문구 자동 첨부).
-/// * TODO(backend): 공유용 딥링크/URL 발급.
+/// * TODO(backend): "링크 복사"는 아직 실제 공개 URL이 없어 placeholder를
+///   클립보드에 복사한다 (docs/backend_requirements_pending.md §3).
 /// * TODO(asset): SNS 브랜드 로고 `assets/illustrations/icon/sns_{key}.png`
 ///   미납품 — 그 전까지 Material Symbol placeholder.
-Future<void> showSnsShareSheet(BuildContext context) async {
+Future<void> showSnsShareSheet(BuildContext context, {String? shareText}) async {
   final choice = await showDialog<String>(
     context: context,
     barrierColor: const Color(0x8C1E160E),
@@ -37,8 +36,11 @@ Future<void> showSnsShareSheet(BuildContext context) async {
       const SnackBar(content: Text('공유 링크가 복사되었어요.')),
     );
   } else {
-    messenger.showSnackBar(
-      SnackBar(content: Text('$choice 공유는 앱 연동 후 이용할 수 있어요.')),
+    await SharePlus.instance.share(
+      ShareParams(
+        text: shareText ?? '고요행에서 여행의 발자국을 남겼어요!',
+        subject: '고요행',
+      ),
     );
   }
 }
