@@ -1139,7 +1139,52 @@ Request Body 없음.
 
 7\. 전부 하나의 DB 트랜잭션으로 처리
 
-재료 부족 시 `400`과 `missingIngredients`가 반환된다.
+성공 `200` 예시:
+
+```json
+{
+  "success": true,
+  "userFood": {
+    "id": 1,
+    "foodId": 1,
+    "name": "비빔밥",
+    "madeAt": "2026-09-10T00:00:00.000Z",
+    "illustrationUrl": null
+  },
+  "usedIngredients": [
+    {
+      "ingredientId": 1,
+      "name": "쌀",
+      "quantity": 2,
+      "rarity": "COMMON"
+    }
+  ]
+}
+```
+
+주의: 이 `userFood`에는 `specialIngredients`가 들어있지 않다 — RARE /
+LEGENDARY 여부는 `usedIngredients[].rarity`로 판단해야 한다.
+
+재료 부족 시 `400`과 `missingIngredients`가 반환된다:
+
+```json
+{
+  "statusCode": 400,
+  "message": "보유한 재료가 부족합니다.",
+  "missingIngredients": [
+    {
+      "ingredientId": 2,
+      "name": "대파",
+      "requiredQuantity": 1,
+      "ownedQuantity": 0,
+      "shortage": 1
+    }
+  ]
+}
+```
+
+음식/레시피가 없으면 각각 `404`(`음식을 찾을 수 없습니다.`), `400`(`등록된
+레시피가 없습니다.`)이 반환된다.
 
 **---**
 

@@ -828,7 +828,12 @@ class FoodIngredient {
       );
 }
 
-/// `POST /foods/{id}/make` 성공 응답 (스펙 §8.3).
+/// `POST /foods/{id}/make` 성공 응답 (스펙 §8.3). 실제 응답 예시 확인
+/// 결과, `usedIngredients[]`가 `{ingredientId, name, quantity, rarity}`라
+/// [UserFoodSpecialIngredient]와 모양이 같아 그대로 재사용한다(`sourcePlace`는
+/// 이 응답엔 없으니 `null`). 또한 이 응답의 `userFood`에는 `specialIngredients`가
+/// 안 들어있으니 — RARE/LEGENDARY 여부는 `UserFood.specialIngredients`가
+/// 아니라 이 [usedIngredients]의 `rarity`로 판단해야 한다.
 class MakeFoodResult {
   const MakeFoodResult({
     required this.success,
@@ -838,7 +843,7 @@ class MakeFoodResult {
 
   final bool success;
   final UserFood? userFood;
-  final List<({int ingredientId, String name, int quantity})> usedIngredients;
+  final List<UserFoodSpecialIngredient> usedIngredients;
 
   factory MakeFoodResult.fromJson(Map<String, dynamic> json) => MakeFoodResult(
         success: _asBool(json['success']),
@@ -847,11 +852,8 @@ class MakeFoodResult {
             : UserFood.fromJson((json['userFood'] as Map).cast<String, dynamic>()),
         usedIngredients: ((json['usedIngredients'] as List?) ?? const [])
             .whereType<Map>()
-            .map((e) => (
-                  ingredientId: _asInt(e['ingredientId']) ?? 0,
-                  name: e['name'] as String? ?? '',
-                  quantity: _asInt(e['quantity']) ?? 0,
-                ))
+            .map((e) =>
+                UserFoodSpecialIngredient.fromJson(e.cast<String, dynamic>()))
             .toList(),
       );
 }

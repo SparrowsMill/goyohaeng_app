@@ -445,7 +445,12 @@ class _DoneCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final specialIngredients = result?.userFood?.specialIngredients ?? const [];
+    // `MakeFoodResult.userFood`엔 specialIngredients가 안 들어있다 — RARE/
+    // LEGENDARY 여부는 top-level `usedIngredients[].rarity`로 판단한다
+    // (스펙 §8.3 실제 응답 예시로 확인됨, 2026-09-13).
+    final specialIngredients = (result?.usedIngredients ?? const [])
+        .where((i) => i.rarity == 'RARE' || i.rarity == 'LEGENDARY')
+        .toList();
     return Container(
       padding: const EdgeInsets.all(AppSpacing.xl),
       decoration: AppDecorations.card(radius: AppRadius.largeCard),
@@ -551,8 +556,9 @@ class _CompletionBanner extends StatelessWidget {
   }
 }
 
-/// 특별 재료(RARE/LEGENDARY, `UserFood.specialIngredients`) 2열 카드. 서버
-/// 응답에는 재료별 이미지 URL 이 없으므로 항상 범용 아이콘을 쓴다.
+/// 특별 재료(RARE/LEGENDARY, `MakeFoodResult.usedIngredients`에서 걸러냄)
+/// 2열 카드. 서버 응답에는 재료별 이미지 URL 이 없으므로 항상 범용 아이콘을
+/// 쓴다.
 class _SpecialIngredientsRow extends StatelessWidget {
   const _SpecialIngredientsRow({required this.items});
 
