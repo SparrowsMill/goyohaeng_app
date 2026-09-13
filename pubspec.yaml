@@ -88,6 +88,8 @@ flutter:
     - assets/maps/
     - assets/illustrations/sparrow/
     - assets/illustrations/rewards/
+    - assets/illustrations/rewards/ingredient/
+    - assets/illustrations/rewards/dish/
     - assets/illustrations/scenes/
     - assets/illustrations/icon/
     - assets/illustrations/ranking/
