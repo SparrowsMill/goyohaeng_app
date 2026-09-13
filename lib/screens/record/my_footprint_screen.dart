@@ -11,6 +11,7 @@ import '../../theme/app_text_styles.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/app_bottom_nav_bar.dart';
 import '../map/map_screen.dart';
+import '../ranking/ranking_screen.dart';
 import 'footprint_write_screen.dart';
 
 /// `<기록 플랫폼>` "나의 발자국" (user_flow §8) — 하단 네비게이션 기록 탭 화면.
@@ -291,8 +292,11 @@ class _MyFootprintScreenState extends State<MyFootprintScreen> {
             Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const MapScreen()),
             );
+          } else if (index == 2) {
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const RankingScreen()),
+            );
           }
-          // * TODO: 랭킹 탭 — 해당 화면 구현 후 연결.
         },
       ),
     );

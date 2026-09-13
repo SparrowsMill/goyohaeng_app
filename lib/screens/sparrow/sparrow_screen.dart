@@ -13,6 +13,7 @@ import '../../widgets/app_bottom_nav_bar.dart';
 import '../account/account_center_screen.dart';
 import '../food/food_dex_screen.dart';
 import '../map/map_screen.dart';
+import '../ranking/ranking_screen.dart';
 import '../record/footprint_write_screen.dart';
 import '../record/my_footprint_screen.dart';
 
@@ -21,8 +22,9 @@ import '../record/my_footprint_screen.dart';
 /// 모은 재료), 최근 일기 미리보기, 계정 센터 연결을 제공한다.
 ///
 /// 뼈대만 구현 — 레벨/경험치/함께한 날수/일기는 여전히 `mock_sparrow`
-/// placeholder(§5 신규 백엔드 필드 필요). 닉네임 연필 아이콘은 계정 센터의
-/// `realName` 수정 화면으로 이동한다(별도 nickname 필드 없이 재사용).
+/// placeholder(신규 백엔드 필드 필요). 닉네임은 별도 필드 없이 계정 센터의
+/// `Me.realName`을 그대로 표시하고(`_ProfileCard._displayName()`), 연필
+/// 아이콘은 그 값을 고치는 계정 센터 화면으로 이동한다.
 ///
 /// * TODO(asset): 이 화면 배경 scene 미납품 —
 ///   `assets/illustrations/scenes/sparrow_bg.png` (§9, 참새 + 방앗간 헤더 밴드).
@@ -35,15 +37,40 @@ class SparrowScreen extends StatefulWidget {
 }
 
 class _SparrowScreenState extends State<SparrowScreen> {
+  /// 실 최근 발자국(§8 `<기록 플랫폼>`, 이미 연동된 `GET /records`) — 못
+  /// 불러왔거나 하나도 없으면 mock 미리보기로 대체.
+  RecordDetail? _latestRecord;
+
   @override
   void initState() {
     super.initState();
     DashboardStore.instance.ensureLoaded();
+    _loadLatestDiary();
+  }
+
+  Future<void> _loadLatestDiary() async {
+    try {
+      final page = await RecordService().list(limit: 1);
+      if (!mounted) return;
+      setState(() {
+        _latestRecord = page.records.isEmpty ? null : page.records.first;
+      });
+    } on ApiException {
+      // 조용히 mock 미리보기로 남겨둔다.
+    }
+  }
+
+  Future<void> _openWriteDiary(BuildContext context) async {
+    final saved = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => const FootprintWriteScreen()),
+    );
+    if (saved == true) _loadLatestDiary();
   }
 
   @override
   Widget build(BuildContext context) {
     final p = mockSparrowProfile;
+    final diaryText = _latestRecord?.body ?? p.latestDiary;
     return Scaffold(
       backgroundColor: AppColors.appBackground,
       appBar: AppBar(
@@ -88,12 +115,8 @@ class _SparrowScreenState extends State<SparrowScreen> {
                 const _MiniLabel('발자국 남기기'),
                 const SizedBox(height: AppSpacing.md),
                 _DiaryCard(
-                  text: p.latestDiary,
-                  onWrite: () => Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const FootprintWriteScreen(),
-                    ),
-                  ),
+                  text: diaryText,
+                  onWrite: () => _openWriteDiary(context),
                 ),
                 const SizedBox(height: AppSpacing.lg),
                 _AccountCenterRow(
@@ -117,12 +140,15 @@ class _SparrowScreenState extends State<SparrowScreen> {
             Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const MapScreen()),
             );
+          } else if (index == 2) {
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const RankingScreen()),
+            );
           } else if (index == 3) {
             Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const MyFootprintScreen()),
             );
           }
-          // * TODO: 랭킹 탭 — 해당 화면 구현 후 연결.
         },
       ),
     );
@@ -246,6 +272,13 @@ class _ProfileCard extends StatelessWidget {
   final SparrowProfile profile;
   final VoidCallback onEditName;
 
+  /// 닉네임은 별도 필드 없이 계정 센터의 `Me.realName`을 재사용한다 — 아직
+  /// 못 받았거나 비어 있으면 mock 이름으로 대체.
+  String _displayName() {
+    final realName = AuthStore.instance.me?.realName;
+    return (realName == null || realName.isEmpty) ? profile.name : realName;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -280,7 +313,7 @@ class _ProfileCard extends StatelessWidget {
                       children: [
                         Flexible(
                           child: Text(
-                            profile.name,
+                            _displayName(),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: AppTextStyles.h3,

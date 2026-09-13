@@ -9,6 +9,7 @@ import '../../theme/app_text_styles.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/app_bottom_nav_bar.dart';
 import '../map/map_screen.dart';
+import '../ranking/ranking_screen.dart';
 import '../record/my_footprint_screen.dart';
 
 /// `<음식 히스토리>` (user_flow §4) — 음식 도감에서 이미 만든 음식을 눌렀을 때.
@@ -102,12 +103,15 @@ class _FoodHistoryScreenState extends State<FoodHistoryScreen> {
             Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const MapScreen()),
             );
+          } else if (index == 2) {
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const RankingScreen()),
+            );
           } else if (index == 3) {
             Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const MyFootprintScreen()),
             );
           }
-          // * TODO: 랭킹 탭 — 해당 화면 구현 후 연결.
         },
       ),
     );

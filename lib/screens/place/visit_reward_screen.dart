@@ -7,7 +7,6 @@ import '../../theme/app_radius.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
 import '../record/footprint_write_screen.dart';
-import '../share/sns_share_sheet.dart';
 
 /// 재료 이름 → 전용 일러스트 경로. 아직 그림이 없는 재료(단풍잎/느티나무잎/갈대/
 /// 홍어 등)는 `null`을 반환해 `_IngredientCard`가 범용 잎사귀 아이콘으로 대체한다.
@@ -26,8 +25,7 @@ String? _ingredientAssetPath(String? ingredient) {
 
 /// `<방문 인증 보상 페이지>` (user_flow §6) — reached when 방문 인증이 성공했을 때
 /// `<방문 인증 확인 페이지>`에서 넘어온다. 방앗간 재료 + 귀여운 일러스트, 해당
-/// 재료로 만들 수 있는 음식 추천, 공유 버튼 2개(SNS / 기록용 플랫폼), 확인 옵션을
-/// 보여준다.
+/// 재료로 만들 수 있는 음식 추천, 기록용 플랫폼 공유 버튼, 확인 옵션을 보여준다.
 ///
 /// [placeId]가 있으면(실 방문 인증 세션 경로) 실제로 어떤 재료가 몇 개
 /// 지급됐는지 이 화면 시점엔 알 수 없다 — GAP 퍼센타일 기반 랜덤 드롭이
@@ -39,7 +37,6 @@ String? _ingredientAssetPath(String? ingredient) {
 /// * TODO(backend): 추천 음식 연동 (§4 `<음식 정보>` 화면 필요) — 지역 기반
 ///   추천은 `FoodInfoScreen`이 목업 `MockFoodInfo`만 받는 구조라 실 `Food`를
 ///   그대로 연결할 어댑터가 없어 보류.
-/// * TODO: SNS 공유 연동 (§7)
 class VisitRewardScreen extends StatelessWidget {
   const VisitRewardScreen({
     super.key,
@@ -138,10 +135,6 @@ class VisitRewardScreen extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.xl),
           _ShareSection(
-            onShareSns: () => showSnsShareSheet(
-              context,
-              shareText: '고요행에서 ${spot.name} 방문 인증을 완료했어요!',
-            ),
             onShareRecord: () => _shareToRecord(context),
           ),
           const SizedBox(height: AppSpacing.xl),
@@ -393,31 +386,19 @@ class _RecommendedFoodCard extends StatelessWidget {
 }
 
 class _ShareSection extends StatelessWidget {
-  const _ShareSection({required this.onShareSns, required this.onShareRecord});
+  const _ShareSection({required this.onShareRecord});
 
-  final VoidCallback onShareSns;
   final VoidCallback onShareRecord;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: OutlinedButton.icon(
-            onPressed: onShareSns,
-            icon: const Icon(Symbols.share_rounded, size: 18),
-            label: const Text('SNS에 공유'),
-          ),
-        ),
-        const SizedBox(width: AppSpacing.sm),
-        Expanded(
-          child: OutlinedButton.icon(
-            onPressed: onShareRecord,
-            icon: const Icon(Symbols.edit_note_rounded, size: 18),
-            label: const Text('기록 플랫폼'),
-          ),
-        ),
-      ],
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton.icon(
+        onPressed: onShareRecord,
+        icon: const Icon(Symbols.edit_note_rounded, size: 18),
+        label: const Text('기록 플랫폼'),
+      ),
     );
   }
 }

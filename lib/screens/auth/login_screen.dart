@@ -134,21 +134,6 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                         const SizedBox(width: AppSpacing.sm),
                         Text('로그인 상태 유지', style: AppTextStyles.bodySmall),
-                        const Spacer(),
-                        TextButton(
-                          // * TODO(backend): 비밀번호 찾기 API 미구현 (스펙 §10)
-                          onPressed: () => ScaffoldMessenger.of(context)
-                            ..hideCurrentSnackBar()
-                            ..showSnackBar(
-                              const SnackBar(content: Text('비밀번호 찾기는 준비 중이에요.')),
-                            ),
-                          child: Text(
-                            '비밀번호 찾기',
-                            style: AppTextStyles.bodySmall.copyWith(
-                              color: AppColors.textSecondary,
-                            ),
-                          ),
-                        ),
                       ],
                     ),
                     const SizedBox(height: AppSpacing.xl),

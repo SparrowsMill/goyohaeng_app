@@ -9,20 +9,17 @@ import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
 import '../../theme/app_theme.dart';
 import '../record/footprint_write_screen.dart';
-import '../share/sns_share_sheet.dart';
 import 'my_food_screen.dart';
 
 /// `<셰프의 주방>` (user_flow §4) — 음식 정보에서 "만들기"를 눌렀을 때. 음식
 /// 이름·소모 재료 표시 → 실제 제작(`POST /foods/{id}/make`, 스펙 §10.3) → 완성
-/// 일러스트 → 공유(SNS / 기록용 플랫폼) 또는 "확인".
+/// 일러스트 → 공유(기록용 플랫폼) 또는 "확인".
 ///
 /// "요리 시작"을 누르면 `_CookingDialog`(요리 중 모달, 진행 점 애니메이션)를
 /// 띄운 채로 실제 네트워크 요청을 기다린다 — 더 이상 고정 시간 뒤 자동 성공하지
 /// 않는다. 재료 부족(`MakeFoodShortage`)이면 완성 카드 없이 안내만 보여주고
 /// 준비 화면에 머문다.
 ///
-/// * TODO: SNS 공유 → `<SNS에 공유>` (§7).
-/// * TODO: 기록용 플랫폼 공유 → `<기록용 플랫폼에 공유>` (§7).
 /// * TODO(asset): 이 화면 배경 scene 미납품 —
 ///   `assets/illustrations/scenes/chef_kitchen_bg.png` (§9, 주방 헤더 밴드 PNG).
 class ChefKitchenScreen extends StatefulWidget {
@@ -153,10 +150,6 @@ class _ChefKitchenScreenState extends State<ChefKitchenScreen> {
                           ? _DoneCard(
                               food: food,
                               result: _result,
-                              onShareSns: () => showSnsShareSheet(
-                                context,
-                                shareText: '고요행에서 ${food.name}을(를) 만들었어요!',
-                              ),
                               onShareRecord: () => _shareToRecord(context),
                               onConfirm: () => _finish(context),
                             )
@@ -448,14 +441,12 @@ class _DoneCard extends StatelessWidget {
   const _DoneCard({
     required this.food,
     required this.result,
-    required this.onShareSns,
     required this.onShareRecord,
     required this.onConfirm,
   });
 
   final Food food;
   final MakeFoodResult? result;
-  final VoidCallback onShareSns;
   final VoidCallback onShareRecord;
   final VoidCallback onConfirm;
 
@@ -501,26 +492,11 @@ class _DoneCard extends StatelessWidget {
           const SizedBox(height: AppSpacing.xl),
           const _MiniLabel('공유하기'),
           const SizedBox(height: AppSpacing.md),
-          Row(
-            children: [
-              Expanded(
-                child: _ShareButton(
-                  label: 'SNS 공유',
-                  icon: Symbols.share_rounded,
-                  background: AppColors.primary,
-                  onTap: onShareSns,
-                ),
-              ),
-              const SizedBox(width: AppSpacing.sm),
-              Expanded(
-                child: _ShareButton(
-                  label: '기록용 플랫폼 공유',
-                  icon: Symbols.menu_book_rounded,
-                  background: AppColors.textSecondary,
-                  onTap: onShareRecord,
-                ),
-              ),
-            ],
+          _ShareButton(
+            label: '기록용 플랫폼 공유',
+            icon: Symbols.menu_book_rounded,
+            background: AppColors.textSecondary,
+            onTap: onShareRecord,
           ),
           const SizedBox(height: AppSpacing.sm),
           SizedBox(

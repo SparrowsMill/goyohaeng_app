@@ -10,17 +10,28 @@ import 'mock_region_ranking.dart';
 ///
 /// 백엔드 `regions`에 앱의 전국 지역 코드(시도 2·시군구 5, 통계청 SGIS
 /// 행정구역코드 — 행정안전부 법정동코드/행정동코드와는 다른 별개 체계)가
-/// 없어 `?regionId=` 필터를 못 쓴다 ([[gap-score-api]]). 대신 `GET /places/gap/map`
-/// (지역 필터 없이 전국, 좌표 포함)을 받아 캐시하고, 탭한 시군구의 GeoJSON
-/// 폴리곤에 좌표가 들어오는 장소만 **클라측에서** 골라낸다.
+/// 없어 전국 단위로는 `?regionId=` 필터를 못 쓴다([[gap-score-api]]). 기본
+/// 경로는 `GET /places/gap/map`(지역 필터 없이 전국, 좌표 포함)을 받아
+/// 캐시하고, 탭한 시군구의 GeoJSON 폴리곤에 좌표가 들어오는 장소만
+/// **클라측에서** 골라내는 것이다.
+///
+/// **단, 서울 자치구는 예외**다. 백엔드 `Region` 테이블에 서울(시도 1 +
+/// 자치구 25)이 이미 등록돼 있고, 그 `regionId`는 SGIS 코드와 무관하게 지금
+/// 바로 쓸 수 있다(2026-09-13 확인, `docs/backend_requirements_pending.md`
+/// §5-2). `_GapMeta.regionIdByDistrictName`이 GeoJSON 시군구 이름과 내부
+/// `Region.name`을 대조해(서울 자치구는 이름이 고유해 안전) regionId를 찾으면, `GET
+/// /places/gap/rankings?regionId=`를 직접 호출한다 — 좌표가 없는 장소도
+/// 포함된 완전한 랭킹을 서버가 주므로, 좌표 있는 장소만 내려주는
+/// `/places/gap/map` + 폴리곤 필터보다 더 정확하다. 매칭 실패/응답 실패 시
+/// 기존 폴리곤 경로로 폴백한다.
 ///
 /// 카테고리 필터는 `GET /categories`의 level 1(음식·숙박·관광지 …)로 구성하고
 /// (앱의 식당/카페/액티비티 enum은 실 택소노미와 안 맞음), 실제 필터링은
-/// `GET /places/gap/map`에 `categoryId`를 그대로 넘겨 **서버 cascade**에
-/// 맡긴다 — 2026-09-12 배포로 `/places`, `/places/gap/rankings`,
-/// `/places/gap/map` 세 엔드포인트 모두 상위 categoryId를 하위(leaf)까지
-/// 포함해서 필터링하는 것을 직접 검증했다. 지역 필터와 달리 카테고리는
-/// [_places]가 `categoryId`별로 별도 캐시해 필터를 바꿀 때만 다시 받는다.
+/// `categoryId`를 그대로 넘겨 **서버 cascade**에 맡긴다 — 2026-09-12 배포로
+/// `/places`, `/places/gap/rankings`, `/places/gap/map` 세 엔드포인트 모두
+/// 상위 categoryId를 하위(leaf)까지 포함해서 필터링하는 것을 직접
+/// 검증했다. 지역 필터와 달리 카테고리는 [_places]가 `categoryId`별로 별도
+/// 캐시해 필터를 바꿀 때만 다시 받는다.
 class GapSpots {
   GapSpots._();
 
@@ -28,11 +39,15 @@ class GapSpots {
 
   final GapService _gap = GapService();
   final CategoryService _categories = CategoryService();
+  final RegionService _regions = RegionService();
 
   Future<_GapMeta>? _meta;
 
   /// `categoryId`별 위치 있는 GAP 스팟 캐시. `null` 키 = 카테고리 필터 없음.
   final Map<int?, Future<List<GapPlace>>> _places = {};
+
+  /// `(regionId, categoryId)`별 랭킹 캐시 — 서울 자치구 regionId 경로용.
+  final Map<(int, int?), Future<List<GapPlace>?>> _regionRankings = {};
 
   Future<_GapMeta> _loadMeta() => _meta ??= _fetchMeta();
 
@@ -43,9 +58,11 @@ class GapSpots {
         await geo.ensureSigungu();
         return geo;
       }),
+      _regions.list().catchError((_) => <Region>[]),
     ]);
     final cats = results[0] as List<Category>;
     final geo = results[1] as KoreaGeo;
+    final regions = results[2] as List<Region>;
 
     // leaf categoryId → 그 category의 level-1 조상.
     final byId = {for (final c in cats) c.id: c};
@@ -61,7 +78,42 @@ class GapSpots {
 
     final level1s = cats.where((c) => c.parentId == null && c.isActive).toList();
 
-    return _GapMeta(geo: geo, level1Categories: level1s, level1Of: level1Of);
+    // 서울 자치구 이름 → 내부 regionId. 이름이 서울 안에서 고유해 코드 매핑
+    // 없이도 안전하게 대응된다([[gap-score-api]]와 같은 방식).
+    final districtIdByName = {
+      for (final r in regions)
+        if (r.regionType == 'DISTRICT') r.name: r.id,
+    };
+
+    return _GapMeta(
+      geo: geo,
+      level1Categories: level1s,
+      level1Of: level1Of,
+      regionIdByDistrictName: districtIdByName,
+    );
+  }
+
+  /// [regionId] 기준 GAP 랭킹 전체(좌표 유무 무관) — 실패/데이터 없음이면
+  /// `null`을 반환해 폴리곤 폴백을 쓰게 한다. 자치구 하나의 스팟 수는 많지
+  /// 않다고 보고 첫 페이지(limit 100)만 받는다.
+  Future<List<GapPlace>?> _loadRegionRankings(int regionId, int? categoryId) =>
+      _regionRankings[(regionId, categoryId)] ??=
+          _fetchRegionRankings(regionId, categoryId);
+
+  Future<List<GapPlace>?> _fetchRegionRankings(
+    int regionId,
+    int? categoryId,
+  ) async {
+    try {
+      final page = await _gap.rankings(
+        regionId: regionId,
+        categoryId: categoryId,
+        limit: 100,
+      );
+      return page.items.isEmpty ? null : page.items;
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<List<GapPlace>> _loadPlaces(int? categoryId) =>
@@ -75,6 +127,14 @@ class GapSpots {
   /// 랭킹 필터 칩용 level-1 카테고리. 로드 전이면 빈 목록.
   Future<List<Category>> level1Categories() async =>
       (await _loadMeta()).level1Categories;
+
+  /// [GapPlace] → 화면 뷰모델, 같은 카테고리 이름 매핑을 적용해서. `<전체 랭킹>`처럼
+  /// 위치·지역 필터 없이 `GapService.rankings`를 직접 페이지네이션해 부른
+  /// 결과에도 [spotsInRegion]/[allSpots]와 같은 변환을 쓰고 싶을 때.
+  Future<List<MockTouristSpot>> toSpots(List<GapPlace> places) async {
+    final meta = await _loadMeta();
+    return [for (final p in places) _toSpot(p, meta)];
+  }
 
   /// 위치가 있는 전국 GAP 스팟 전체 — 지역 필터 없이. `<지도>`의 전국 검색처럼
   /// 한 지역에 묶이지 않는 화면용. API 실패 시 빈 목록(호출부가 자체 폴백 처리).
@@ -126,9 +186,35 @@ class GapSpots {
     int? categoryId,
   }) async {
     final _GapMeta meta;
-    final List<GapPlace> places;
     try {
       meta = await _loadMeta();
+    } catch (_) {
+      return rankingForRegion(regionCode);
+    }
+
+    // 서울 자치구(시군구 5자리 정확 매칭)면 실 regionId로 서버 랭킹을 바로
+    // 쓴다 — 좌표 없는 장소도 포함돼 아래 폴리곤 경로보다 완전하다.
+    if (regionCode.length >= 5) {
+      GeoRegion? district;
+      for (final r in meta.geo.sigungu) {
+        if (r.id == regionCode) {
+          district = r;
+          break;
+        }
+      }
+      final regionId =
+          district == null ? null : meta.regionIdByDistrictName[district.title];
+      if (regionId != null) {
+        final ranked = await _loadRegionRankings(regionId, categoryId);
+        if (ranked != null && ranked.isNotEmpty) {
+          return <MockTouristSpot>[for (final p in ranked) _toSpot(p, meta)]
+            ..sort((a, b) => b.gapIndex.compareTo(a.gapIndex));
+        }
+      }
+    }
+
+    final List<GapPlace> places;
+    try {
       places = await _loadPlaces(categoryId);
     } catch (_) {
       return rankingForRegion(regionCode);
@@ -218,6 +304,7 @@ class _GapMeta {
     required this.geo,
     required this.level1Categories,
     required this.level1Of,
+    required this.regionIdByDistrictName,
   });
 
   final KoreaGeo geo;
@@ -225,4 +312,7 @@ class _GapMeta {
 
   /// leaf categoryId → level-1 조상 category (또는 그 자신).
   final Category? Function(int? id) level1Of;
+
+  /// GeoJSON 시군구 이름 → 내부 `Region.id` (서울 자치구만 채워짐).
+  final Map<String, int> regionIdByDistrictName;
 }

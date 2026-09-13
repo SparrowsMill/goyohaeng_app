@@ -17,8 +17,6 @@ class SparrowProfile {
     required this.completedFoodCount,
     required this.collectedIngredientCount,
     required this.latestDiary,
-    required this.nextMillRegion,
-    required this.nextMillRemaining,
   });
 
   final String name;
@@ -34,10 +32,6 @@ class SparrowProfile {
 
   /// "발자국 남기기" 카드에 미리보기로 보여줄 최근 일기 본문.
   final String latestDiary;
-
-  /// 방앗간 홈 레벨 카드의 "OO 방앗간까지 N곳 남았어요" 안내.
-  final String nextMillRegion;
-  final int nextMillRemaining;
 
   double get xpProgress =>
       xpForNextLevel == 0 ? 0 : (xp / xpForNextLevel).clamp(0, 1);
@@ -56,6 +50,4 @@ const mockSparrowProfile = SparrowProfile(
   latestDiary: '오늘은 고요한 산골마을을 천천히 걸었어.\n'
       '햇살 아래 반짝이던 들꽃과\n바람 끝에 스치던 풀내음이\n마음 한켠에 오래 머물렀지.\n'
       '작은 발걸음마다 여행의 온기가 남아\n이 순간을 조용히 간직하고 싶어.',
-  nextMillRegion: '전주',
-  nextMillRemaining: 2,
 );

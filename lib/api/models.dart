@@ -74,9 +74,6 @@ class Me {
     this.phone,
     this.birthDate,
     this.gender,
-    required this.promotionNotificationEnabled,
-    required this.nearbyNotificationEnabled,
-    required this.recordNotificationEnabled,
   });
 
   final int id;
@@ -91,10 +88,6 @@ class Me {
   /// `MALE` | `FEMALE`.
   final String? gender;
 
-  final bool promotionNotificationEnabled;
-  final bool nearbyNotificationEnabled;
-  final bool recordNotificationEnabled;
-
   factory Me.fromJson(Map<String, dynamic> json) => Me(
         id: _asInt(json['id']) ?? 0,
         username: json['username'] as String? ?? '',
@@ -103,10 +96,6 @@ class Me {
         phone: json['phone'] as String?,
         birthDate: json['birthDate'] as String?,
         gender: json['gender'] as String?,
-        promotionNotificationEnabled:
-            _asBool(json['promotionNotificationEnabled']),
-        nearbyNotificationEnabled: _asBool(json['nearbyNotificationEnabled']),
-        recordNotificationEnabled: _asBool(json['recordNotificationEnabled']),
       );
 
   DateTime? get birthDateTime => _asDate(birthDate);
@@ -858,6 +847,34 @@ class MakeFoodResult {
       );
 }
 
+/// `PlaceTrends.contents` 항목 — 트렌드 요약의 근거가 된 외부 게시글 1건
+/// (백엔드 실측 2026-09-13, `docs/backend_requirements_pending.md` §5-1).
+class PlaceExternalContent {
+  const PlaceExternalContent({
+    this.contentType,
+    this.title,
+    this.url,
+    this.author,
+    this.publishedAt,
+  });
+
+  /// 예: `BLOG`, `NEWS` — 화면엔 그대로 노출하지 않고 표시용 라벨로 매핑한다.
+  final String? contentType;
+  final String? title;
+  final String? url;
+  final String? author;
+  final DateTime? publishedAt;
+
+  factory PlaceExternalContent.fromJson(Map<String, dynamic> json) =>
+      PlaceExternalContent(
+        contentType: json['contentType'] as String?,
+        title: json['title'] as String?,
+        url: json['url'] as String?,
+        author: json['author'] as String?,
+        publishedAt: _asDate(json['publishedAt']),
+      );
+}
+
 /// `GET /places/{id}/trends` 응답 (스펙 §6.4). 데이터 없으면 대부분 null/빈 배열.
 class PlaceTrends {
   const PlaceTrends({
@@ -881,9 +898,15 @@ class PlaceTrends {
   final DateTime? periodEnd;
   final DateTime? generatedAt;
 
-  /// 외부 글 목록 (`PlaceExternalContent`) — 구조 미확정이라 raw map으로 둔다.
-  final List<Map<String, dynamic>> contents;
+  /// 외부 글 목록. 배치/수집 파이프라인 가동 전까지는 빈 배열로 내려올 수
+  /// 있다(백엔드 실측 2026-09-13).
+  final List<PlaceExternalContent> contents;
+
+  /// 검색어 트렌드를 추적 중인 대표 검색어 (네이버 데이터랩 기반).
   final String? searchTerm;
+
+  /// [searchTerm]의 최근 30개 구간 검색 관심도. 항목 구조(필드명)가 아직
+  /// 확정 문서화되지 않아 raw map으로 둔다 — 확정되면 타입화한다.
   final List<Map<String, dynamic>> searchInterest;
 
   bool get hasData => summaryText != null || keywords.isNotEmpty;
@@ -900,7 +923,7 @@ class PlaceTrends {
         generatedAt: _asDate(json['generatedAt']),
         contents: ((json['contents'] as List?) ?? const [])
             .whereType<Map>()
-            .map((e) => e.cast<String, dynamic>())
+            .map((e) => PlaceExternalContent.fromJson(e.cast<String, dynamic>()))
             .toList(),
         searchTerm: json['searchTerm'] as String?,
         searchInterest: ((json['searchInterest'] as List?) ?? const [])

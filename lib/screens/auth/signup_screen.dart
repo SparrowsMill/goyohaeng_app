@@ -181,7 +181,6 @@ class _SignupScreenState extends State<SignupScreen> {
       '${d.month.toString().padLeft(2, '0')}-'
       '${d.day.toString().padLeft(2, '0')}';
 
-  // * TODO: SNS 플랫폼·아이디 입력 필드 미구현 (user_flow §1 "사용 SNS 플랫폼 및 아이디").
   Future<void> _handleSignup() async {
     FocusScope.of(context).unfocus();
     final isValid = _formKey.currentState?.validate() ?? false;

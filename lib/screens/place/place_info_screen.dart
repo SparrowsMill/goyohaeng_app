@@ -503,9 +503,12 @@ class _VisitCtaCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ingredientLabel = spot.ingredient == null
-        ? '획득 재료 없음'
-        : '획득 재료: ${spot.ingredient} ${spot.ingredientCount}개';
+    // GAP percentile → drop policy → rarity → 랜덤 재료 순으로 관리자 승인
+    // 시점에 결정되므로(스펙 §8.5), 방문 전에 특정 재료 이름을 미리 보여주지
+    // 않는다(`availableIngredients`는 일반 GAP 방문 보상 표현에 쓰지 않는다,
+    // 스펙 15). 확률표의 모든 정책이 합 1.0이라 방문 인증 시 항상 무언가는
+    // 지급된다.
+    const ingredientLabel = '방문 인증 시 랜덤 재료 획득';
     final benefitLabel = spot.storeBenefit ?? '제공 혜택 없음';
 
     return _Card(
@@ -570,7 +573,7 @@ class _VisitCtaCard extends StatelessWidget {
                   icon: Symbols.eco_rounded,
                   iconAsset: 'assets/illustrations/icon/ingredient_4.png',
                   label: ingredientLabel,
-                  active: spot.ingredient != null,
+                  active: true,
                 ),
               ),
               const SizedBox(width: AppSpacing.sm),

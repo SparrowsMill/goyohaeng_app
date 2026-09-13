@@ -23,8 +23,8 @@ import '../../widgets/drag_to_resize_handle.dart';
 import '../../widgets/favorites_list.dart';
 import '../../widgets/gap_index_info_dialog.dart';
 import '../../widgets/my_location_button.dart';
-import '../account/account_center_screen.dart';
 import '../place/place_info_screen.dart';
+import '../ranking/ranking_screen.dart';
 import '../ranking/region_ranking_screen.dart';
 import '../record/my_footprint_screen.dart';
 import 'place_search_screen.dart';
@@ -85,7 +85,6 @@ class _MapScreenState extends State<MapScreen> {
           icon: const Icon(Symbols.arrow_back_rounded),
         ),
         title: const Text('지도'),
-        actions: const [_NotificationBell()],
       ),
       body: _buildVectorBody(context),
       bottomNavigationBar: AppBottomNavBar(
@@ -93,12 +92,15 @@ class _MapScreenState extends State<MapScreen> {
         onTap: (index) {
           if (index == 0) {
             Navigator.of(context).maybePop();
+          } else if (index == 2) {
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const RankingScreen()),
+            );
           } else if (index == 3) {
             Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const MyFootprintScreen()),
             );
           }
-          // * TODO: 랭킹 탭 — 해당 화면 구현 후 연결
         },
       ),
     );
@@ -258,41 +260,6 @@ class _FavoritesPanel extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-/// Notification bell with the unread dot, mirroring the mill-home top bar.
-class _NotificationBell extends StatelessWidget {
-  const _NotificationBell();
-
-  @override
-  Widget build(BuildContext context) {
-    return IconButton(
-      // * TODO(backend): 알림 목록 화면 연동 필요 — 그 전까지는 계정 센터의
-      // 알림 설정 섹션으로 안내한다.
-      onPressed: () => Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => const AccountCenterScreen()),
-      ),
-      icon: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          const Icon(Symbols.notifications_rounded),
-          Positioned(
-            top: -1,
-            right: -1,
-            child: Container(
-              width: 8,
-              height: 8,
-              decoration: const BoxDecoration(
-                color: AppColors.error,
-                shape: BoxShape.circle,
-              ),
-            ),
-          ),
-        ],
-      ),
-      color: AppColors.textPrimary,
     );
   }
 }

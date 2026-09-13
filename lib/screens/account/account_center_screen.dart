@@ -13,15 +13,13 @@ import '../../widgets/app_password_field.dart';
 import '../../widgets/app_text_field.dart';
 import '../auth/login_screen.dart';
 import '../map/map_screen.dart';
+import '../ranking/ranking_screen.dart';
 import '../record/my_footprint_screen.dart';
 
 const _labelWidth = 88.0;
 
-/// `<계정 센터>` (user_flow §3) — `/users/me`(스펙 §3)를 조회해 프로필/계정/설정을
+/// `<계정 센터>` (user_flow §3) — `/users/me`(스펙 §3)를 조회해 프로필/계정 정보를
 /// 보여주고, 각 카드의 저장·변경·탈퇴·로그아웃을 백엔드에 반영한다.
-///
-/// * TODO: SNS 정보 수정 UI 미구현 (user_flow §3 "SNS 정보 수정") — 백엔드도
-///   해당 필드를 아직 제공하지 않는다.
 class AccountCenterScreen extends StatefulWidget {
   const AccountCenterScreen({super.key});
 
@@ -44,13 +42,8 @@ class _AccountCenterScreenState extends State<AccountCenterScreen> {
   String? _gender; // 'MALE' | 'FEMALE'
   DateTime? _birthDate;
 
-  bool _promotionAlerts = false;
-  bool _nearbyRecommendationAlerts = false;
-  bool _activityAlerts = false;
-
   bool _savingProfile = false;
   bool _savingPassword = false;
-  bool _savingSettings = false;
 
   @override
   void initState() {
@@ -81,9 +74,6 @@ class _AccountCenterScreenState extends State<AccountCenterScreen> {
         _nameController.text = me.realName;
         _gender = me.gender;
         _birthDate = me.birthDateTime;
-        _promotionAlerts = me.promotionNotificationEnabled;
-        _nearbyRecommendationAlerts = me.nearbyNotificationEnabled;
-        _activityAlerts = me.recordNotificationEnabled;
         _loading = false;
       });
     } on ApiException catch (e) {
@@ -201,45 +191,6 @@ class _AccountCenterScreenState extends State<AccountCenterScreen> {
     }
   }
 
-  /// 토글은 낙관적으로 반영하고, 실패하면 되돌린다.
-  Future<void> _saveSettings({
-    bool? promotion,
-    bool? nearby,
-    bool? record,
-  }) async {
-    final prev = (
-      _promotionAlerts,
-      _nearbyRecommendationAlerts,
-      _activityAlerts,
-    );
-    setState(() {
-      if (promotion != null) _promotionAlerts = promotion;
-      if (nearby != null) _nearbyRecommendationAlerts = nearby;
-      if (record != null) _activityAlerts = record;
-      _savingSettings = true;
-    });
-    try {
-      final me = await _userService.updateSettings(
-        promotionNotificationEnabled: promotion,
-        nearbyNotificationEnabled: nearby,
-        recordNotificationEnabled: record,
-      );
-      AuthStore.instance.updateMe(me);
-      if (mounted) setState(() => _me = me);
-    } on ApiException catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _promotionAlerts = prev.$1;
-        _nearbyRecommendationAlerts = prev.$2;
-        _activityAlerts = prev.$3;
-      });
-      _snack(e.message);
-      if (e.isUnauthorized) _goToLogin();
-    } finally {
-      if (mounted) setState(() => _savingSettings = false);
-    }
-  }
-
   Future<void> _confirmWithdraw() async {
     final ok = await showDialog<bool>(
       context: context,
@@ -354,12 +305,15 @@ class _AccountCenterScreenState extends State<AccountCenterScreen> {
             Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const MapScreen()),
             );
+          } else if (index == 2) {
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const RankingScreen()),
+            );
           } else if (index == 3) {
             Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const MyFootprintScreen()),
             );
           }
-          // * TODO: 랭킹 탭 — 해당 화면 구현 후 연결.
         },
       ),
     );
@@ -570,58 +524,6 @@ class _AccountCenterScreenState extends State<AccountCenterScreen> {
                       ),
                     ),
                   ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: AppSpacing.lg),
-
-          // ---------- 설정 ----------
-          Container(
-            padding: const EdgeInsets.all(AppSpacing.xxl),
-            decoration: AppDecorations.card(),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  children: [
-                    const _CardHeader(
-                      icon: Symbols.settings_rounded,
-                      label: '설정',
-                    ),
-                    const Spacer(),
-                    if (_savingSettings)
-                      const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                  ],
-                ),
-                // * TODO(device): 실제 푸시 알림 권한 요청 / FCM 토큰 등록.
-                const SizedBox(height: AppSpacing.lg),
-                _SettingRow(
-                  icon: Symbols.campaign_rounded,
-                  title: '프로모션 알림',
-                  subtitle: '이벤트, 프로모션 소식을 받아봐요.',
-                  value: _promotionAlerts,
-                  onChanged: (v) => _saveSettings(promotion: v),
-                ),
-                const SizedBox(height: AppSpacing.lg),
-                _SettingRow(
-                  icon: Symbols.location_on_rounded,
-                  title: '인근 관광 추천 알림',
-                  subtitle: '내 주변 인기 관광지를 추천받아요.',
-                  value: _nearbyRecommendationAlerts,
-                  onChanged: (v) => _saveSettings(nearby: v),
-                ),
-                const SizedBox(height: AppSpacing.lg),
-                _SettingRow(
-                  icon: Symbols.notifications_rounded,
-                  title: '기록 글쓰기 알림',
-                  subtitle: '댓글, 좋아요 등 활동 알림을 받아봐요.',
-                  value: _activityAlerts,
-                  onChanged: (v) => _saveSettings(record: v),
                 ),
               ],
             ),
@@ -894,54 +796,6 @@ class _GenderChip extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-class _SettingRow extends StatelessWidget {
-  const _SettingRow({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.value,
-    required this.onChanged,
-  });
-
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final bool value;
-  final ValueChanged<bool> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(top: 2),
-          child: Icon(icon, size: 20, color: AppColors.iconPrimary),
-        ),
-        const SizedBox(width: AppSpacing.sm),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: AppTextStyles.bodyLarge.copyWith(
-                  fontWeight: FontWeight.w600,
-                  decoration: TextDecoration.underline,
-                  decorationColor: AppColors.textPrimary,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(subtitle, style: AppTextStyles.caption),
-            ],
-          ),
-        ),
-        Switch(value: value, onChanged: onChanged),
-      ],
     );
   }
 }

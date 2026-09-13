@@ -24,9 +24,12 @@ import '../record/my_footprint_screen.dart';
 /// 항상 "처음 확인" 상태로 보여주는 기존 목업 동작을 그대로 유지한다.
 ///
 /// * TODO: 원문 보기 / SNS 검색 / 더 찾아보기 — 외부 브라우저·앱 연동
-/// * TODO(backend): 외부 게시글(`contents`)·검색어 트렌드(`searchInterest`) 구조가
-///   스펙에 예시만 빈 배열로 나와 있어, 게시글/함께 검색하는 키워드/SNS 섹션은
-///   당분간 스팟 목업 데이터를 계속 사용한다.
+/// * `contents`(외부 게시글)·`searchTerm`은 실 데이터가 있으면 사용하고, 없으면
+///   (파이프라인 미가동 등) 스팟 목업으로 대체한다(백엔드 실측 2026-09-13,
+///   `docs/backend_requirements_pending.md` §5-1).
+/// * TODO(backend): `searchInterest`(검색어 트렌드 구간 값)는 항목 필드 구조가
+///   아직 문서화되지 않아 화면에 반영하지 않는다 — "함께 검색하는 키워드"/SNS
+///   섹션은 당분간 스팟 목업 데이터를 계속 사용한다.
 /// * TODO(asset): 이 화면 배경 scenes/{name}.png 미납품 — 지금은 평면 #FAE7C0.
 class TrendSummaryScreen extends StatefulWidget {
   const TrendSummaryScreen({
@@ -151,8 +154,10 @@ class _TrendSummaryScreenState extends State<TrendSummaryScreen> {
           const SizedBox(height: AppSpacing.xl),
           _PostsSection(
             summary: _mockSummary,
-            onOpenPost: (post) =>
-                _todo(context, '"${post.title}" 원문은 브라우저 연동 후 열 수 있어요.'),
+            realContents: hasRealData ? trends.contents : const [],
+            realSearchQuery: hasRealData ? trends.searchTerm : null,
+            onOpenPost: (title) =>
+                _todo(context, '"$title" 원문은 브라우저 연동 후 열 수 있어요.'),
             onSearchMore: () =>
                 _todo(context, '네이버 블로그 검색은 브라우저 연동 후 이용할 수 있어요.'),
           ),
@@ -499,20 +504,37 @@ class _InsightCard extends StatelessWidget {
   }
 }
 
+/// `contentType` → 플랫폼 표시 라벨.
+String _contentTypeLabel(String? contentType) => switch (contentType) {
+      'BLOG' => '네이버 블로그',
+      'NEWS' => '뉴스',
+      'CAFE' => '네이버 카페',
+      null => '외부 게시글',
+      _ => contentType,
+    };
+
 /// "이런 글에서 이야기하고 있어요" — the outside posts + a "더 찾아보기" row.
+/// [realContents]가 있으면 실 API(`PlaceTrends.contents`) 데이터를, 없으면
+/// (파이프라인 미가동 등) [summary]의 목업 게시글을 보여준다.
 class _PostsSection extends StatelessWidget {
   const _PostsSection({
     required this.summary,
+    required this.realContents,
+    required this.realSearchQuery,
     required this.onOpenPost,
     required this.onSearchMore,
   });
 
   final MockTrendSummary summary;
-  final ValueChanged<TrendPost> onOpenPost;
+  final List<PlaceExternalContent> realContents;
+  final String? realSearchQuery;
+  final ValueChanged<String> onOpenPost;
   final VoidCallback onSearchMore;
 
   @override
   Widget build(BuildContext context) {
+    final useReal = realContents.isNotEmpty;
+    final query = realSearchQuery?.trim();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -523,12 +545,105 @@ class _PostsSection extends StatelessWidget {
           style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
         ),
         const SizedBox(height: AppSpacing.md),
-        for (final post in summary.posts) ...[
-          _PostCard(post: post, onOpen: () => onOpenPost(post)),
-          const SizedBox(height: AppSpacing.sm),
-        ],
-        _SearchMoreCard(query: summary.naverSearchQuery, onTap: onSearchMore),
+        if (useReal)
+          for (final content in realContents) ...[
+            _RealPostCard(
+              content: content,
+              onOpen: () => onOpenPost(content.title ?? '게시글'),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+          ]
+        else
+          for (final post in summary.posts) ...[
+            _PostCard(post: post, onOpen: () => onOpenPost(post.title)),
+            const SizedBox(height: AppSpacing.sm),
+          ],
+        _SearchMoreCard(
+          query: query != null && query.isNotEmpty
+              ? query
+              : summary.naverSearchQuery,
+          onTap: onSearchMore,
+        ),
       ],
+    );
+  }
+}
+
+/// [_PostCard]와 같은 모습으로, 실 API `PlaceExternalContent`를 보여준다.
+class _RealPostCard extends StatelessWidget {
+  const _RealPostCard({required this.content, required this.onOpen});
+
+  final PlaceExternalContent content;
+  final VoidCallback onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    return _Card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          width: 22,
+                          height: 22,
+                          decoration: const BoxDecoration(
+                            color: AppColors.surfaceSelected,
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Symbols.eco_rounded,
+                            size: 13,
+                            color: AppColors.primary,
+                          ),
+                        ),
+                        const SizedBox(width: AppSpacing.xs),
+                        Text(
+                          _contentTypeLabel(content.contentType),
+                          style: AppTextStyles.caption
+                              .copyWith(fontWeight: FontWeight.w600),
+                        ),
+                        if (content.author != null) ...[
+                          const SizedBox(width: AppSpacing.xs),
+                          Text('· ${content.author}',
+                              style: AppTextStyles.caption
+                                  .copyWith(color: AppColors.textSecondary)),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                    Text(
+                      content.title ?? '제목 없는 게시글',
+                      style: AppTextStyles.bodyLarge
+                          .copyWith(fontWeight: FontWeight.w600),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  _MiniButton(
+                    icon: Symbols.open_in_new_rounded,
+                    label: '원문 보기',
+                    onTap: onOpen,
+                  ),
+                  const SizedBox(height: AppSpacing.xs),
+                  Text('외부 사이트로 이동', style: AppTextStyles.caption),
+                ],
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }

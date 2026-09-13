@@ -26,20 +26,6 @@ class UserService {
     return Me.fromJson((res as Map).cast<String, dynamic>());
   }
 
-  /// `PATCH /users/me/settings` — 알림 수신 3종.
-  Future<Me> updateSettings({
-    bool? promotionNotificationEnabled,
-    bool? nearbyNotificationEnabled,
-    bool? recordNotificationEnabled,
-  }) async {
-    final res = await _client.patch('/users/me/settings', body: {
-      'promotionNotificationEnabled': ?promotionNotificationEnabled,
-      'nearbyNotificationEnabled': ?nearbyNotificationEnabled,
-      'recordNotificationEnabled': ?recordNotificationEnabled,
-    });
-    return Me.fromJson((res as Map).cast<String, dynamic>());
-  }
-
   /// `PATCH /users/me/password` — 새 비밀번호 최소 8자(스펙 §3.4).
   Future<void> changePassword({
     required String currentPassword,

@@ -10,6 +10,7 @@ import '../../theme/app_text_styles.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/app_bottom_nav_bar.dart';
 import '../map/map_screen.dart';
+import '../ranking/ranking_screen.dart';
 import '../record/my_footprint_screen.dart';
 import 'food_dex_screen.dart';
 import 'food_history_screen.dart';
@@ -127,12 +128,15 @@ class _MyFoodScreenState extends State<MyFoodScreen> {
             Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const MapScreen()),
             );
+          } else if (index == 2) {
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const RankingScreen()),
+            );
           } else if (index == 3) {
             Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const MyFootprintScreen()),
             );
           }
-          // * TODO: 랭킹 탭 — 해당 화면 구현 후 연결.
         },
       ),
     );

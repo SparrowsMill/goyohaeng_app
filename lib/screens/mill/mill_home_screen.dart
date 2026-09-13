@@ -10,14 +10,14 @@ import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
 import '../../widgets/app_bottom_nav_bar.dart';
 import '../../widgets/mini_korea_map.dart';
-import '../account/account_center_screen.dart';
 import '../food/my_food_screen.dart';
 import '../map/map_screen.dart';
+import '../ranking/ranking_screen.dart';
 import '../record/my_footprint_screen.dart';
 import '../sparrow/sparrow_screen.dart';
 
-/// Mill home ("방앗간") screen — the app's main landing tab. `_TopBar` (logo +
-/// notifications) is persistent, like the bottom nav. `_MillHeader` below it
+/// Mill home ("방앗간") screen — the app's main landing tab. `_TopBar` (logo)
+/// is persistent, like the bottom nav. `_MillHeader` below it
 /// (background scene + greeting + sparrow + speech bubble) scrolls away with
 /// the rest of the content like any other section.
 class MillHomeScreen extends StatefulWidget {
@@ -143,21 +143,23 @@ class _MillHomeScreenState extends State<MillHomeScreen> {
             Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const MapScreen()),
             );
+          } else if (index == 2) {
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const RankingScreen()),
+            );
           } else if (index == 3) {
             Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const MyFootprintScreen()),
             );
           }
-          // * TODO: 랭킹 탭 — 해당 화면 구현 후 연결
         },
       ),
     );
   }
 }
 
-/// Persistent top bar (logo + notification bell) — stays on screen at all
-/// times, like the bottom navigation, unlike `_MillHeader` below it which
-/// scrolls away with the page.
+/// Persistent top bar (logo) — stays on screen at all times, like the bottom
+/// navigation, unlike `_MillHeader` below it which scrolls away with the page.
 class _TopBar extends StatelessWidget {
   const _TopBar();
 
@@ -166,11 +168,9 @@ class _TopBar extends StatelessWidget {
     return SafeArea(
       bottom: false,
       child: Padding(
-        padding: const EdgeInsets.only(
-          left: AppSpacing.xl,
-          right: AppSpacing.xs,
-          top: AppSpacing.sm,
-          bottom: AppSpacing.sm,
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.xl,
+          vertical: AppSpacing.sm,
         ),
         child: Row(
           children: [
@@ -179,16 +179,6 @@ class _TopBar extends StatelessWidget {
               height: 50,
               errorBuilder: (context, error, stackTrace) =>
                   Text('고요행', style: AppTextStyles.h3),
-            ),
-            const Spacer(),
-            IconButton(
-              // * TODO(backend): 알림 목록 화면 연동 필요 — 그 전까지는 계정
-              // 센터의 알림 설정 섹션으로 안내한다.
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const AccountCenterScreen()),
-              ),
-              icon: const Icon(Symbols.notifications_rounded),
-              color: AppColors.textPrimary,
             ),
           ],
         ),

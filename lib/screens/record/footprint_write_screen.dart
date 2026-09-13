@@ -11,6 +11,7 @@ import '../../theme/app_theme.dart';
 import '../../widgets/app_bottom_nav_bar.dart';
 import '../../widgets/app_text_field.dart';
 import '../map/map_screen.dart';
+import '../ranking/ranking_screen.dart';
 
 const _titleMaxLength = 50;
 const _bodyMaxLength = 200;
@@ -414,10 +415,13 @@ class _FootprintWriteScreenState extends State<FootprintWriteScreen> {
             Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const MapScreen()),
             );
+          } else if (index == 2) {
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const RankingScreen()),
+            );
           } else if (index == 3) {
             Navigator.of(context).maybePop();
           }
-          // * TODO: 랭킹 탭 — 해당 화면 구현 후 연결.
         },
       ),
     );
