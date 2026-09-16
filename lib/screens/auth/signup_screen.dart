@@ -156,7 +156,6 @@ class _SignupScreenState extends State<SignupScreen> {
   // 대신 자동 하이픈 포맷팅되는 일반 텍스트 입력으로 받는다.
   String? _validateBirthDate(String? value) {
     final digits = (value ?? '').replaceAll('-', '');
-    if (digits.isEmpty) return '생년월일을 입력해주세요';
     if (digits.length != 8) return '생년월일 8자리를 입력해주세요 (예: 19990101)';
 
     final year = int.parse(digits.substring(0, 4));

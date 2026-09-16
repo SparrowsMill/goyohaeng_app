@@ -58,11 +58,19 @@ class _MillHomeScreenState extends State<MillHomeScreen> {
                       children: [
                         const _MillHeader(),
                         // Overlaps up into the header banner instead of
-                        // sitting flush below it.
+                        // sitting flush below it. Anchored from `top` (not
+                        // `bottom`) so extra wrapped lines grow downward into
+                        // the blank space below the header instead of upward
+                        // over the header art. The overlap is kept small
+                        // (16px, not the full pill height) so even a
+                        // single-line row stays clear of the "마이페이지로
+                        // 이동" button, which sits `bottom: 34` (i.e. its own
+                        // bottom edge is 34px above the header's bottom
+                        // edge) inside `_MillHeader`.
                         const Positioned(
                           left: AppSpacing.xl,
                           right: AppSpacing.xl,
-                          bottom: -40,
+                          top: _MillHeader._height - 16,
                           child: _StatBar(),
                         ),
                       ],

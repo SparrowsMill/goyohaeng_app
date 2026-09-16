@@ -561,129 +561,27 @@ void main() {
     expect(find.byType(RegionRankingScreen), findsNothing);
   });
 
-  group('내 위치', () {
-    final original = UserLocation.resolver;
-    tearDown(() {
-      UserLocation.resolver = original;
-      UserLocation.resetForTest();
-    });
+  group('내 위치 (수집하지 않음)', () {
+    tearDown(UserLocation.resetForTest);
 
-    testWidgets('벡터 지도: 진입하면 내 위치가 자동으로 잡힌다', (tester) async {
+    testWidgets('벡터 지도: 위치를 요청하지 않고, 점·버튼 모두 없음', (tester) async {
       tester.view.physicalSize = const Size(390, 800);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
 
-      UserLocation.resetForTest();
-      const me = LatLng(37.5665, 126.9780);
-      UserLocation.resolver = () async => me;
-
-      await tester.runAsync(() => KoreaGeo.load());
-      await tester.pumpWidget(
-        MaterialApp(theme: AppTheme.light, home: const MapScreen()),
-      );
-      await tester.runAsync(
-        () async {},
-      ); // KoreaGeo + UserLocation.ensure resolve
-      await tester.pumpAndSettle();
-
-      // No button press needed — the dot (painted on the canvas) follows this
-      // value. The "내 위치" button is only for returning here after panning.
-      expect(UserLocation.position.value, me);
-      expect(find.byType(InteractiveViewer), findsOneWidget);
-      expect(find.text('내 위치'), findsOneWidget);
-
-      // 내 위치 · 즐겨찾기 오버레이 버튼은 폭이 같다.
-      expect(
-        tester.getSize(find.byType(MyLocationButton)).width,
-        tester.getSize(find.widgetWithText(MapToggleButton, '즐겨찾기')).width,
-      );
-    });
-
-    testWidgets('벡터 지도: "내 위치" 버튼이 그 위치로 카메라를 되돌린다', (tester) async {
-      tester.view.physicalSize = const Size(390, 800);
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.reset);
-
-      UserLocation.resetForTest();
-      UserLocation.resolver = () async => const LatLng(37.5665, 126.9780);
-
-      await tester.runAsync(() => KoreaGeo.load());
-      await tester.pumpWidget(
-        MaterialApp(theme: AppTheme.light, home: const MapScreen()),
-      );
+      await pumpMapScreen(tester);
       await tester.runAsync(() async {});
       await tester.pumpAndSettle();
 
-      final tc = tester
-          .widget<InteractiveViewer>(find.byType(InteractiveViewer))
-          .transformationController!;
-      // The map opens already focused on kInitialFocusSidoId (서울) — back
-      // out to the nationwide baseline before measuring the zoom delta.
-      await tester.ensureVisible(find.text('전국 보기'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('전국 보기'));
-      await tester.pumpAndSettle();
-      final zoomBefore = tc.value.getMaxScaleOnAxis();
-
-      await tester.tap(find.text('내 위치'));
-      await tester.pumpAndSettle();
-
-      expect(tc.value.getMaxScaleOnAxis(), greaterThan(zoomBefore + 0.5));
+      expect(UserLocation.position.value, isNull);
+      expect(find.byType(MyLocationDot), findsNothing);
+      expect(find.byType(MyLocationButton), findsNothing);
     });
 
-    testWidgets('실제 맵: "내 위치" 버튼이 카메라를 그 위치로 옮긴다', (tester) async {
+    testWidgets('실제 맵(RegionSpotMap): 위치 점 없음', (tester) async {
       tester.view.physicalSize = const Size(390, 700);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
-
-      UserLocation.resetForTest();
-      const me = LatLng(35.324, 126.988);
-      UserLocation.resolver = () async => me;
-
-      await tester.runAsync(() async {
-        final g = await KoreaGeo.load();
-        await g.ensureSigungu();
-      });
-      final controller = MapController();
-      await tester.pumpWidget(
-        MaterialApp(
-          theme: AppTheme.light,
-          home: Scaffold(
-            body: RegionSpotMap(
-              regionCode: '36310',
-              spots: rankingForRegion('36310'),
-              selected: null,
-              onMarkerTap: (_) {},
-              mapController: controller,
-            ),
-          ),
-        ),
-      );
-      await tester.runAsync(() async {});
-      await tester.pumpAndSettle();
-
-      controller.move(const LatLng(37.5, 127.0), 10); // 다른 곳으로 이동
-      await tester.pump();
-      await tester.tap(find.text('내 위치'));
-      await tester.pumpAndSettle();
-
-      expect(
-        controller.camera.center.latitude,
-        moreOrLessEquals(me.latitude, epsilon: 0.05),
-      );
-      expect(
-        controller.camera.center.longitude,
-        moreOrLessEquals(me.longitude, epsilon: 0.05),
-      );
-    });
-
-    testWidgets('실제 맵(RegionSpotMap): 내 위치가 그대로 유지된다', (tester) async {
-      tester.view.physicalSize = const Size(390, 700);
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.reset);
-
-      UserLocation.resetForTest();
-      UserLocation.resolver = () async => const LatLng(35.324, 126.988);
 
       await tester.runAsync(() async {
         final g = await KoreaGeo.load();
@@ -706,24 +604,9 @@ void main() {
       await tester.runAsync(() async {});
       await tester.pumpAndSettle();
 
-      expect(UserLocation.position.value, isNotNull);
-      expect(find.byType(MyLocationDot), findsOneWidget);
-    });
-
-    testWidgets('위치를 못 가져오면 조용히 넘어간다 (점 없음)', (tester) async {
-      tester.view.physicalSize = const Size(390, 800);
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.reset);
-
-      UserLocation.resetForTest();
-      UserLocation.resolver = () async => null;
-
-      await pumpMapScreen(tester);
-      await tester.runAsync(() async {});
-      await tester.pumpAndSettle();
-
       expect(UserLocation.position.value, isNull);
       expect(find.byType(MyLocationDot), findsNothing);
+      expect(find.byType(MyLocationButton), findsNothing);
     });
   });
 

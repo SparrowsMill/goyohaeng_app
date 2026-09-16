@@ -1,68 +1,21 @@
 import 'package:flutter/foundation.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart' show LatLng;
 
-/// The device's position, resolved once per session and shown automatically on
-/// every map. Widgets listen to [position]; each map calls [ensure] in its
-/// `initState` (idempotent).
-///
-/// [resolver] is swapped out in tests — the `geolocator` plugin has no platform
-/// implementation under `flutter test`.
+/// 고요행은 위치정보를 수집하지 않는다 — [position]은 항상 `null`로 고정.
+/// 지도 위젯들은 원래 GPS 픽스가 늦게 도착하는 동안의 "아직 모름" 상태를
+/// 그리도록 만들어져 있어서, 이 상태를 폴백이 아니라 유일한 상태로 그대로
+/// 쓴다 (전체 반도 fit / "내 위치" 버튼·점 숨김).
 class UserLocation {
   UserLocation._();
 
-  /// `null` until resolved (or if location is off / denied / the fix failed).
   static final ValueNotifier<LatLng?> position = ValueNotifier<LatLng?>(null);
 
-  /// The strategy used by [ensure]. Override in tests.
-  static Future<LatLng?> Function() resolver = _fromGeolocator;
+  /// No-op — 위치를 요청하지 않으므로 [position]은 절대 채워지지 않는다.
+  /// 호출부를 건드리지 않기 위해 시그니처만 유지.
+  static Future<void> ensure() async {}
 
-  static Future<void>? _ensuring;
-
-  /// Resolve the position once for the session. Safe to call from every map;
-  /// updates [position] when the fix arrives. Never throws.
-  static Future<void> ensure() => _ensuring ??= _run();
-
-  static Future<void> _run() async {
-    final fix = await resolver();
-    if (fix != null) position.value = fix;
-  }
-
-  /// Test seam — forget the cached fix so the next [ensure] re-resolves.
   @visibleForTesting
   static void resetForTest() {
-    _ensuring = null;
     position.value = null;
-  }
-
-  static Future<LatLng?> _fromGeolocator() async {
-    try {
-      if (!await Geolocator.isLocationServiceEnabled()) return null;
-
-      var permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-      }
-      if (permission == LocationPermission.denied ||
-          permission == LocationPermission.deniedForever) {
-        return null;
-      }
-
-      try {
-        final fix = await Geolocator.getCurrentPosition(
-          locationSettings: const LocationSettings(
-            timeLimit: Duration(seconds: 12),
-          ),
-        );
-        return LatLng(fix.latitude, fix.longitude);
-      } catch (_) {
-        // Emulators with no location set time out here — fall back to any
-        // cached fix before giving up.
-        final last = await Geolocator.getLastKnownPosition();
-        return last == null ? null : LatLng(last.latitude, last.longitude);
-      }
-    } catch (_) {
-      return null;
-    }
   }
 }

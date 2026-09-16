@@ -1,7 +1,4 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- geolocator: <지도> "내 위치" 버튼 -->
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
-    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <!-- INTERNET 권한은 flutter 기본 debug 매니페스트에 포함되지만, release
          빌드에서도 백엔드 REST 호출이 필요하므로 명시한다. -->
     <uses-permission android:name="android.permission.INTERNET"/>

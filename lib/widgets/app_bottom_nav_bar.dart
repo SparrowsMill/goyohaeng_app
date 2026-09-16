@@ -170,6 +170,7 @@ class AppBottomNavBar extends StatelessWidget {
               data: NavigationBarThemeData(
                 labelTextStyle: WidgetStateProperty.resolveWith(
                   (states) => AppTextStyles.caption.copyWith(
+                    fontSize: 10.5,
                     fontWeight: FontWeight.w700,
                     color: states.contains(WidgetState.selected)
                         ? AppColors.primary
