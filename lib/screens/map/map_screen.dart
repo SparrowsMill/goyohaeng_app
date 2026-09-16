@@ -10,7 +10,6 @@ import '../../data/korea_crs.dart' show Epsg5179, LatLng;
 import '../../data/korea_map_geo.dart';
 import '../../data/mock_map_regions.dart';
 import '../../data/mock_region_ranking.dart' show MockTouristSpot;
-import '../../data/user_location.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_motion.dart';
 import '../../theme/app_radius.dart';
@@ -93,7 +92,7 @@ class _MapScreenState extends State<MapScreen> {
   /// `AppBottomNavBar.scrollPadding` — which reads `viewPaddingOf` — silently
   /// falls back to its 12px floor there instead of the device's real inset,
   /// undercounting on phones with a large home-indicator/gesture-nav inset and
-  /// letting the 즐겨찾기/내 위치 buttons sink into the floating nav bar. Using
+  /// letting the 즐겨찾기 button sink into the floating nav bar. Using
   /// this outer, pre-`Scaffold` context for that one call sidesteps the override.
   Widget _buildVectorBody(BuildContext screenContext) {
     return LayoutBuilder(
@@ -327,11 +326,6 @@ const double kMapChromeInset = 128;
 /// breathing room at the top (under the chrome) and bottom (over the nav bar).
 const double kMapMarginV = 20;
 
-/// Side length (≈ real metres) of the box the camera frames for the "내 위치"
-/// button — a close-in zoom on the point itself, without advancing the drill
-/// stage.
-const double _kMyLocationFocusMetres = 18000;
-
 class _KoreaMap extends StatefulWidget {
   const _KoreaMap({
     required this.onEnterRegion,
@@ -414,10 +408,6 @@ class _KoreaMapState extends State<_KoreaMap>
   List<_MapUnit> _units = const [];
   String? _unitsKey;
 
-  /// Projected scene-space point of the device position ([UserLocation]),
-  /// kept in sync by the layout builder — the painter draws the dot there.
-  final ValueNotifier<Offset?> _myPoint = ValueNotifier<Offset?>(null);
-
   /// Scene-space points of every favorited located spot, kept in sync by the
   /// layout builder when [widget.favoritesActive] — the painter draws stars.
   final ValueNotifier<List<Offset>> _favPoints = ValueNotifier<List<Offset>>(
@@ -439,9 +429,6 @@ class _KoreaMapState extends State<_KoreaMap>
   void initState() {
     super.initState();
     Favorites.instance.addListener(_onFavoritesChanged);
-    UserLocation.position.addListener(_onLocation);
-    UserLocation.ensure();
-    ensureMyLocationImage();
     ensureRegionLockImage();
     _animController =
         AnimationController(vsync: this, duration: AppMotion.pageTransition)
@@ -466,7 +453,6 @@ class _KoreaMapState extends State<_KoreaMap>
   @override
   void dispose() {
     Favorites.instance.removeListener(_onFavoritesChanged);
-    UserLocation.position.removeListener(_onLocation);
     _tc.removeListener(_onTransform);
     _tc.dispose();
     _animController.dispose();
@@ -475,7 +461,6 @@ class _KoreaMapState extends State<_KoreaMap>
     _viewport.dispose();
     _focusedSido.dispose();
     _focusedGroup.dispose();
-    _myPoint.dispose();
     _favPoints.dispose();
     super.dispose();
   }
@@ -499,10 +484,6 @@ class _KoreaMapState extends State<_KoreaMap>
 
   void _onFavoritesChanged() {
     if (mounted) setState(() {}); // refresh the star pins / removals
-  }
-
-  void _onLocation() {
-    if (mounted) setState(() {}); // let the layout builder re-project the dot
   }
 
   void _onTransform() {
@@ -661,28 +642,6 @@ class _KoreaMapState extends State<_KoreaMap>
         project(Offset(b.left, b.top)),
         project(Offset(b.right, b.bottom)),
       ),
-    );
-  }
-
-  /// Recentre on the device location (the "내 위치" button).
-  void _goToMyLocation() {
-    final here = UserLocation.position.value;
-    if (here != null) _focusOnLatLng(here);
-  }
-
-  /// Pan/zoom the camera to a lat/lng — a fixed ~18 km frame around it, drill
-  /// stage unchanged. Currently only used by [_goToMyLocation].
-  void _focusOnLatLng(LatLng where) {
-    final project = _projector;
-    if (project == null || _geo == null || _boxSize == Size.zero) return;
-    final raw = Epsg5179.fromLatLng(where);
-    const half = _kMyLocationFocusMetres / 2;
-    _zoomToSceneRect(
-      Rect.fromPoints(
-        project(Offset(raw.dx - half, raw.dy - half)),
-        project(Offset(raw.dx + half, raw.dy + half)),
-      ),
-      bottomInset: widget.overlayBottomInset,
     );
   }
 
@@ -936,13 +895,9 @@ class _KoreaMapState extends State<_KoreaMap>
                 if (_viewport.value == Rect.zero) {
                   _viewport.value = Offset.zero & size;
                 }
-                // Keep the "내 위치" dot and 즐겨찾기 star pins glued to their
-                // lat/lng across layout changes.
+                // Keep the 즐겨찾기 star pins glued to their lat/lng across
+                // layout changes.
                 final project = _projector!;
-                final here = UserLocation.position.value;
-                _myPoint.value = here == null
-                    ? null
-                    : project(Epsg5179.fromLatLng(here));
                 _favPoints.value = widget.favoritesActive
                     ? [
                         for (final f in Favorites.instance.locatedSpots())
@@ -998,8 +953,6 @@ class _KoreaMapState extends State<_KoreaMap>
                                 focusedGroup: _focusedGroup,
                                 focusOutline: _focusOutline,
                                 units: _units,
-                                myPoint: _myPoint,
-                                myPin: myLocationImage,
                                 lockIcon: regionLockImage,
                                 showFavorites: widget.favoritesActive,
                                 favPoints: _favPoints,
@@ -1013,25 +966,11 @@ class _KoreaMapState extends State<_KoreaMap>
                         curve: AppMotion.curve,
                         left: AppSpacing.sm,
                         bottom: AppSpacing.sm + widget.overlayBottomInset,
-                        // IntrinsicWidth + stretch → both buttons take the
-                        // wider one's width so they match.
-                        child: IntrinsicWidth(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              if (UserLocation.position.value != null) ...[
-                                MyLocationButton(onTap: _goToMyLocation),
-                                const SizedBox(height: AppSpacing.sm),
-                              ],
-                              MapToggleButton(
-                                icon: Symbols.star_rounded,
-                                label: '즐겨찾기',
-                                active: widget.favoritesActive,
-                                onTap: widget.onToggleFavorites,
-                              ),
-                            ],
-                          ),
+                        child: MapToggleButton(
+                          icon: Symbols.star_rounded,
+                          label: '즐겨찾기',
+                          active: widget.favoritesActive,
+                          onTap: widget.onToggleFavorites,
                         ),
                       ),
                       AnimatedPositioned(
@@ -1179,8 +1118,6 @@ class _KoreaMapPainter extends CustomPainter {
     required this.focusedGroup,
     required this.focusOutline,
     required this.units,
-    required this.myPoint,
-    required this.myPin,
     required this.lockIcon,
     required this.showFavorites,
     required this.favPoints,
@@ -1191,8 +1128,6 @@ class _KoreaMapPainter extends CustomPainter {
            interacting,
            focusedSido,
            focusedGroup,
-           myPoint,
-           myPin,
            lockIcon,
            favPoints,
          ]),
@@ -1222,13 +1157,6 @@ class _KoreaMapPainter extends CustomPainter {
 
   /// The focused 시도's tappable units (see [_MapUnit]).
   final List<_MapUnit> units;
-
-  /// Scene-space position of the device ("내 위치"), or `null` if not located.
-  final ValueListenable<Offset?> myPoint;
-
-  /// Decoded `current_location.png` pin, or `null` while it's still loading
-  /// (a plain dot is drawn until then).
-  final ValueListenable<ui.Image?> myPin;
 
   /// Decoded `lock.png`, drawn over locked (non-서울) 시도 at the nationwide
   /// view — `null` while still loading (그 시도는 그냥 회색으로만 남는다).
@@ -1347,7 +1275,6 @@ class _KoreaMapPainter extends CustomPainter {
     // 깜빡이며 사라졌다 나타나는 게 오히려 거슬려서(가독성 문제) 되돌렸다.
     _paintLabels(canvas, project, z, view, focused, group);
     _paintFavorites(canvas, z);
-    _paintMyLocation(canvas, z, view);
   }
 
   /// Amber star pins for **every** favorited spot in the country (constant
@@ -1380,22 +1307,6 @@ class _KoreaMapPainter extends CustomPainter {
       i == 0 ? path.moveTo(pt.dx, pt.dy) : path.lineTo(pt.dx, pt.dy);
     }
     return path..close();
-  }
-
-  /// The "you are here" marker — a solid [myLocationColor] dot, constant
-  /// on-screen size (÷ z).
-  void _paintMyLocation(Canvas canvas, double z, Rect view) {
-    final p = myPoint.value;
-    if (p == null || !view.contains(p)) return;
-
-    final r = 6 / z;
-    canvas.drawCircle(
-      p,
-      r * 2.8,
-      Paint()..color = myLocationColor.withValues(alpha: 0.22),
-    );
-    canvas.drawCircle(p, r + 3 / z, Paint()..color = AppColors.surface);
-    canvas.drawCircle(p, r, Paint()..color = myLocationColor);
   }
 
   void _paintLabels(
@@ -1652,8 +1563,6 @@ class _KoreaMapPainter extends CustomPainter {
       old.focusedSido != focusedSido ||
       old.focusedGroup != focusedGroup ||
       old.focusOutline != focusOutline ||
-      old.myPoint != myPoint ||
-      old.myPin != myPin ||
       old.showFavorites != showFavorites ||
       old.favPoints != favPoints ||
       !identical(old.units, units);

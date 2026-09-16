@@ -292,7 +292,9 @@ class _HeroCard extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    Flexible(child: Text(food.name, style: AppTextStyles.h3)),
+                    Flexible(
+                      child: Text(food.name, style: AppTextStyles.title),
+                    ),
                     const SizedBox(width: AppSpacing.xs),
                     _Leaf(flip: false),
                   ],
@@ -373,16 +375,25 @@ class _WideIngredientRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return IntrinsicHeight(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          for (var i = 0; i < items.length; i++) ...[
-            if (i != 0) const SizedBox(width: AppSpacing.sm),
-            Expanded(child: _WideIngredientCard(item: items[i])),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Same per-cell width as `_IngredientGrid`'s 4-column grid below, so
+        // special-ingredient cards match normal ones exactly instead of
+        // stretching to fill the row — and pack from the left, leaving any
+        // unused columns empty rather than widening the cards that exist.
+        final cellWidth = (constraints.maxWidth - 3 * AppSpacing.sm) / 4;
+        return Wrap(
+          spacing: AppSpacing.sm,
+          runSpacing: AppSpacing.sm,
+          children: [
+            for (final item in items)
+              SizedBox(
+                width: cellWidth,
+                child: _WideIngredientCard(item: item),
+              ),
           ],
-        ],
-      ),
+        );
+      },
     );
   }
 }
@@ -395,10 +406,7 @@ class _WideIngredientCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.sm,
-        vertical: AppSpacing.md,
-      ),
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
       decoration: BoxDecoration(
         color: AppColors.surface,
         border: Border.all(color: AppColors.border),
@@ -409,17 +417,17 @@ class _WideIngredientCard extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           SizedBox(
-            width: 36,
-            height: 36,
+            width: 26,
+            height: 26,
             child: RewardImage(
               name: item.name,
               folder: RewardAssetFolder.ingredient,
               icon: Symbols.grocery_rounded,
               color: AppColors.primary,
-              iconSize: 36,
+              iconSize: 26,
             ),
           ),
-          const SizedBox(height: AppSpacing.xs),
+          const SizedBox(height: 4),
           Text(
             item.name,
             maxLines: 1,

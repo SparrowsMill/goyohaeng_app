@@ -13,6 +13,7 @@ import '../../widgets/app_bottom_nav_bar.dart';
 import '../../widgets/fading_scene_background.dart';
 import '../account/account_center_screen.dart';
 import '../food/food_dex_screen.dart';
+import '../food/ingredient_bag_screen.dart';
 import '../record/footprint_write_screen.dart';
 
 /// `<참새>` (user_flow §3) — 본인 프로필 페이지. 방앗간 홈의 참새 캐릭터를 눌러
@@ -134,6 +135,11 @@ class _SparrowScreenState extends State<SparrowScreen> {
                   profile: p,
                   onTapCompletedFoods: () => Navigator.of(context).push(
                     MaterialPageRoute(builder: (_) => const FoodDexScreen()),
+                  ),
+                  onTapIngredients: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const IngredientBagScreen(),
+                    ),
                   ),
                 ),
                 const SizedBox(height: AppSpacing.xxl),
@@ -437,10 +443,12 @@ class _ActivitySummary extends StatelessWidget {
   const _ActivitySummary({
     required this.profile,
     required this.onTapCompletedFoods,
+    required this.onTapIngredients,
   });
 
   final SparrowProfile profile;
   final VoidCallback onTapCompletedFoods;
+  final VoidCallback onTapIngredients;
 
   @override
   Widget build(BuildContext context) {
@@ -480,6 +488,7 @@ class _ActivitySummary extends StatelessWidget {
             fallback: Symbols.shopping_bag_rounded,
             label: '모은 재료',
             value: '$ingredients개',
+            onTap: onTapIngredients,
           ),
         ];
 

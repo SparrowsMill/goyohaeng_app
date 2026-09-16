@@ -15,7 +15,10 @@ import '../../widgets/app_password_field.dart';
 import '../../widgets/app_text_field.dart';
 import '../auth/login_screen.dart';
 
-const _labelWidth = 88.0;
+// 프로필 관리 카드(이름/생년월일/성별)의 좌측 라벨 폭 — 라벨을 Body Medium(14px)
+// 으로 한 단계 줄인 뒤로는 "생년월일"(가장 긴 라벨)도 72px이면 충분히 들어가서,
+// 옆 입력/값 칸에 남는 폭을 더 많이 준다.
+const _labelWidth = 72.0;
 
 /// `<계정 센터>` (user_flow §3) — `/users/me`(스펙 §3)를 조회해 프로필/계정 정보를
 /// 보여주고, 각 카드의 저장·변경·탈퇴·로그아웃을 백엔드에 반영한다.
@@ -301,9 +304,14 @@ class _AccountCenterScreenState extends State<AccountCenterScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const _CardHeader(
+                // 개인 정보란 — 이 카드의 텍스트는 전부 기본 타입 스케일보다
+                // 한 단계씩 작게(각 위젯의 스타일 override 파라미터로 전달).
+                _CardHeader(
                   icon: Symbols.person_rounded,
                   label: '프로필 관리',
+                  labelStyle: AppTextStyles.bodyLarge.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
                 const SizedBox(height: AppSpacing.xl),
                 Row(
@@ -333,12 +341,12 @@ class _AccountCenterScreenState extends State<AccountCenterScreen> {
                         children: [
                           Text(
                             me.realName.isEmpty ? me.username : me.realName,
-                            style: AppTextStyles.h3,
+                            style: AppTextStyles.title,
                           ),
                           const SizedBox(height: AppSpacing.xs),
                           Text(
                             '여행을 기록하고 추억을 남겨보세요.',
-                            style: AppTextStyles.bodySmall.copyWith(
+                            style: AppTextStyles.caption.copyWith(
                               color: AppColors.textSecondary,
                             ),
                           ),
@@ -350,24 +358,38 @@ class _AccountCenterScreenState extends State<AccountCenterScreen> {
                 const SizedBox(height: AppSpacing.xl),
                 _LabeledRow(
                   label: '이름',
+                  labelStyle: AppTextStyles.bodyMedium.copyWith(
+                    color: AppColors.textPrimary,
+                    fontWeight: FontWeight.w600,
+                  ),
                   child: AppTextField(
                     controller: _nameController,
                     hintText: '이름',
+                    style: AppTextStyles.bodyMedium,
                   ),
                 ),
                 const SizedBox(height: AppSpacing.lg),
                 _LabeledRow(
                   label: '생년월일',
+                  labelStyle: AppTextStyles.bodyMedium.copyWith(
+                    color: AppColors.textPrimary,
+                    fontWeight: FontWeight.w600,
+                  ),
                   child: _ValueBox(
                     value: _birthDateText,
                     trailingIcon: Symbols.calendar_month_rounded,
                     onTrailingTap: _pickBirthDate,
                     onTap: _pickBirthDate,
+                    valueStyle: AppTextStyles.bodyMedium,
                   ),
                 ),
                 const SizedBox(height: AppSpacing.lg),
                 _LabeledRow(
                   label: '성별',
+                  labelStyle: AppTextStyles.bodyMedium.copyWith(
+                    color: AppColors.textPrimary,
+                    fontWeight: FontWeight.w600,
+                  ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
@@ -375,12 +397,18 @@ class _AccountCenterScreenState extends State<AccountCenterScreen> {
                         label: '남성',
                         selected: _gender == 'MALE',
                         onTap: () => setState(() => _gender = 'MALE'),
+                        labelStyle: AppTextStyles.bodySmall.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                       const SizedBox(width: AppSpacing.sm),
                       _GenderChip(
                         label: '여성',
                         selected: _gender == 'FEMALE',
                         onTap: () => setState(() => _gender = 'FEMALE'),
+                        labelStyle: AppTextStyles.bodySmall.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ],
                   ),
@@ -390,6 +418,9 @@ class _AccountCenterScreenState extends State<AccountCenterScreen> {
                   label: '프로필 저장',
                   busy: _savingProfile,
                   onPressed: _saveProfile,
+                  textStyle: AppTextStyles.bodySmall.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ],
             ),
@@ -397,43 +428,79 @@ class _AccountCenterScreenState extends State<AccountCenterScreen> {
           const SizedBox(height: AppSpacing.lg),
 
           // ---------- 계정 정보 ----------
+          // 개인 정보란(프로필 관리)과 같은 원칙 — 텍스트는 한 단계씩 작게,
+          // 카드 패딩/필드 간격/필드 높이도 그만큼 컴팩트하게 줄인다.
           Container(
-            padding: const EdgeInsets.all(AppSpacing.xxl),
+            padding: const EdgeInsets.all(AppSpacing.xl),
             decoration: AppDecorations.card(),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const _CardHeader(icon: Symbols.shield_rounded, label: '계정 정보'),
-                const SizedBox(height: AppSpacing.xl),
+                _CardHeader(
+                  icon: Symbols.shield_rounded,
+                  label: '계정 정보',
+                  badgeSize: 32,
+                  iconSize: 18,
+                  labelStyle: AppTextStyles.bodyLarge.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.lg),
                 _LabeledRow(
                   label: '아이디 확인',
                   labelAbove: true,
+                  labelStyle: AppTextStyles.bodyMedium.copyWith(
+                    color: AppColors.textPrimary,
+                    fontWeight: FontWeight.w600,
+                  ),
                   child: _ValueBox(
                     value: me.username,
                     trailingIcon: Symbols.content_copy_rounded,
                     onTrailingTap: () => _copyId(me.username),
+                    valueStyle: AppTextStyles.bodyMedium,
+                    height: 44,
                   ),
                 ),
                 if (me.email != null) ...[
-                  const SizedBox(height: AppSpacing.lg),
+                  const SizedBox(height: AppSpacing.md),
                   _LabeledRow(
                     label: '이메일',
                     labelAbove: true,
-                    child: _ValueBox(value: me.email!),
+                    labelStyle: AppTextStyles.bodyMedium.copyWith(
+                      color: AppColors.textPrimary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    child: _ValueBox(
+                      value: me.email!,
+                      valueStyle: AppTextStyles.bodyMedium,
+                      height: 44,
+                    ),
                   ),
                 ],
                 if (me.phone != null) ...[
-                  const SizedBox(height: AppSpacing.lg),
+                  const SizedBox(height: AppSpacing.md),
                   _LabeledRow(
                     label: '전화번호',
                     labelAbove: true,
-                    child: _ValueBox(value: me.phone!),
+                    labelStyle: AppTextStyles.bodyMedium.copyWith(
+                      color: AppColors.textPrimary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    child: _ValueBox(
+                      value: me.phone!,
+                      valueStyle: AppTextStyles.bodyMedium,
+                      height: 44,
+                    ),
                   ),
                 ],
-                const SizedBox(height: AppSpacing.lg),
+                const SizedBox(height: AppSpacing.md),
                 _LabeledRow(
                   label: '비밀번호 변경',
                   labelAbove: true,
+                  labelStyle: AppTextStyles.bodyMedium.copyWith(
+                    color: AppColors.textPrimary,
+                    fontWeight: FontWeight.w600,
+                  ),
                   child: Column(
                     children: [
                       Align(
@@ -441,6 +508,8 @@ class _AccountCenterScreenState extends State<AccountCenterScreen> {
                         child: Text(
                           '기존 비밀번호 대조를 위해 입력하세요',
                           style: AppTextStyles.caption.copyWith(
+                            fontSize: 11,
+                            height: 16 / 11,
                             color: AppColors.textSecondary,
                           ),
                         ),
@@ -449,45 +518,67 @@ class _AccountCenterScreenState extends State<AccountCenterScreen> {
                       AppPasswordField(
                         controller: _currentPasswordController,
                         hintText: '현재 비밀번호',
+                        style: AppTextStyles.bodyMedium,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: AppSpacing.lg,
+                          vertical: AppSpacing.sm,
+                        ),
                       ),
-                      const SizedBox(height: AppSpacing.sm),
+                      const SizedBox(height: AppSpacing.xs),
                       AppPasswordField(
                         controller: _newPasswordController,
                         hintText: '새 비밀번호 (8자 이상)',
+                        style: AppTextStyles.bodyMedium,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: AppSpacing.lg,
+                          vertical: AppSpacing.sm,
+                        ),
                       ),
-                      const SizedBox(height: AppSpacing.sm),
+                      const SizedBox(height: AppSpacing.xs),
                       AppPasswordField(
                         controller: _confirmPasswordController,
                         hintText: '새 비밀번호 확인',
+                        style: AppTextStyles.bodyMedium,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: AppSpacing.lg,
+                          vertical: AppSpacing.sm,
+                        ),
                       ),
-                      const SizedBox(height: AppSpacing.md),
+                      const SizedBox(height: AppSpacing.sm),
                       _CardActionButton(
                         label: '비밀번호 변경',
                         busy: _savingPassword,
                         onPressed: _changePassword,
+                        textStyle: AppTextStyles.bodySmall.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(height: AppSpacing.lg),
+                const SizedBox(height: AppSpacing.md),
                 Text(
                   '회원 탈퇴 시 모든 데이터가 삭제됩니다.',
                   style: AppTextStyles.caption.copyWith(
+                    fontSize: 11,
+                    height: 16 / 11,
                     color: AppColors.textSecondary,
                   ),
                 ),
-                const SizedBox(height: AppSpacing.sm),
+                const SizedBox(height: AppSpacing.xs),
                 SizedBox(
-                  height: 44,
+                  height: 40,
                   width: double.infinity,
                   child: OutlinedButton.icon(
                     onPressed: _confirmWithdraw,
-                    icon: const Icon(Symbols.person_remove_rounded, size: 18),
+                    icon: const Icon(Symbols.person_remove_rounded, size: 16),
                     label: const Text('회원 탈퇴'),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: AppColors.error,
                       side: const BorderSide(color: AppColors.error),
-                      textStyle: AppTextStyles.buttonMedium,
+                      textStyle: AppTextStyles.bodySmall.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(
                           AppRadius.secondaryButton,
@@ -545,11 +636,16 @@ class _CardActionButton extends StatelessWidget {
     required this.label,
     required this.busy,
     required this.onPressed,
+    this.textStyle,
   });
 
   final String label;
   final bool busy;
   final VoidCallback onPressed;
+
+  /// Defaults to Button Medium(14px). 프로필 관리 카드는 한 단계 작은
+  /// Body Small을 넘긴다.
+  final TextStyle? textStyle;
 
   @override
   Widget build(BuildContext context) {
@@ -559,7 +655,7 @@ class _CardActionButton extends StatelessWidget {
       child: ElevatedButton(
         style: ElevatedButton.styleFrom(
           minimumSize: const Size.fromHeight(44),
-          textStyle: AppTextStyles.buttonMedium,
+          textStyle: textStyle ?? AppTextStyles.buttonMedium,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(AppRadius.secondaryButton),
           ),
@@ -618,26 +714,42 @@ class _ErrorState extends StatelessWidget {
 
 /// Circular icon badge + title used atop each card ("프로필 관리", "계정 정보", "설정").
 class _CardHeader extends StatelessWidget {
-  const _CardHeader({required this.icon, required this.label});
+  const _CardHeader({
+    required this.icon,
+    required this.label,
+    this.labelStyle,
+    this.badgeSize = 36,
+    this.iconSize = 20,
+  });
 
   final IconData icon;
   final String label;
+
+  /// Defaults to Title (18px). 프로필 관리/계정 정보 카드는 한 단계 작은
+  /// Body Large를 넘긴다.
+  final TextStyle? labelStyle;
+
+  /// Defaults to the spec badge size (36px). 계정 정보 카드는 더 작은 32px를 넘긴다.
+  final double badgeSize;
+
+  /// Defaults to 20px. 계정 정보 카드는 더 작은 18px를 넘긴다.
+  final double iconSize;
 
   @override
   Widget build(BuildContext context) {
     return Row(
       children: [
         Container(
-          width: 36,
-          height: 36,
+          width: badgeSize,
+          height: badgeSize,
           decoration: const BoxDecoration(
             color: AppColors.surfaceSelected,
             shape: BoxShape.circle,
           ),
-          child: Icon(icon, size: 20, color: AppColors.primary),
+          child: Icon(icon, size: iconSize, color: AppColors.primary),
         ),
         const SizedBox(width: AppSpacing.sm),
-        Text(label, style: AppTextStyles.title),
+        Text(label, style: labelStyle ?? AppTextStyles.title),
       ],
     );
   }
@@ -650,6 +762,7 @@ class _LabeledRow extends StatelessWidget {
     required this.label,
     required this.child,
     this.labelAbove = false,
+    this.labelStyle,
   });
 
   final String label;
@@ -659,14 +772,20 @@ class _LabeledRow extends StatelessWidget {
   /// 프로필 관리 쪽은 기존 좌우 배치를 유지한다).
   final bool labelAbove;
 
+  /// Defaults to Body Large(16px, w600). 프로필 관리 카드는 한 단계 작은
+  /// Body Medium을 넘긴다.
+  final TextStyle? labelStyle;
+
   @override
   Widget build(BuildContext context) {
     final labelText = Text(
       label,
-      style: AppTextStyles.bodyLarge.copyWith(
-        color: AppColors.textPrimary,
-        fontWeight: FontWeight.w600,
-      ),
+      style:
+          labelStyle ??
+          AppTextStyles.bodyLarge.copyWith(
+            color: AppColors.textPrimary,
+            fontWeight: FontWeight.w600,
+          ),
     );
 
     if (labelAbove) {
@@ -698,6 +817,8 @@ class _ValueBox extends StatelessWidget {
     this.trailingIcon,
     this.onTrailingTap,
     this.onTap,
+    this.valueStyle,
+    this.height = 52,
   });
 
   final String value;
@@ -705,13 +826,21 @@ class _ValueBox extends StatelessWidget {
   final VoidCallback? onTrailingTap;
   final VoidCallback? onTap;
 
+  /// Defaults to Input Field's spec size (Body Large). 프로필 관리/계정 정보
+  /// 카드는 한 단계 작은 Body Medium을 넘긴다.
+  final TextStyle? valueStyle;
+
+  /// Defaults to Input Field's spec height (52px, CLAUDE.md §7). 계정 정보
+  /// 카드는 더 컴팩트한 44px를 넘긴다.
+  final double height;
+
   @override
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(AppRadius.inputField),
       child: Container(
-        height: 52,
+        height: height,
         padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
         decoration: BoxDecoration(
           color: AppColors.surface,
@@ -720,7 +849,9 @@ class _ValueBox extends StatelessWidget {
         ),
         child: Row(
           children: [
-            Expanded(child: Text(value, style: AppTextStyles.bodyLarge)),
+            Expanded(
+              child: Text(value, style: valueStyle ?? AppTextStyles.bodyLarge),
+            ),
             if (trailingIcon != null)
               InkWell(
                 onTap: onTrailingTap,
@@ -742,11 +873,16 @@ class _GenderChip extends StatelessWidget {
     required this.label,
     required this.selected,
     required this.onTap,
+    this.labelStyle,
   });
 
   final String label;
   final bool selected;
   final VoidCallback onTap;
+
+  /// Defaults to Button Medium(14px, w600). 프로필 관리 카드는 한 단계 작은
+  /// Body Small을 넘긴다.
+  final TextStyle? labelStyle;
 
   @override
   Widget build(BuildContext context) {
@@ -765,7 +901,7 @@ class _GenderChip extends StatelessWidget {
         ),
         child: Text(
           label,
-          style: AppTextStyles.buttonMedium.copyWith(
+          style: (labelStyle ?? AppTextStyles.buttonMedium).copyWith(
             color: selected
                 ? AppColors.textOnPrimaryButton
                 : AppColors.textSecondary,

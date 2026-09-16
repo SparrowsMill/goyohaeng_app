@@ -6,7 +6,6 @@ import 'package:goyohaeng_app/data/mock_map_regions.dart';
 import 'package:goyohaeng_app/data/favorites.dart';
 import 'package:goyohaeng_app/data/mock_region_ranking.dart';
 import 'package:goyohaeng_app/data/place_search.dart';
-import 'package:goyohaeng_app/data/user_location.dart';
 import 'package:goyohaeng_app/screens/map/map_screen.dart';
 import 'package:goyohaeng_app/screens/map/region_spot_map.dart';
 import 'package:goyohaeng_app/screens/place/place_info_screen.dart';
@@ -559,55 +558,6 @@ void main() {
     await tester.runAsync(() async {});
     await tester.pumpAndSettle();
     expect(find.byType(RegionRankingScreen), findsNothing);
-  });
-
-  group('내 위치 (수집하지 않음)', () {
-    tearDown(UserLocation.resetForTest);
-
-    testWidgets('벡터 지도: 위치를 요청하지 않고, 점·버튼 모두 없음', (tester) async {
-      tester.view.physicalSize = const Size(390, 800);
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.reset);
-
-      await pumpMapScreen(tester);
-      await tester.runAsync(() async {});
-      await tester.pumpAndSettle();
-
-      expect(UserLocation.position.value, isNull);
-      expect(find.byType(MyLocationDot), findsNothing);
-      expect(find.byType(MyLocationButton), findsNothing);
-    });
-
-    testWidgets('실제 맵(RegionSpotMap): 위치 점 없음', (tester) async {
-      tester.view.physicalSize = const Size(390, 700);
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.reset);
-
-      await tester.runAsync(() async {
-        final g = await KoreaGeo.load();
-        await g.ensureSigungu();
-      });
-      await tester.pumpWidget(
-        MaterialApp(
-          theme: AppTheme.light,
-          home: Scaffold(
-            body: RegionSpotMap(
-              regionCode: '36310',
-              spots: rankingForRegion('36310'),
-              selected: null,
-              onMarkerTap: (_) {},
-              mapController: MapController(),
-            ),
-          ),
-        ),
-      );
-      await tester.runAsync(() async {});
-      await tester.pumpAndSettle();
-
-      expect(UserLocation.position.value, isNull);
-      expect(find.byType(MyLocationDot), findsNothing);
-      expect(find.byType(MyLocationButton), findsNothing);
-    });
   });
 
   group('즐겨찾기', () {

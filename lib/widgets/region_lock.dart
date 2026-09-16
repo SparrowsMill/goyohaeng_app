@@ -21,8 +21,7 @@ void showRegionComingSoonToast(BuildContext context) {
 }
 
 /// Lazily-decoded [regionLockAsset] for the canvas map — null until
-/// [ensureRegionLockImage] finishes (같은 패턴: `my_location_button.dart`의
-/// `myLocationImage`).
+/// [ensureRegionLockImage] finishes.
 final ValueNotifier<ui.Image?> regionLockImage = ValueNotifier<ui.Image?>(null);
 Future<void>? _regionLockImageLoad;
 

@@ -18,6 +18,7 @@ class AppTextField extends StatelessWidget {
     this.validator,
     this.inputFormatters,
     this.onChanged,
+    this.style,
   });
 
   final String hintText;
@@ -28,6 +29,10 @@ class AppTextField extends StatelessWidget {
   final List<TextInputFormatter>? inputFormatters;
   final ValueChanged<String>? onChanged;
 
+  /// Defaults to Input Field's spec size (Body Large, CLAUDE.md §7). Only
+  /// override at a call site that deliberately needs a smaller/larger field.
+  final TextStyle? style;
+
   @override
   Widget build(BuildContext context) {
     return TextFormField(
@@ -36,7 +41,7 @@ class AppTextField extends StatelessWidget {
       inputFormatters: inputFormatters,
       validator: validator,
       onChanged: onChanged,
-      style: AppTextStyles.bodyLarge,
+      style: style ?? AppTextStyles.bodyLarge,
       decoration: InputDecoration(
         hintText: hintText,
         prefixIcon: prefixIcon == null

@@ -472,8 +472,8 @@ class _Tag extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 18,
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+      height: 22,
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
       decoration: BoxDecoration(
         border: Border.all(color: AppColors.border),
         borderRadius: BorderRadius.circular(AppRadius.pill),
@@ -543,9 +543,9 @@ class StatusChip extends StatelessWidget {
       ChipTone.warning => (AppColors.warningBackground, AppColors.warning),
     };
     return Container(
-      height: 18,
+      height: 22,
       alignment: Alignment.center,
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(AppRadius.pill),

@@ -53,34 +53,27 @@ class _MillHomeScreenState extends State<MillHomeScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        const _MillHeader(),
-                        // Overlaps up into the header banner instead of
-                        // sitting flush below it. Anchored from `top` (not
-                        // `bottom`) so extra wrapped lines grow downward into
-                        // the blank space below the header instead of upward
-                        // over the header art. The overlap is kept small
-                        // (16px, not the full pill height) so even a
-                        // single-line row stays clear of the "마이페이지로
-                        // 이동" button, which sits `bottom: 34` (i.e. its own
-                        // bottom edge is 34px above the header's bottom
-                        // edge) inside `_MillHeader`.
-                        const Positioned(
-                          left: AppSpacing.xl,
-                          right: AppSpacing.xl,
-                          top: _MillHeader._height - 16,
-                          child: _StatBar(),
-                        ),
-                      ],
+                    const _MillHeader(),
+                    // Overlaps up into the header banner instead of sitting
+                    // flush below it, but as a real (translated, not
+                    // `Positioned`) flow child so its full — possibly
+                    // wrapped-to-2-lines — height is still reserved in the
+                    // `Column`. That guarantees a constant gap to the content
+                    // below regardless of how many lines the pills wrap to,
+                    // instead of a fixed offset that assumed a single line.
+                    Transform.translate(
+                      offset: const Offset(0, -16),
+                      child: const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: AppSpacing.xl),
+                        child: _StatBar(),
+                      ),
                     ),
                     Padding(
                       padding: AppBottomNavBar.scrollPadding(
                         context,
                         const EdgeInsets.fromLTRB(
                           AppSpacing.xl,
-                          100,
+                          AppSpacing.xxxl,
                           AppSpacing.xl,
                           AppSpacing.xxl,
                         ),
@@ -91,7 +84,7 @@ class _MillHomeScreenState extends State<MillHomeScreen> {
                           Text('어디로 떠나볼까요?', style: AppTextStyles.h2),
                           const SizedBox(height: AppSpacing.xs),
                           Text(
-                            '내 위치 주변의 고요 지수와 다녀온 곳을 한눈에',
+                            '전국 고요 지수와 다녀온 곳을 한눈에',
                             style: AppTextStyles.bodyMedium.copyWith(
                               color: AppColors.textSecondary,
                               fontWeight: FontWeight.w600,
@@ -498,10 +491,9 @@ class _BubbleTailPainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
-/// Three independent oval stat pills instead of one wide divided bar — each
-/// pill sizes to its own content, so a narrow/tall screen (e.g. 19.5:9) that
-/// can't fit all three on one line wraps the last one onto a second line
-/// below rather than shrinking/eliding any of their text.
+/// Three equal-width stat pills in a single fixed row — each pill's content
+/// scale-shrinks to fit (`FittedBox` in `_StatPill`) instead of wrapping, so
+/// all three always stay on one line even on a narrower screen width.
 class _StatBar extends StatelessWidget {
   const _StatBar();
 
@@ -512,28 +504,33 @@ class _StatBar extends StatelessWidget {
       builder: (context, _) {
         final d = DashboardStore.instance.data;
         String v(int? n) => n == null ? '–' : '$n';
-        return Wrap(
-          alignment: WrapAlignment.center,
-          spacing: AppSpacing.sm,
-          runSpacing: AppSpacing.sm,
+        return Row(
           children: [
-            _StatPill(
-              iconAsset: 'assets/illustrations/icon/calendar.png',
-              fallbackIcon: Symbols.calendar_month_rounded,
-              label: '이번 달 방문',
-              value: '${v(d?.monthlyVisitCount)}곳',
+            Expanded(
+              child: _StatPill(
+                iconAsset: 'assets/illustrations/icon/calendar.png',
+                fallbackIcon: Symbols.calendar_month_rounded,
+                label: '이번 달 방문',
+                value: '${v(d?.monthlyVisitCount)}곳',
+              ),
             ),
-            _StatPill(
-              iconAsset: 'assets/illustrations/icon/ingredient.png',
-              fallbackIcon: Symbols.shopping_bag_rounded,
-              label: '모은 재료',
-              value: '${v(d?.ingredientCount)}개',
+            const SizedBox(width: AppSpacing.sm),
+            Expanded(
+              child: _StatPill(
+                iconAsset: 'assets/illustrations/icon/ingredient.png',
+                fallbackIcon: Symbols.shopping_bag_rounded,
+                label: '모은 재료',
+                value: '${v(d?.ingredientCount)}개',
+              ),
             ),
-            _StatPill(
-              iconAsset: 'assets/illustrations/icon/verified.png',
-              fallbackIcon: Symbols.verified_rounded,
-              label: '인증 완료',
-              value: '${v(d?.verifiedVisitCount)}회',
+            const SizedBox(width: AppSpacing.sm),
+            Expanded(
+              child: _StatPill(
+                iconAsset: 'assets/illustrations/icon/verified.png',
+                fallbackIcon: Symbols.verified_rounded,
+                label: '인증 완료',
+                value: '${v(d?.verifiedVisitCount)}회',
+              ),
             ),
           ],
         );
@@ -560,10 +557,8 @@ class _StatPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.md,
-        vertical: AppSpacing.sm,
-      ),
+      height: 44,
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
       decoration: BoxDecoration(
         // Between appBackground (warm cream) and surface (near-white) —
         // brighter than the page background instead of blending flush into
@@ -577,37 +572,45 @@ class _StatPill extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppRadius.card),
         boxShadow: AppShadows.card,
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Image.asset(
-            iconAsset,
-            width: 28,
-            height: 28,
-            errorBuilder: (context, error, stackTrace) =>
-                Icon(fallbackIcon, size: 22, color: AppColors.primary),
-          ),
-          const SizedBox(width: AppSpacing.xs),
-          Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                label,
-                style: AppTextStyles.caption.copyWith(
-                  fontWeight: FontWeight.w600,
+      // Scale-shrinks the icon+text as one unit instead of wrapping/
+      // eliding, so a pill this compact never overflows its equal-thirds
+      // share of the row even with a longer label.
+      alignment: Alignment.center,
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: Alignment.center,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Image.asset(
+              iconAsset,
+              width: 20,
+              height: 20,
+              errorBuilder: (context, error, stackTrace) =>
+                  Icon(fallbackIcon, size: 18, color: AppColors.primary),
+            ),
+            const SizedBox(width: AppSpacing.xs),
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Text(
+                  label,
+                  style: AppTextStyles.caption.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
-              ),
-              Text(
-                value,
-                style: AppTextStyles.bodyMedium.copyWith(
-                  color: AppColors.success,
-                  fontWeight: FontWeight.w600,
+                Text(
+                  value,
+                  style: AppTextStyles.caption.copyWith(
+                    color: AppColors.success,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
-              ),
-            ],
-          ),
-        ],
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -627,7 +630,7 @@ class _HomeMapCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       clipBehavior: Clip.antiAlias,
-      height: 220,
+      height: 300,
       decoration: BoxDecoration(
         color: AppColors.surface,
         border: Border.all(color: AppColors.border),

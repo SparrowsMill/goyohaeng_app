@@ -279,7 +279,7 @@ class _HeroCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(food.name, style: AppTextStyles.h3),
+                Text(food.name, style: AppTextStyles.title),
                 const SizedBox(height: AppSpacing.sm),
                 const Divider(height: 1, color: AppColors.divider),
                 const SizedBox(height: AppSpacing.sm),
@@ -291,9 +291,14 @@ class _HeroCard extends StatelessWidget {
                 ),
                 const SizedBox(height: AppSpacing.md),
                 Container(
+                  // No `mainAxisSize.min` on the row below — the chip must
+                  // stay within the card's available width instead of
+                  // growing past it, so a long label wraps onto a second
+                  // line (and the chip grows taller to fit) rather than
+                  // overflowing the card edge.
                   padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.md,
-                    vertical: 6,
+                    horizontal: AppSpacing.sm,
+                    vertical: 4,
                   ),
                   decoration: BoxDecoration(
                     color: AppColors.surface,
@@ -301,22 +306,25 @@ class _HeroCard extends StatelessWidget {
                     borderRadius: BorderRadius.circular(AppRadius.pill),
                   ),
                   child: Row(
-                    mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(
                         canMake
                             ? Symbols.check_circle_rounded
                             : Symbols.hourglass_empty_rounded,
-                        size: 14,
+                        size: 11,
                         color: canMake
                             ? AppColors.success
                             : AppColors.textSecondary,
                       ),
                       const SizedBox(width: AppSpacing.xs),
-                      Text(
-                        canMake ? '지금 만들 수 있어요' : '아직 만들지 못했어요',
-                        style: AppTextStyles.caption.copyWith(
-                          fontWeight: FontWeight.w600,
+                      Expanded(
+                        child: Text(
+                          canMake ? '지금 만들 수 있어요' : '아직 만들지 못했어요',
+                          style: AppTextStyles.caption.copyWith(
+                            fontSize: 11,
+                            height: 16 / 11,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
                     ],
@@ -385,21 +393,38 @@ class _IngredientGrid extends StatelessWidget {
 
   final List<FoodIngredient> ingredients;
 
+  static const _crossAxisCount = 3;
+
   @override
   Widget build(BuildContext context) {
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      padding: EdgeInsets.zero,
-      itemCount: ingredients.length,
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        mainAxisSpacing: AppSpacing.sm,
-        crossAxisSpacing: AppSpacing.sm,
-        mainAxisExtent: 152,
-      ),
-      itemBuilder: (context, index) =>
-          _IngredientCard(ingredient: ingredients[index]),
+    // A plain `GridView` needs a fixed `mainAxisExtent`, but at a larger
+    // text-scale setting the card's name/quantity text grows taller than
+    // that guess and overflows (same fix as `_IngredientGrid` in
+    // `ingredient_bag_screen.dart`). Building rows of 3 manually and
+    // wrapping each in `IntrinsicHeight` instead lets every card size to its
+    // own natural content height (matched to its row), with no fixed-height
+    // guess.
+    return Column(
+      children: [
+        for (var i = 0; i < ingredients.length; i += _crossAxisCount) ...[
+          if (i != 0) const SizedBox(height: AppSpacing.sm),
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (var j = 0; j < _crossAxisCount; j++) ...[
+                  if (j != 0) const SizedBox(width: AppSpacing.sm),
+                  Expanded(
+                    child: i + j < ingredients.length
+                        ? _IngredientCard(ingredient: ingredients[i + j])
+                        : const SizedBox.shrink(),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ],
     );
   }
 }

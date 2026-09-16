@@ -1,19 +1,12 @@
-import 'dart:ui' as ui;
-
 import 'package:flutter/material.dart';
 
-import '../data/korea_crs.dart' show Epsg5179, LatLng;
 import '../data/korea_map_geo.dart';
 import '../data/mock_map_regions.dart'
     show gapIndexColor, kMapSeaColor, kSidoShortName, statsForRegion;
-import '../data/user_location.dart';
 import '../theme/app_colors.dart';
-import 'my_location_button.dart';
 
 /// A small 시도-level slice of the `<지도>` vector map — same 갭지수 colours —
-/// cropped around the device's position ([UserLocation]) with the "you are
-/// here" dot pinned at the centre. Falls back to the whole peninsula, fit,
-/// until a position is known. Static (no gestures); used on the mill home.
+/// fit to the whole peninsula. Static (no gestures); used on the mill home.
 class MiniKoreaMap extends StatefulWidget {
   const MiniKoreaMap({super.key});
 
@@ -27,24 +20,9 @@ class _MiniKoreaMapState extends State<MiniKoreaMap> {
   @override
   void initState() {
     super.initState();
-    UserLocation.position.addListener(_rebuild);
-    UserLocation.ensure();
-    myLocationImage.addListener(_rebuild);
-    ensureMyLocationImage();
     KoreaGeo.load().then((geo) {
       if (mounted) setState(() => _geo = geo);
     });
-  }
-
-  @override
-  void dispose() {
-    UserLocation.position.removeListener(_rebuild);
-    myLocationImage.removeListener(_rebuild);
-    super.dispose();
-  }
-
-  void _rebuild() {
-    if (mounted) setState(() {});
   }
 
   @override
@@ -54,22 +32,16 @@ class _MiniKoreaMapState extends State<MiniKoreaMap> {
       return const ColoredBox(color: kMapSeaColor);
     }
     return CustomPaint(
-      painter: _MiniMapPainter(
-        geo,
-        UserLocation.position.value,
-        myLocationImage.value,
-      ),
+      painter: _MiniMapPainter(geo),
       size: Size.infinite,
     );
   }
 }
 
 class _MiniMapPainter extends CustomPainter {
-  _MiniMapPainter(this.geo, this.myLatLng, this.pin);
+  _MiniMapPainter(this.geo);
 
   final KoreaGeo geo;
-  final LatLng? myLatLng;
-  final ui.Image? pin;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -78,12 +50,8 @@ class _MiniMapPainter extends CustomPainter {
 
     final project = MapProjector(bounds: geo.bounds, size: size);
     final centre = Offset(size.width / 2, size.height / 2);
-    final located = myLatLng != null;
-    // Zoom in around the user; show the whole country while we don't know.
-    final zoom = located ? 3.0 : 1.0;
-    final focus = located
-        ? project(Epsg5179.fromLatLng(myLatLng!))
-        : project(geo.bounds.center);
+    const zoom = 1.0;
+    final focus = project(geo.bounds.center);
 
     canvas.save();
     canvas.translate(centre.dx, centre.dy);
@@ -129,21 +97,6 @@ class _MiniMapPainter extends CustomPainter {
       tp.layout();
       tp.paint(canvas, at - Offset(tp.width / 2, tp.height / 2));
     }
-
-    if (located) {
-      _paintPin(canvas, centre);
-    }
-  }
-
-  /// The "you are here" pin — a solid [myLocationColor] dot at [tip].
-  void _paintPin(Canvas canvas, Offset tip) {
-    canvas.drawCircle(
-      tip,
-      13,
-      Paint()..color = myLocationColor.withValues(alpha: 0.22),
-    );
-    canvas.drawCircle(tip, 8, Paint()..color = AppColors.surface);
-    canvas.drawCircle(tip, 5.5, Paint()..color = myLocationColor);
   }
 
   Path _path(GeoRegion region, MapProjector project) {
@@ -156,6 +109,5 @@ class _MiniMapPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_MiniMapPainter old) =>
-      old.geo != geo || old.myLatLng != myLatLng || old.pin != pin;
+  bool shouldRepaint(_MiniMapPainter old) => old.geo != geo;
 }

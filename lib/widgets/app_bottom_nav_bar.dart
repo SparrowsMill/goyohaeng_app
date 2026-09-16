@@ -89,6 +89,46 @@ class _NavAsset extends StatelessWidget {
   }
 }
 
+/// One nav-bar tab — icon + label, with a small fixed gap between them
+/// (tighter than the stock Material `NavigationBar`'s built-in spacing).
+class _NavTab extends StatelessWidget {
+  const _NavTab({
+    required this.asset,
+    required this.fallback,
+    required this.label,
+    required this.active,
+    required this.onTap,
+  });
+
+  final String asset;
+  final IconData fallback;
+  final String label;
+  final bool active;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          _NavAsset(asset, fallback: fallback, active: active),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            style: AppTextStyles.caption.copyWith(
+              fontSize: 10.5,
+              fontWeight: FontWeight.w700,
+              color: active ? AppColors.primary : AppColors.textPrimary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// App-wide bottom navigation — CLAUDE.md §7 Bottom Navigation. Exactly the
 /// four tabs defined there (no "마이" tab). Visual styling comes from
 /// `AppTheme.light`'s `navigationBarTheme`; this widget only supplies the
@@ -106,9 +146,20 @@ class AppBottomNavBar extends StatelessWidget {
 
   final int currentIndex;
 
-  static const double barHeight = 76;
+  static const double barHeight = 64;
   static const double topMargin = 8;
   static const double bottomMargin = 12;
+
+  static const _destinations = [
+    (asset: 'spot_2', fallback: Symbols.cottage_rounded, label: '방앗간'),
+    (asset: 'map', fallback: Symbols.location_on_rounded, label: '지도'),
+    (
+      asset: 'ranking',
+      fallback: Symbols.emoji_events_rounded,
+      label: '랭킹',
+    ),
+    (asset: 'diary', fallback: Symbols.auto_stories_rounded, label: '기록'),
+  ];
 
   /// Extra scroll space beneath content covered by the floating navigation.
   static EdgeInsets scrollPadding(BuildContext context, EdgeInsets padding) {
@@ -166,75 +217,20 @@ class AppBottomNavBar extends StatelessWidget {
                 ],
               ),
             ),
-            NavigationBarTheme(
-              data: NavigationBarThemeData(
-                labelTextStyle: WidgetStateProperty.resolveWith(
-                  (states) => AppTextStyles.caption.copyWith(
-                    fontSize: 10.5,
-                    fontWeight: FontWeight.w700,
-                    color: states.contains(WidgetState.selected)
-                        ? AppColors.primary
-                        : AppColors.textPrimary,
-                  ),
-                ),
-              ),
-              child: NavigationBar(
-                height: barHeight,
-                backgroundColor: Colors.transparent,
-                surfaceTintColor: Colors.transparent,
-                indicatorColor: Colors.transparent,
-                selectedIndex: currentIndex,
-                onDestinationSelected: (index) =>
-                    _onDestinationSelected(context, index),
-                destinations: const [
-                  NavigationDestination(
-                    icon: _NavAsset(
-                      'spot_2',
-                      fallback: Symbols.cottage_rounded,
+            SizedBox(
+              height: barHeight,
+              child: Row(
+                children: [
+                  for (var index = 0; index < _destinations.length; index++)
+                    Expanded(
+                      child: _NavTab(
+                        asset: _destinations[index].asset,
+                        fallback: _destinations[index].fallback,
+                        label: _destinations[index].label,
+                        active: index == currentIndex,
+                        onTap: () => _onDestinationSelected(context, index),
+                      ),
                     ),
-                    selectedIcon: _NavAsset(
-                      'spot_2',
-                      fallback: Symbols.cottage_rounded,
-                      active: true,
-                    ),
-                    label: '방앗간',
-                  ),
-                  NavigationDestination(
-                    icon: _NavAsset(
-                      'map',
-                      fallback: Symbols.location_on_rounded,
-                    ),
-                    selectedIcon: _NavAsset(
-                      'map',
-                      fallback: Symbols.location_on_rounded,
-                      active: true,
-                    ),
-                    label: '지도',
-                  ),
-                  NavigationDestination(
-                    icon: _NavAsset(
-                      'ranking',
-                      fallback: Symbols.emoji_events_rounded,
-                    ),
-                    selectedIcon: _NavAsset(
-                      'ranking',
-                      fallback: Symbols.emoji_events_rounded,
-                      active: true,
-                    ),
-                    label: '랭킹',
-                  ),
-                  NavigationDestination(
-                    icon: _NavAsset(
-                      'diary',
-                      fallback: Symbols.auto_stories_rounded,
-                    ),
-                    selectedIcon: _NavAsset(
-                      'diary',
-                      fallback: Symbols.auto_stories_rounded,
-                      active: true,
-                    ),
-                    label: '기록',
-                  ),
                 ],
               ),
             ),

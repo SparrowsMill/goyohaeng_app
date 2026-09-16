@@ -9,7 +9,6 @@ import '../../data/korea_crs.dart' show Epsg5179;
 import '../../data/korea_map_geo.dart';
 import '../../data/mock_map_regions.dart' show gapIndexColor;
 import '../../data/mock_region_ranking.dart';
-import '../../data/user_location.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_spacing.dart';
 import '../../widgets/loading_overlay.dart';
@@ -66,15 +65,12 @@ class _RegionSpotMapState extends State<RegionSpotMap> {
     super.initState();
     Favorites.instance.addListener(_onChanged);
     _favorites.addListener(_onChanged);
-    UserLocation.position.addListener(_onChanged);
-    UserLocation.ensure();
   }
 
   @override
   void dispose() {
     Favorites.instance.removeListener(_onChanged);
     _favorites.removeListener(_onChanged);
-    UserLocation.position.removeListener(_onChanged);
     super.dispose();
   }
 
@@ -133,29 +129,15 @@ class _RegionSpotMapState extends State<RegionSpotMap> {
               : Stack(
                   children: [
                     _buildMap(rings),
-                    // Bottom-left overlay, same stack as the vector `<지도>`:
-                    // 내 위치 (once located) above the 즐겨찾기 toggle.
+                    // Bottom-left overlay, same stack as the vector `<지도>`.
                     Positioned(
                       left: AppSpacing.sm,
                       bottom: AppSpacing.sm,
-                      // IntrinsicWidth + stretch → 내 위치 and 즐겨찾기 buttons match.
-                      child: IntrinsicWidth(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            if (UserLocation.position.value != null) ...[
-                              MyLocationButton(onTap: _goToMyLocation),
-                              const SizedBox(height: AppSpacing.sm),
-                            ],
-                            MapToggleButton(
-                              icon: Symbols.star_rounded,
-                              label: '즐겨찾기',
-                              active: _showFavorites,
-                              onTap: () => _favorites.value = !_favorites.value,
-                            ),
-                          ],
-                        ),
+                      child: MapToggleButton(
+                        icon: Symbols.star_rounded,
+                        label: '즐겨찾기',
+                        active: _showFavorites,
+                        onTap: () => _favorites.value = !_favorites.value,
                       ),
                     ),
                   ],
@@ -163,14 +145,6 @@ class _RegionSpotMapState extends State<RegionSpotMap> {
         );
       },
     );
-  }
-
-  /// Recentre the tile map on the device location ("내 위치" button).
-  void _goToMyLocation() {
-    final here = UserLocation.position.value;
-    if (!_ready || here == null) return;
-    final zoom = _map.camera.zoom;
-    _map.move(here, zoom < 14 ? 14 : zoom);
   }
 
   Widget _buildMap(List<List<LatLng>> rings) {
@@ -242,18 +216,6 @@ class _RegionSpotMapState extends State<RegionSpotMap> {
               _marker(widget.selected!, selected: true),
           ],
         ),
-        if (UserLocation.position.value != null)
-          MarkerLayer(
-            markers: [
-              Marker(
-                point: UserLocation.position.value!,
-                width: 24,
-                height: 24,
-                alignment: Alignment.center,
-                child: const MyLocationDot(),
-              ),
-            ],
-          ),
       ],
     );
   }

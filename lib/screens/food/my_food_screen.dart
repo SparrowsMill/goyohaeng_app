@@ -19,8 +19,9 @@ import 'ingredient_bag_screen.dart';
 /// `<본인 음식 보기>` (user_flow §4) — 지금까지 만든 음식을 보고, 재료 가방 /
 /// 음식 도감으로 이동할 수 있는 페이지. 방앗간 홈의 "내 음식 보기" CTA 에서 진입.
 ///
-/// `GET /users/me/foods` (스펙 §3.9) 로 실 데이터를 읽는다. 같은 음식을 여러 번
-/// 만들었으면 각각 별개의 `UserFood` 카드로 보여준다. 카드 탭 시 실제
+/// `GET /users/me/foods` (스펙 §3.9) 로 실 데이터를 읽는다. 같은 음식(`foodId`
+/// 기준)을 여러 번 만들었으면 카드 하나로 합쳐 "x N" 수량 배지로 표시한다
+/// (`_groupMadeFoods`). 카드 탭 시 그 중 최신(목록 순서상 가장 먼저 나온)
 /// `UserFood.id` 로 `<음식 히스토리>` 로 이동한다.
 ///
 /// * TODO(asset): 이 화면 배경 scene 미납품 —
@@ -60,6 +61,32 @@ class _MyFoodScreenState extends State<MyFoodScreen> {
   }
 
   void _reload() => setState(() => _future = _load());
+
+  /// 같은 음식을 여러 번 만든 경우 카드 하나로 합친다. `foodId`가 아니라
+  /// `name`으로 묶는다 — 사용자가 "같은 음식"으로 인지하는 기준은 이름이고,
+  /// 예전에 만든 항목 중 일부는 `foodId`가 다르게 내려오는(또는 0으로
+  /// 빠지는) 경우가 있어 `foodId` 기준으로는 중복이 안 걸러졌다. 키는 앞뒤
+  /// 공백 제거 + 연속 공백 압축까지 정규화한다 — 백엔드/시드 데이터에 섞인
+  /// 사소한 표기 차이(공백 하나)만으로 같은 음식이 다른 카드로 갈라지는 걸
+  /// 막기 위함. 대표 항목은 목록상 가장 먼저 나온 것(백엔드가 최신순으로
+  /// 내려주므로 곧 최신 항목), 수량은 등장 횟수.
+  static List<_MadeFoodGroup> _groupMadeFoods(List<UserFood> items) {
+    final order = <String>[];
+    final reps = <String, UserFood>{};
+    final counts = <String, int>{};
+    for (final item in items) {
+      final key = _normalizeName(item.name);
+      if (!reps.containsKey(key)) {
+        order.add(key);
+        reps[key] = item;
+      }
+      counts[key] = (counts[key] ?? 0) + 1;
+    }
+    return [for (final key in order) (food: reps[key]!, count: counts[key]!)];
+  }
+
+  static String _normalizeName(String name) =>
+      name.trim().replaceAll(RegExp(r'\s+'), ' ');
 
   void _openHistory(BuildContext context, UserFood food) {
     Navigator.of(context).push(
@@ -184,7 +211,7 @@ class _MyFoodScreenState extends State<MyFoodScreen> {
           )
         else
           _MyFoodsGrid(
-            foods: page.items,
+            groups: _groupMadeFoods(page.items),
             onTapFood: (food) => _openHistory(context, food),
           ),
       ],
@@ -442,41 +469,72 @@ class _SectionLabel extends StatelessWidget {
   }
 }
 
+/// 대표 항목(`food`) + 같은 `foodId`로 만든 총 횟수(`count`) — 2개 이상이면
+/// 카드에 "x N" 수량 배지를 띄운다.
+typedef _MadeFoodGroup = ({UserFood food, int count});
+
 /// 완성한 음식 2열 그리드.
 class _MyFoodsGrid extends StatelessWidget {
-  const _MyFoodsGrid({required this.foods, required this.onTapFood});
+  const _MyFoodsGrid({required this.groups, required this.onTapFood});
 
-  final List<UserFood> foods;
+  final List<_MadeFoodGroup> groups;
   final ValueChanged<UserFood> onTapFood;
 
   @override
   Widget build(BuildContext context) {
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      padding: EdgeInsets.zero,
-      itemCount: foods.length,
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        mainAxisSpacing: AppSpacing.md,
-        crossAxisSpacing: AppSpacing.md,
-        // 카드 너비가 좁아 "완성" + "특별 재료" 칩이 한 줄에 안 들어가고
-        // Wrap이 두 줄로 넘어갈 때도(특별 재료가 있는 음식) 맞도록 272 →
-        // 300 — 안 그러면 그 경우만 RenderFlex overflow가 난다.
-        mainAxisExtent: 300,
-      ),
-      itemBuilder: (context, index) {
-        final food = foods[index];
-        return _FoodCard(food: food, onTap: () => onTapFood(food));
-      },
+    // A plain `GridView` needs a fixed `mainAxisExtent`, but the card's
+    // content height isn't fixed — the description wraps to 1–2 lines and
+    // the chip row wraps to 1–2 lines depending on whether
+    // `specialIngredients` is present, so any hardcoded height guess
+    // eventually overflows for some combination. Building rows of 2
+    // manually and wrapping each in `IntrinsicHeight` instead lets every
+    // card size to its own natural content height (matched to its row
+    // partner), with no guessing involved.
+    return Column(
+      children: [
+        for (var i = 0; i < groups.length; i += 2) ...[
+          if (i != 0) const SizedBox(height: AppSpacing.md),
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(
+                  child: _FoodCard(
+                    food: groups[i].food,
+                    count: groups[i].count,
+                    onTap: () => onTapFood(groups[i].food),
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: i + 1 < groups.length
+                      ? _FoodCard(
+                          food: groups[i + 1].food,
+                          count: groups[i + 1].count,
+                          onTap: () => onTapFood(groups[i + 1].food),
+                        )
+                      : const SizedBox.shrink(),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
     );
   }
 }
 
 class _FoodCard extends StatelessWidget {
-  const _FoodCard({required this.food, required this.onTap});
+  const _FoodCard({
+    required this.food,
+    required this.count,
+    required this.onTap,
+  });
 
   final UserFood food;
+
+  /// 같은 `foodId`를 만든 총 횟수. 1이면 배지를 띄우지 않는다.
+  final int count;
   final VoidCallback onTap;
 
   @override
@@ -499,20 +557,32 @@ class _FoodCard extends StatelessWidget {
             children: [
               AspectRatio(
                 aspectRatio: 1.15,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(AppRadius.smallButton),
-                  child: Container(
-                    color: AppColors.surfaceSelected,
-                    child: RewardImage(
-                      name: food.name,
-                      folder: RewardAssetFolder.dish,
-                      networkUrl: food.imageUrl ?? food.illustrationUrl,
-                      icon: Symbols.dinner_dining_rounded,
-                      color: AppColors.iconInactive,
-                      fit: BoxFit.cover,
-                      iconSize: 32,
+                child: Stack(
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(
+                        AppRadius.smallButton,
+                      ),
+                      child: Container(
+                        color: AppColors.surfaceSelected,
+                        child: RewardImage(
+                          name: food.name,
+                          folder: RewardAssetFolder.dish,
+                          networkUrl: food.imageUrl ?? food.illustrationUrl,
+                          icon: Symbols.dinner_dining_rounded,
+                          color: AppColors.iconInactive,
+                          fit: BoxFit.cover,
+                          iconSize: 32,
+                        ),
+                      ),
                     ),
-                  ),
+                    if (count > 1)
+                      Positioned(
+                        top: AppSpacing.xs,
+                        right: AppSpacing.xs,
+                        child: _QuantityBadge(count: count),
+                      ),
+                  ],
                 ),
               ),
               const SizedBox(height: AppSpacing.sm),
@@ -543,6 +613,32 @@ class _FoodCard extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 같은 음식을 여러 번 만들었을 때 카드 썸네일 우상단에 띄우는 수량 배지.
+class _QuantityBadge extends StatelessWidget {
+  const _QuantityBadge({required this.count});
+
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: AppColors.primary,
+        borderRadius: BorderRadius.circular(AppRadius.pill),
+        boxShadow: AppShadows.card,
+      ),
+      child: Text(
+        '×$count',
+        style: AppTextStyles.caption.copyWith(
+          color: AppColors.textOnPrimaryButton,
+          fontWeight: FontWeight.w700,
         ),
       ),
     );

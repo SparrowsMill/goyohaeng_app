@@ -541,6 +541,8 @@ class _IngredientGrid extends StatelessWidget {
   final List<UserIngredient> ingredients;
   final ValueChanged<UserIngredient> onTapIngredient;
 
+  static const _crossAxisCount = 4;
+
   @override
   Widget build(BuildContext context) {
     if (ingredients.isEmpty) {
@@ -554,24 +556,36 @@ class _IngredientGrid extends StatelessWidget {
         ),
       );
     }
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      padding: EdgeInsets.zero,
-      itemCount: ingredients.length,
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 4,
-        mainAxisSpacing: AppSpacing.sm,
-        crossAxisSpacing: AppSpacing.sm,
-        mainAxisExtent: 118,
-      ),
-      itemBuilder: (context, index) {
-        final ing = ingredients[index];
-        return _IngredientTile(
-          ingredient: ing,
-          onTap: () => onTapIngredient(ing),
-        );
-      },
+    // A plain `GridView` needs a fixed `mainAxisExtent`, but at a larger
+    // text-scale setting the tile's name/count text grows taller than that
+    // guess and overflows (same fix as `_MyFoodsGrid` in
+    // `my_food_screen.dart`). Building rows of 4 manually and wrapping each
+    // in `IntrinsicHeight` instead lets every tile size to its own natural
+    // content height (matched to its row), with no fixed-height guess.
+    return Column(
+      children: [
+        for (var i = 0; i < ingredients.length; i += _crossAxisCount) ...[
+          if (i != 0) const SizedBox(height: AppSpacing.sm),
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (var j = 0; j < _crossAxisCount; j++) ...[
+                  if (j != 0) const SizedBox(width: AppSpacing.sm),
+                  Expanded(
+                    child: i + j < ingredients.length
+                        ? _IngredientTile(
+                            ingredient: ingredients[i + j],
+                            onTap: () => onTapIngredient(ingredients[i + j]),
+                          )
+                        : const SizedBox.shrink(),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ],
     );
   }
 }
@@ -708,20 +722,21 @@ class _MakeableFoodRow extends StatelessWidget {
         ),
       );
     }
-    return SizedBox(
-      height: 208,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        padding: EdgeInsets.zero,
-        itemCount: foods.length,
-        separatorBuilder: (_, _) => const SizedBox(width: AppSpacing.md),
-        itemBuilder: (context, index) {
-          final food = foods[index];
-          return _MakeableFoodCard(
-            food: food,
-            onTap: () => onTapFood(food),
-          );
-        },
+    // No fixed height — `ListView` is sliver-based and can't size itself to
+    // its tallest child, so a larger text-scale setting that grows a card's
+    // name/description overflowed the old fixed 208px box. A plain `Row` in
+    // a `SingleChildScrollView` isn't sliver-based, so it sizes to whatever
+    // height the tallest card actually needs instead of guessing one.
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (var i = 0; i < foods.length; i++) ...[
+            if (i != 0) const SizedBox(width: AppSpacing.md),
+            _MakeableFoodCard(food: foods[i], onTap: () => onTapFood(foods[i])),
+          ],
+        ],
       ),
     );
   }
