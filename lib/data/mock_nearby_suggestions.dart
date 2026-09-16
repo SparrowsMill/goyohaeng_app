@@ -24,7 +24,7 @@ List<NearbySpotSuggestion> nearbySuggestionsForSpot(MockTouristSpot origin) {
   final pool = (regionKey == null ? const <MockTouristSpot>[] : rankingForRegion(regionKey))
       .where((s) =>
           s.name != origin.name &&
-          s.visitVerifiable &&
+          s.visitVerifiable == true &&
           s.businessStatus != BusinessStatus.holiday)
       .toList();
 

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:goyohaeng_app/data/mock_region_ranking.dart';
+import 'package:goyohaeng_app/data/visit_verification_overlay.dart';
 import 'package:goyohaeng_app/screens/place/place_info_screen.dart';
 import 'package:goyohaeng_app/screens/place/visit_prepare_screen.dart';
 import 'package:goyohaeng_app/screens/place/visit_unavailable_screen.dart';
@@ -12,7 +13,7 @@ void main() {
   // '36' = 전라남도 — gathers every child 시군구's spots (담양·순천·여수·…).
   final spot = rankingForRegion('36').first;
   final unavailable =
-      rankingForRegion('36').firstWhere((s) => !s.visitVerifiable);
+      rankingForRegion('36').firstWhere((s) => s.visitVerifiable == false);
 
   testWidgets('PlaceInfoScreen builds', (tester) async {
     await tester.pumpWidget(
@@ -55,5 +56,9 @@ void main() {
       ),
     );
     await tester.pump(const Duration(seconds: 1));
+    // VisitVerificationOverlay는 앱 전역 싱글턴이라 화면이 dispose돼도
+    // 타이머가 의도적으로 계속 돈다(오버레이 배지 기능) — 테스트 종료 시
+    // pending timer로 남지 않게 직접 정리한다.
+    VisitVerificationOverlay.instance.clear();
   });
 }

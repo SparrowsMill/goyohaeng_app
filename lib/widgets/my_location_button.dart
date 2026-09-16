@@ -111,31 +111,28 @@ class MapToggleButton extends StatelessWidget {
   }
 }
 
-/// Asset for the "you are here" marker — a watercolor map pin whose tip is at
-/// the bottom-centre (so a `flutter_map` [Marker] using it wants
-/// `alignment: Alignment.topCenter`).
+/// Asset for the "you are here" marker. No longer used for the marker itself
+/// (that reverted to the plain [myLocationColor] dot below) — kept as a
+/// reusable icon for other "current location"-themed spots (e.g. the
+/// 장소 정보 페이지 방문 CTA heading).
 const myLocationAsset = 'assets/illustrations/icon/current_location.png';
 
-/// The "you are here" marker — the [myLocationAsset] pin. Fills its marker box
-/// (the vector maps draw the same pin on their canvas).
+/// The "you are here" marker — a solid [myLocationColor] dot with a white
+/// ring, matching the vector maps' canvas-drawn pin ([mini_korea_map.dart]'s
+/// `_paintPin`, `map_screen.dart`'s `_paintMyLocation`).
 class MyLocationDot extends StatelessWidget {
   const MyLocationDot({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return Image.asset(
-      myLocationAsset,
-      fit: BoxFit.contain,
-      alignment: Alignment.topCenter,
-      errorBuilder: (context, error, stackTrace) => Center(
-        child: Container(
-          width: 20,
-          height: 20,
-          decoration: BoxDecoration(
-            color: myLocationColor,
-            shape: BoxShape.circle,
-            border: Border.all(color: AppColors.surface, width: 3.5),
-          ),
+    return Center(
+      child: Container(
+        width: 20,
+        height: 20,
+        decoration: BoxDecoration(
+          color: myLocationColor,
+          shape: BoxShape.circle,
+          border: Border.all(color: AppColors.surface, width: 3.5),
         ),
       ),
     );

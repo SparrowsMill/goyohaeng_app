@@ -1,6 +1,6 @@
 **# 고요행 사용자 앱 API 명세서 — FINAL**
 
-> 최종 수정: 2026-09-12  
+> 최종 수정: 2026-09-13  
 
 > 대상: Flutter 사용자 앱 ↔ NestJS 백엔드 연동  
 
@@ -230,7 +230,41 @@ DELETE /users/me
 
 > 실제 앱 테스트 마지막 단계에서 사용하는 것을 권장한다.
 
-**### 3.6 메인 대시보드 조회**
+**### 3.6 참새 프로필 조회**
+
+```http
+
+GET /users/me/sparrow
+
+```
+
+> JWT 인증 필요
+
+Success `200` 예시:
+
+```json
+
+{
+
+  "level": 3,
+
+  "xp": 45,
+
+  "xpForNextLevel": 100,
+
+  "daysTogether": 12
+
+}
+
+```
+
+- `xpForNextLevel`은 고정값 `100`이다 (`XP_PER_LEVEL`).
+
+- `daysTogether`는 가입일(`User.createdAt`, 한국시간 기준)로부터 "함께한 지 N일째"이며, 가입 당일을 1일째로 계산한다.
+
+- ACTIVE 상태가 아닌 사용자는 `404`가 반환된다.
+
+**### 3.7 메인 대시보드 조회**
 
 ```http
 
@@ -276,7 +310,7 @@ Success `200` 예시:
 
 - 같은 음식 레시피를 여러 번 제작하면 각각 별개의 제작 기록으로 집계된다.
 
-**### 3.7 내 즐겨찾기 목록 조회**
+**### 3.8 내 즐겨찾기 목록 조회**
 
 ```http
 
@@ -330,7 +364,7 @@ Success `200` 예시:
 
 ```
 
-**### 3.8 내 보유 재료 목록 조회**
+**### 3.9 내 보유 재료 목록 조회**
 
 ```http
 
@@ -338,7 +372,7 @@ GET /users/me/ingredients
 
 ```
 
-**### 3.9 내가 만든 음식 목록 조회**
+**### 3.10 내가 만든 음식 목록 조회**
 
 ```http
 
@@ -424,6 +458,27 @@ GET /users/me/foods?page=1&limit=20
 GET /regions
 ```
 
+Success `200` 예시:
+
+```json
+[
+  {
+    "id": 2,
+    "parentId": 1,
+    "regionType": "DISTRICT",
+    "name": "종로구",
+    "sgisCode": "11010"
+  }
+]
+```
+
+`sgisCode`: 통계청 SGIS 행정구역코드(시군구 adm_cd, 5자리 문자열). 프론트 GeoJSON 지도와 지역 매핑에 사용한다.
+
+주의:
+
+- 현재는 서울 25개 구(`DISTRICT`) 행만 매핑되어 있다. 그 외 지역(`PROVINCE` 등, 서울 외 확장 지역)은 `sgisCode: null`로 내려갈 수 있으므로 프론트는 null을 항상 처리해야 한다.
+- `sgisCode`는 문자열이다. 앞자리 `0`이 있을 수 있으므로 숫자로 변환하지 않는다.
+
 **### 4.2 지역별 스팟 수 조회**
 
 ```http
@@ -438,7 +493,11 @@ GET /regions/gap-scores
 
 - 현재 구현되어 있는 공개 조회 API다.
 - 지역 단위 GAP 데이터를 사용하는 화면에서 호출한다.
-- 실제 응답 필드는 현재 서버 응답/Swagger를 기준으로 연동한다.
+- 응답 필드 실측(2026-09-14, `RegionsService.getGapScores`): `{ run, items, total }`
+  — `items[]`는 `{ regionId, parentId, regionType, regionName, sgisCode,
+  gapScore, placeCount }`. 평균 GAP Score 필드명은 `averageGapScore`가 아니라
+  **`gapScore`**다 — 프론트가 한동안 `averageGapScore`로 잘못 읽어 시군구별
+  갭지수가 전부 0으로 표시되던 버그가 있었다(2026-09-14 수정).
 
 **---**
 
@@ -510,6 +569,8 @@ GET /places/{id}
 
   "isOpenNow": false,
 
+  "operatingStatus": "BEFORE_OPEN",
+
   "benefits": [],
 
   "availableIngredients": [],
@@ -529,6 +590,8 @@ GET /places/{id}
 - `overview`: 장소 소개
 
 - `availableIngredients`는 기존 고정 장소 보상 데이터와 관련될 수 있다.
+
+- `operatingStatus`(2026-09-16 백엔드 추가): `OPEN`/`BEFORE_OPEN`/`BREAK_TIME`/`CLOSED`/`DAY_OFF`/`UNKNOWN` 중 하나. `isOpenNow`는 하위 호환용으로 유지되며 `operatingStatus == 'OPEN'`일 때만 `true` — 화면 표시 문구는 `isOpenNow`가 아니라 `operatingStatus`를 기준으로 정한다. 랭킹(§7.2)·지도(§7.3)·추천(§7.4) 응답의 `items[]`에도 동일하게 내려온다.
 
 - ****일반 방문 인증 보상 안내에는 `availableIngredients`를 사용하지 말고 GAP 기반 보상 정책을 사용한다.****
 
@@ -682,8 +745,6 @@ DELETE /places/{id}/favorite
 
 **### 7.1 장소별 최신 GAP Score 조회**
 
-> JWT 인증 필요
-
 ```http
 GET /places/{id}/gap
 ```
@@ -730,6 +791,9 @@ GET /places/gap/rankings?page=1&limit=20
       "regionId": 13,
       "roadAddress": "서울특별시 ...",
       "imageUrl": null,
+      "verificationAvailable": true,
+      "isOpenNow": false,
+      "operatingStatus": "BEFORE_OPEN",
       "gapScore": 78.0307,
       "onlineScore": 0.826401,
       "offlineScore": 0.2125,
@@ -742,6 +806,12 @@ GET /places/gap/rankings?page=1&limit=20
   "totalPages": 86
 }
 ```
+
+`verificationAvailable`: 이 장소에 방문 인증 설정이 있고 `enabled = true`이면
+`true` (2026-09-14 추가).
+
+`isOpenNow`/`operatingStatus`: §6.2와 같은 계약(2026-09-16 추가). 화면 표시는
+`operatingStatus`를 기준으로 정한다.
 
 **### 7.3 GAP 지도 데이터 조회**
 
@@ -781,6 +851,9 @@ GET /places/gap/map?regionId=3
       "latitude": 37.5592467,
       "longitude": 126.9776796,
       "roadAddress": "서울특별시 ...",
+      "verificationAvailable": true,
+      "isOpenNow": true,
+      "operatingStatus": "OPEN",
       "gapScore": 54.9038,
       "onlineScore": 0.974351,
       "offlineScore": 0.875
@@ -788,6 +861,8 @@ GET /places/gap/map?regionId=3
   ]
 }
 ```
+
+`verificationAvailable`: §7.2와 같음. `isOpenNow`/`operatingStatus`: §7.2와 같음.
 
 **### 7.4 GAP 기반 연관 관광지 추천**
 
@@ -835,6 +910,8 @@ Query:
       "regionId": 3,
       "roadAddress": "서울특별시 ...",
       "imageUrl": null,
+      "isOpenNow": false,
+      "operatingStatus": "DAY_OFF",
       "gapScore": 54.7,
       "gapDifference": 0.2,
       "onlineScore": 0.9,
@@ -843,6 +920,8 @@ Query:
   ]
 }
 ```
+
+`isOpenNow`/`operatingStatus`: §7.2와 같음.
 
 **---**
 
@@ -921,6 +1000,33 @@ GET /visit-verifications/{verificationId}
 | `EXPIRED` | 인증 시간 만료 |
 | `FAILED` | 관리자 반려 |
 | `CANCELLED` | 사용자가 신청 취소 |
+
+`VERIFIED` 상태 응답 예시 (2026-09-13 반영, `reward` 필드 추가):
+
+```json
+{
+  "id": 27,
+  "userId": 2,
+  "placeId": 4155,
+  "arrivalOptionMinutes": 30,
+  "expectedArrivalAt": "2026-09-12T15:36:38.335Z",
+  "verificationCode": "248908",
+  "issuedAt": "2026-09-12T15:06:38.335Z",
+  "expiresAt": "2026-09-12T16:06:38.335Z",
+  "status": "VERIFIED",
+  "verifiedAt": "2026-09-12T15:07:35.964Z",
+  "failReason": null,
+  "createdAt": "2026-09-12T15:06:38.724Z",
+  "reward": {
+    "ingredientId": 9,
+    "name": "김치",
+    "quantity": 2,
+    "rarity": "COMMON"
+  }
+}
+```
+
+`reward` 타입: `{ ingredientId: number; name: string; quantity: number; rarity: string | null } | null`. `status`가 `VERIFIED`가 아니면 `reward`는 항상 `null`이다. 승인 즉시 지급된 재료를 이 필드로 바로 확인할 수 있으므로, "방문 인증 보상 획득" 화면은 `GET /places/{id}/trends/first-view`처럼 이 필드를 그대로 사용하면 되고 별도 폴링/추론이 필요 없다.
 
 **### 8.3 방문 인증 신청 취소**
 
@@ -1162,9 +1268,6 @@ Request Body 없음.
 }
 ```
 
-주의: 이 `userFood`에는 `specialIngredients`가 들어있지 않다 — RARE /
-LEGENDARY 여부는 `usedIngredients[].rarity`로 판단해야 한다.
-
 재료 부족 시 `400`과 `missingIngredients`가 반환된다:
 
 ```json
@@ -1183,8 +1286,7 @@ LEGENDARY 여부는 `usedIngredients[].rarity`로 판단해야 한다.
 }
 ```
 
-음식/레시피가 없으면 각각 `404`(`음식을 찾을 수 없습니다.`), `400`(`등록된
-레시피가 없습니다.`)이 반환된다.
+음식/레시피가 없으면 각각 `404`(`음식을 찾을 수 없습니다.`), `400`(`등록된 레시피가 없습니다.`)이 반환된다.
 
 **---**
 
@@ -1310,6 +1412,11 @@ Request Body 예시:
 
 - `placeId`가 있으면 실제 ACTIVE 장소여야 한다.
 
+- `manualPlaceName`(string | null, 2026-09-15 추가): 직접 입력한 장소명. 앞뒤
+  공백 제거 후 최대 100자. `placeId`와 동시에 값을 가질 수 없다. 둘 다 없으면
+  장소 없이 저장된다. 장소 마스터에 새 장소를 생성하거나 방문 인증으로
+  인정하는 용도가 아니다.
+
 - `userFoodId`가 있으면 현재 로그인 사용자가 만든 음식이어야 한다.
 
 - `visitVerificationId`가 있으면 현재 로그인 사용자의 `VERIFIED` 인증이어야 한다.
@@ -1319,6 +1426,24 @@ Request Body 예시:
 - `placeId`와 `visitVerificationId`를 둘 다 보내면 두 장소가 일치해야 한다.
 
 - `date`는 `YYYY-MM-DD`, KST 기준이다.
+
+수동 장소명으로 작성하는 요청 예시:
+
+```json
+
+{
+
+  "date": "2026-09-14",
+
+  "manualPlaceName": "집 근처 작은 공원",
+
+  "title": "저녁 산책",
+
+  "body": "조용히 산책하며 하루를 마무리했어요."
+
+}
+
+```
 
 Success 구조:
 
@@ -1343,6 +1468,8 @@ Success 구조:
       "name": "장소명"
 
     },
+
+    "manualPlaceName": null,
 
     "food": {
 
@@ -1388,7 +1515,21 @@ GET /records?page=1&limit=20
 
 ```
 
-응답은 `records`, `page`, `limit`, `total`, `totalPages`를 반환한다. 목록에는 `PUBLISHED` 상태 기록만 노출된다.
+응답은 `records`, `page`, `limit`, `total`, `totalPages`를 반환한다. 목록에는 `PUBLISHED` 상태 기록만 노출된다. 각 기록의 `place`는 그대로 유지되고, `manualPlaceName`(2026-09-15 추가)이 나란히 반환된다. 수동 장소명 기록 예시(다른 필드는 생략):
+
+```json
+
+{
+
+  "id": 123,
+
+  "place": null,
+
+  "manualPlaceName": "집 근처 작은 공원"
+
+}
+
+```
 
 **### 12.3 발자국 달력 조회**
 
@@ -1432,6 +1573,8 @@ GET /records/{recordId}
 
 ```
 
+목록과 동일하게 `place`/`manualPlaceName`을 나란히 반환한다.
+
 **### 12.5 발자국 수정**
 
 ```http
@@ -1441,6 +1584,27 @@ PATCH /records/{recordId}
 ```
 
 수정 가능한 필드는 Swagger의 `UpdateRecordDto`를 기준으로 전달한다.
+
+`placeId`/`manualPlaceName`(2026-09-15 추가) 처리 규칙:
+
+- 필드를 생략하면 기존 값을 유지하고, 명시적 `null`을 보내면 해당 값을 해제한다.
+- `placeId`와 `manualPlaceName`은 동시에 값을 가질 수 없다. 변경 후에도 이 조건을 다시 검증한다.
+- 두 필드의 변경은 한 번에 반영한다.
+- 기존 `visitVerificationId`가 연결된 기록의 장소를 변경·해제하면 그 인증 연결도 해제된다(방문 인증 기록 자체는 유지됨).
+
+요청 예시(장소 연결을 모두 해제):
+
+```json
+
+{
+
+  "placeId": null,
+
+  "manualPlaceName": null
+
+}
+
+```
 
 **### 12.6 발자국 삭제**
 
@@ -1452,9 +1616,92 @@ DELETE /records/{recordId}
 
 삭제는 실제 DB 행을 물리 삭제하는 방식이 아니라 사용자 목록/상세에서 제외하는 soft delete 방식으로 처리한다.
 
+**### 12.7 발자국 사진 업로드 (2026-09-15 추가)**
+
+> JWT 인증 필요
+
+```http
+
+POST /uploads/images
+Content-Type: multipart/form-data
+
+```
+
+`file` 필드에 이미지 하나를 첨부한다(한 번에 1개). JPG/PNG/WEBP만 허용, 파일당 최대 10MB. 실제 저장은 Cloudinary(`goyohaeng/records` 폴더)로 이루어진다.
+
+성공 응답:
+
+```json
+
+{
+
+  "imageUrl": "https://res.cloudinary.com/example/image/upload/v1234567890/goyohaeng/records/example.jpg"
+
+}
+
+```
+
+- 파일이 없거나 지원하지 않는 형식이면 `400`.
+- 인증이 없으면 `401`.
+- 반환된 `imageUrl`을 `POST/PATCH /records`의 `imageUrls` 배열에 담아 기록에 연결한다. 이 API는 사진을 업로드만 하며, 기록에 반영하려면 별도로 기록 저장/수정 요청을 보내야 한다.
+
 **---**
 
-**## 13. 프론트 연동 핵심 주의사항**
+**## 13. Analytics**
+
+> JWT 인증 필요
+
+**### 13.1 사용자 행동 이벤트 기록**
+
+```http
+
+POST /analytics/events
+
+```
+
+Request body:
+
+```json
+
+{
+
+  "placeId": 6859,
+
+  "eventType": "PLACE_DETAIL_VIEW"
+
+}
+
+```
+
+`eventType`은 다음 중 하나다:
+
+- `PLACE_DETAIL_VIEW` — 장소 상세 페이지 진입
+
+- `VISIT_AUTH_PAGE_ENTER` — 방문 인증 페이지 진입
+
+Success `201` 예시:
+
+```json
+
+{
+
+  "id": 1,
+
+  "placeId": 6859,
+
+  "eventType": "PLACE_DETAIL_VIEW",
+
+  "occurredAt": "2026-09-13T00:00:00.000Z"
+
+}
+
+```
+
+`placeId`는 ACTIVE 상태의 실제 장소여야 하며, 존재하지 않으면 `404`가 반환된다.
+
+**---**
+
+**## 14. 프론트 연동 핵심 주의사항**
 
 1. `/places`는 페이지네이션 응답이므로 장소 목록은 `response.items`에서 읽는다.
 2. 장소 소개 필드는 `ownerIntro`가 아니라 `overview`다.
@@ -1480,10 +1727,11 @@ DELETE /records/{recordId}
 22. GAP 데이터가 없는 장소가 존재할 수 있으며 방문 보상은 이 경우 `NO_GAP` 정책으로 처리된다.
 23. 트렌드 데이터가 없는 장소는 `summaryText`, `searchTerm` 등이 `null`, 목록 필드는 빈 배열일 수 있다.
 24. `/external-api/*`와 `/business/*`는 사용자 Flutter 앱에서 직접 호출하지 않는다.
+25. `GET /regions` 응답에 `sgisCode`(SGIS 행정구역코드, 문자열)가 추가됐다. 현재 서울 25개 구만 값이 있고 나머지는 `null`일 수 있다.
 
 **---**
 
-**## 14. 현재 구현 API 요약**
+**## 15. 현재 구현 API 요약**
 
 | Method | Endpoint | 인증 | 설명 |
 |---|---|:---:|---|
@@ -1495,6 +1743,7 @@ DELETE /records/{recordId}
 | PATCH | `/users/me/settings` | O | 알림 설정 수정 |
 | PATCH | `/users/me/password` | O | 비밀번호 변경 |
 | DELETE | `/users/me` | O | 회원탈퇴 |
+| GET | `/users/me/sparrow` | O | 참새 레벨/경험치/함께한 일수 조회 |
 | GET | `/users/me/dashboard` | O | 메인 대시보드 통계 |
 | GET | `/users/me/favorites` | O | 내 즐겨찾기 목록 |
 | GET | `/users/me/ingredients` | O | 내 보유 재료 목록 |
@@ -1510,7 +1759,7 @@ DELETE /records/{recordId}
 | POST | `/places/{id}/trends/first-view` | O | 트렌드 최초 조회 보상 |
 | POST | `/places/{id}/favorite` | O | 즐겨찾기 추가 |
 | DELETE | `/places/{id}/favorite` | O | 즐겨찾기 해제 |
-| GET | `/places/{id}/gap` | O | 장소 최신 GAP Score |
+| GET | `/places/{id}/gap` | X | 장소 최신 GAP Score |
 | GET | `/places/gap/rankings` | X | GAP 장소 랭킹 |
 | GET | `/places/gap/map` | X | GAP 지도 데이터 |
 | GET | `/places/{id}/recommendations` | X | GAP 기반 연관 관광지 추천 |
@@ -1528,12 +1777,13 @@ DELETE /records/{recordId}
 | GET | `/records/{recordId}` | O | 발자국 상세 |
 | PATCH | `/records/{recordId}` | O | 발자국 수정 |
 | DELETE | `/records/{recordId}` | O | 발자국 soft delete |
+| POST | `/analytics/events` | O | 사용자 행동 이벤트 기록 |
 
 > 삭제된 API: `POST /visit-verifications/{verificationId}/verify` — 사용자 self-verify 방식 폐기.
 
 **---**
 
-**## 15. 프론트에서 호출하지 않을 기능 / 현재 제약**
+**## 16. 프론트에서 호출하지 않을 기능 / 현재 제약**
 
 **### 외부 데이터 적재**
 
@@ -1557,7 +1807,7 @@ DELETE /records/{recordId}
 
 **---**
 
-**## 16. 2026-09-12 최종 변경점**
+**## 17. 2026-09-12 최종 변경점**
 
 기존 2026-09-11 명세에서 다음을 수정했다.
 
@@ -1584,7 +1834,15 @@ DELETE /records/{recordId}
 
 **---**
 
-**## 17. 백엔드 완료 상태**
+**## 18. 2026-09-13 변경점**
+
+- `GET /regions` 응답에 `sgisCode` 필드 추가 (SGIS 행정구역코드, 문자열)
+  - 현재 서울 25개 구(`DISTRICT`)만 매핑 완료, 그 외 지역은 `null`
+  - 커밋: `2b471cd feat: 지역 SGIS 코드 응답 추가`
+
+**---**
+
+**## 19. 백엔드 완료 상태**
 
 ```text
 Auth / Users                               완료

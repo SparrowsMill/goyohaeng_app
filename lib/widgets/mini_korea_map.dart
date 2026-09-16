@@ -95,11 +95,13 @@ class _MiniMapPainter extends CustomPainter {
       fill.color = gapIndexColor(statsForRegion(region.id).avgGapIndex);
       canvas.drawPath(_path(region, project), fill);
     }
+    // 실제 `<지도>`의 시도 경계선(`_KoreaMapPainter.sidoStroke`)과 같은 두께 —
+    // 두 화면이 같은 시도 폴리곤을 그리니 테두리도 맞춘다.
     final stroke = Paint()
       ..style = PaintingStyle.stroke
       ..strokeJoin = StrokeJoin.round
       ..color = AppColors.surface
-      ..strokeWidth = 1.2 / zoom;
+      ..strokeWidth = 1.6 / zoom;
     for (final region in geo.sido) {
       canvas.drawPath(_path(region, project), stroke);
     }
@@ -129,24 +131,12 @@ class _MiniMapPainter extends CustomPainter {
     }
 
     if (located) {
-      _paintPin(canvas, centre, 30);
+      _paintPin(canvas, centre);
     }
   }
 
-  /// The "you are here" pin: [pin] asset with its tip at [tip], or a plain
-  /// dot fallback while the image is still decoding.
-  void _paintPin(Canvas canvas, Offset tip, double height) {
-    final img = pin;
-    if (img != null) {
-      final w = height * img.width / img.height;
-      canvas.drawImageRect(
-        img,
-        Rect.fromLTWH(0, 0, img.width.toDouble(), img.height.toDouble()),
-        Rect.fromLTWH(tip.dx - w / 2, tip.dy - height, w, height),
-        Paint()..filterQuality = FilterQuality.medium,
-      );
-      return;
-    }
+  /// The "you are here" pin — a solid [myLocationColor] dot at [tip].
+  void _paintPin(Canvas canvas, Offset tip) {
     canvas.drawCircle(
       tip,
       13,

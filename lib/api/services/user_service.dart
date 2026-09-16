@@ -18,11 +18,10 @@ class UserService {
     String? birthDate,
     String? gender,
   }) async {
-    final res = await _client.patch('/users/me', body: {
-      'realName': ?realName,
-      'birthDate': ?birthDate,
-      'gender': ?gender,
-    });
+    final res = await _client.patch(
+      '/users/me',
+      body: {'realName': ?realName, 'birthDate': ?birthDate, 'gender': ?gender},
+    );
     return Me.fromJson((res as Map).cast<String, dynamic>());
   }
 
@@ -31,10 +30,10 @@ class UserService {
     required String currentPassword,
     required String newPassword,
   }) async {
-    await _client.patch('/users/me/password', body: {
-      'currentPassword': currentPassword,
-      'newPassword': newPassword,
-    });
+    await _client.patch(
+      '/users/me/password',
+      body: {'currentPassword': currentPassword, 'newPassword': newPassword},
+    );
   }
 
   /// `DELETE /users/me` — soft delete (스펙 §3.5).
@@ -48,8 +47,17 @@ class UserService {
     return Dashboard.fromJson((res as Map).cast<String, dynamic>());
   }
 
+  /// `GET /users/me/sparrow` — 참새 레벨/경험치 + 함께한 날수 (2026-09-16 신설).
+  Future<Sparrow> getSparrow() async {
+    final res = await _client.get('/users/me/sparrow');
+    return Sparrow.fromJson((res as Map).cast<String, dynamic>());
+  }
+
   /// `GET /users/me/favorites` — 내 즐겨찾기 목록 (스펙 §3.7, 페이지네이션).
-  Future<Paged<FavoritePlace>> getFavorites({int page = 1, int limit = 20}) async {
+  Future<Paged<FavoritePlace>> getFavorites({
+    int page = 1,
+    int limit = 20,
+  }) async {
     final res = await _client.get(
       '/users/me/favorites',
       query: {'page': page, 'limit': limit},
@@ -68,6 +76,9 @@ class UserService {
 
   /// `GET /users/me/foods` — 내가 만든 음식 목록 (스펙 §3.9, 페이지네이션).
   Future<Paged<UserFood>> getFoods({int page = 1, int limit = 20}) async {
+    if (page < 1 || limit < 1) {
+      throw ArgumentError('page and limit must be positive');
+    }
     final res = await _client.get(
       '/users/me/foods',
       query: {'page': page, 'limit': limit},

@@ -1,6 +1,7 @@
 import '../api_client.dart';
 import '../api_exception.dart';
 import '../models.dart';
+import '../../data/food_catalog.dart';
 
 /// `/foods*` (frontend-api-spec.md §8). 모두 JWT 인증 필요.
 /// `canMake` / `ownedQuantity` / `enough`는 로그인 사용자의 현재 보유량 기준.
@@ -13,10 +14,7 @@ class FoodService {
   Future<List<Food>> list() async {
     final res = await _client.get('/foods');
     final rows = res is Map ? res['items'] as List? : (res as List?);
-    return (rows ?? const [])
-        .whereType<Map>()
-        .map((e) => Food.fromJson(e.cast<String, dynamic>()))
-        .toList();
+    return FoodCatalog.rows(rows).map(Food.fromJson).toList();
   }
 
   /// `GET /foods/{id}` — 음식 상세 (기본 정보 + 레시피 + 보유량 + canMake).
@@ -38,14 +36,16 @@ class FoodService {
           e.message,
           missing: (body['missingIngredients'] as List)
               .whereType<Map>()
-              .map((m) => (
-                    ingredientId: (m['ingredientId'] as num?)?.toInt() ?? 0,
-                    name: m['name'] as String? ?? '',
-                    requiredQuantity:
-                        (m['requiredQuantity'] as num?)?.toInt() ?? 0,
-                    ownedQuantity: (m['ownedQuantity'] as num?)?.toInt() ?? 0,
-                    shortage: (m['shortage'] as num?)?.toInt() ?? 0,
-                  ))
+              .map(
+                (m) => (
+                  ingredientId: (m['ingredientId'] as num?)?.toInt() ?? 0,
+                  name: m['name'] as String? ?? '',
+                  requiredQuantity:
+                      (m['requiredQuantity'] as num?)?.toInt() ?? 0,
+                  ownedQuantity: (m['ownedQuantity'] as num?)?.toInt() ?? 0,
+                  shortage: (m['shortage'] as num?)?.toInt() ?? 0,
+                ),
+              )
               .toList(),
         );
       }
@@ -57,14 +57,16 @@ class FoodService {
 /// `POST /foods/{id}/make` 400 — 보유 재료 부족.
 class MakeFoodShortage extends ApiException {
   MakeFoodShortage(super.message, {required this.missing})
-      : super(statusCode: 400);
+    : super(statusCode: 400);
 
   final List<
-      ({
-        int ingredientId,
-        String name,
-        int requiredQuantity,
-        int ownedQuantity,
-        int shortage,
-      })> missing;
+    ({
+      int ingredientId,
+      String name,
+      int requiredQuantity,
+      int ownedQuantity,
+      int shortage,
+    })
+  >
+  missing;
 }

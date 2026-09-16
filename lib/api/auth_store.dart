@@ -5,11 +5,13 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../data/favorites.dart';
+import '../data/makeable_food_watcher.dart';
 import 'api_client.dart';
 import 'dashboard_store.dart';
 import 'models.dart';
 import 'services/auth_service.dart';
 import 'services/user_service.dart';
+import 'sparrow_store.dart';
 
 /// 로그인 세션의 단일 출처. JWT Access Token과 로그인 사용자 정보를
 /// `SharedPreferences`에 영속화하고, 변화가 있을 때 리스너에게 알린다.
@@ -71,6 +73,8 @@ class AuthStore extends ChangeNotifier {
       );
       notifyListeners();
       unawaited(Favorites.instance.loadFromServer());
+      // 이 세션에서 처음 확인하는 시점을 기준선으로 세운다(배너용).
+      unawaited(MakeableFoodWatcher.instance.check());
     } catch (_) {
       // 토큰 만료/무효 — 세션 정리.
       await signOut();
@@ -93,6 +97,8 @@ class AuthStore extends ChangeNotifier {
     }
     notifyListeners();
     unawaited(Favorites.instance.loadFromServer());
+    // 이 세션에서 처음 확인하는 시점을 기준선으로 세운다(배너용).
+    unawaited(MakeableFoodWatcher.instance.check());
   }
 
   Future<void> _apply(
@@ -129,7 +135,9 @@ class AuthStore extends ChangeNotifier {
     _me = null;
     ApiClient.instance.authToken = null;
     DashboardStore.instance.clear();
+    SparrowStore.instance.clear();
     Favorites.instance.clear();
+    MakeableFoodWatcher.instance.reset();
     final prefs = await SharedPreferences.getInstance();
     await _clear(prefs);
     notifyListeners();

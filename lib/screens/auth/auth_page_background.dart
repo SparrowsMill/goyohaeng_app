@@ -24,7 +24,7 @@ class AuthPageBackground extends StatelessWidget {
   /// When false, the flat `AppColors.appBackground` fill is used instead.
   final bool showSceneImage;
 
-  /// Whether to show the small `app_logo.png` lockup centered just below the
+  /// Whether to show the small `app_logo_2.png` lockup centered just below the
   /// scene band.
   final bool showLogo;
 
@@ -38,7 +38,7 @@ class AuthPageBackground extends StatelessWidget {
   static const _logoTopGap = 16.0;
 
   Widget _logo() => Image.asset(
-        'assets/branding/app_logo.png',
+        'assets/branding/app_logo_2.png',
         width: logoWidth,
         errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
       );

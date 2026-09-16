@@ -1,14 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
-import '../data/mock_map_regions.dart' show gapIndexGradient;
+import '../data/mock_map_regions.dart' show gapIndexAccent;
 import '../theme/app_colors.dart';
 import '../theme/app_radius.dart';
 import '../theme/app_spacing.dart';
 import '../theme/app_text_styles.dart';
 
 /// Opens `<갭지수 설명 페이지>` (user_flow §6) as a centered modal. Shared by
-/// the `<지도>` and `<지역별 랭킹>` screens via their "갭지수란?" buttons.
+/// the `<지도>` and `<지역별 랭킹>` screens via their "갭지수란?" buttons, and
+/// by the place detail page's 갭지수 카드.
 void showGapIndexInfo(BuildContext context) {
   showDialog<void>(
     context: context,
@@ -49,7 +50,7 @@ class GapIndexInfoButton extends StatelessWidget {
               ),
               const SizedBox(width: AppSpacing.xs),
               Text(
-                '갭지수란?',
+                '고요 지수란?',
                 style: AppTextStyles.buttonMedium
                     .copyWith(color: AppColors.primaryPressed),
               ),
@@ -61,20 +62,35 @@ class GapIndexInfoButton extends StatelessWidget {
   }
 }
 
+/// Small circular icon-only button that opens [showGapIndexInfo] — for
+/// inline placement right beside a "갭지수" label (e.g. the place detail
+/// page's 갭지수 카드), where a full pill button would be too wide.
+class GapIndexInfoIconButton extends StatelessWidget {
+  const GapIndexInfoIconButton({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      shape: const CircleBorder(),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: () => showGapIndexInfo(context),
+        child: const Padding(
+          padding: EdgeInsets.all(2),
+          child: Icon(
+            Symbols.help_rounded,
+            size: 16,
+            color: AppColors.textSecondary,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// `<갭지수 설명 페이지>` — a centered modal. Scrolls between a pinned close
 /// button (top) and a pinned "확인" button (bottom).
-///
-/// * TODO: 갭지수 정의·산출 공식 텍스트가 하드코딩 — 백엔드 실제 산출식과
-///   일치하는지 확정 후 필요 시 문구/공식 갱신 (또는 CMS로 분리).
-///
-/// Watercolor art below is placeholder — nothing renders until these files
-/// are supplied (asset request pending):
-///   - assets/illustrations/map/map_gap_hero.png  (참새 + 지도 일러스트)
-///   - assets/illustrations/map/map_gap_high.png  ("갭지수 높음" 카드)
-///   - assets/illustrations/map/map_gap_low.png   ("갭지수 낮음" 카드)
-///
-/// * TODO(asset): 위 3개 파일 + `assets/illustrations/map/` 폴더 자체가
-///   `pubspec.yaml`의 assets 목록에 없음 — 파일 납품 시 폴더 등록도 함께 필요.
 class _GapIndexInfoDialog extends StatelessWidget {
   const _GapIndexInfoDialog();
 
@@ -149,7 +165,7 @@ class _GapIndexInfoBody extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          '갭지수란?',
+          '고요 지수란?',
           textAlign: TextAlign.center,
           style: AppTextStyles.h1,
         ),
@@ -157,140 +173,169 @@ class _GapIndexInfoBody extends StatelessWidget {
         Center(
           child: Image.asset(
             'assets/illustrations/sparrow/sparrow_gap_score_info.png',
-            height: 132,
+            height: 120,
             fit: BoxFit.contain,
             errorBuilder: (context, error, stackTrace) =>
-                const SizedBox(height: 132),
+                const SizedBox(height: 120),
           ),
         ),
         const SizedBox(height: AppSpacing.lg),
         Text(
-          '잘 알려져 있지만 실제 방문은 많지 않은\n장소를 발견하기 위한 지표예요.',
+          '검색은 많이 되지만 실제로는 \n잘 찾지 않는 곳을 발견하는 지표예요.',
           textAlign: TextAlign.center,
           style: AppTextStyles.bodyLarge,
         ),
-        const SizedBox(height: AppSpacing.lg),
+        const SizedBox(height: AppSpacing.xl),
         Container(
-          padding: const EdgeInsets.all(AppSpacing.md),
+          padding: const EdgeInsets.all(AppSpacing.lg),
           decoration: BoxDecoration(
             color: AppColors.surfaceSelected,
             borderRadius: BorderRadius.circular(AppRadius.card),
           ),
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Image.asset(
-                'assets/branding/leaf_ornament.png',
-                width: 30,
-                height: 30,
-                errorBuilder: (context, error, stackTrace) =>
-                    const SizedBox(width: 30),
+              const _GapMetricBar(
+                icon: Symbols.search_rounded,
+                label: '검색 관심도',
+                value: 100,
+                color: AppColors.info,
+              ),
+              const SizedBox(height: AppSpacing.md),
+              const _GapMetricBar(
+                icon: Symbols.footprint_rounded,
+                label: '실제 방문',
+                value: 30,
+                color: AppColors.success,
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                '관심은 큰데 방문은 적을수록 고요 지수가 커요.',
+                textAlign: TextAlign.center,
+                style: AppTextStyles.caption
+                    .copyWith(color: AppColors.textSecondary),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: AppSpacing.xl),
+        IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                child: _GapCompareCard(
+                  title: '고요 지수 높음',
+                  bodyIcon: Symbols.trending_up_rounded,
+                  tag: '주목받지만 한적한 곳',
+                  background: AppColors.infoBackground,
+                  foreground: AppColors.info,
+                ),
               ),
               const SizedBox(width: AppSpacing.sm),
               Expanded(
-                child: Text(
-                  '갭지수가 높을수록 알려져 있지만 방문은 많지 않은 장소예요.',
-                  style: AppTextStyles.bodySmall
-                      .copyWith(fontWeight: FontWeight.w600),
+                child: _GapCompareCard(
+                  title: '고요 지수 낮음',
+                  bodyIcon: Symbols.trending_down_rounded,
+                  tag: '북적이는 유명한 곳',
+                  background: AppColors.errorBackground,
+                  foreground: AppColors.error,
                 ),
               ),
             ],
           ),
         ),
         const SizedBox(height: AppSpacing.xl),
-        Text('갭지수 산출 방식', style: AppTextStyles.title),
-        const SizedBox(height: AppSpacing.sm),
-        Container(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.md,
-            vertical: AppSpacing.md,
-          ),
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            border: Border.all(color: AppColors.border),
-            borderRadius: BorderRadius.circular(AppRadius.inputField),
-          ),
-          child: Text(
-            'Gap Score = normalize(검색 관심도) − normalize(실제 방문 집중도)',
-            textAlign: TextAlign.center,
-            style: AppTextStyles.bodySmall.copyWith(fontWeight: FontWeight.w600),
-          ),
+        Text('지도 색상 범례', style: AppTextStyles.title),
+        const SizedBox(height: AppSpacing.xs),
+        Text(
+          '지도의 색으로 지역별 고요 지수를 확인할 수 있어요.',
+          style: AppTextStyles.bodySmall
+              .copyWith(color: AppColors.textSecondary),
         ),
         const SizedBox(height: AppSpacing.md),
-        const _TermLine(
-          term: '검색 관심도',
-          description: '장소가 얼마나 많이 검색되는지 나타낸 값',
-        ),
-        const SizedBox(height: AppSpacing.xs),
-        const _TermLine(
-          term: '실제 방문 집중도',
-          description: '실제 방문이 얼마나 집중되는지 나타낸 값',
-        ),
-        const SizedBox(height: AppSpacing.lg),
-        const IntrinsicHeight(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Expanded(
-                child: _GapCompareCard(
-                  title: '갭지수 높음',
-                  description: '검색 관심도에 비해 실제 방문 집중도가 낮은 장소',
-                  art: 'assets/illustrations/map/map_gap_high.png',
-                  emphasized: true,
-                ),
+        Row(
+          children: [
+            Expanded(
+              child: _GapLegendDot(
+                color: gapIndexAccent(80),
+                label: '매우 높음',
+                subLabel: '숨은 여행지',
               ),
-              SizedBox(width: AppSpacing.sm),
-              Expanded(
-                child: _GapCompareCard(
-                  title: '갭지수 낮음',
-                  description: '두 값의 차이가 작은 장소',
-                  art: 'assets/illustrations/map/map_gap_low.png',
-                  emphasized: false,
-                ),
+            ),
+            Expanded(
+              child: _GapLegendDot(color: gapIndexAccent(65), label: '높음'),
+            ),
+            Expanded(
+              child: _GapLegendDot(color: gapIndexAccent(50), label: '보통'),
+            ),
+            Expanded(
+              child: _GapLegendDot(color: gapIndexAccent(35), label: '낮음'),
+            ),
+            Expanded(
+              child: _GapLegendDot(
+                color: gapIndexAccent(20),
+                label: '매우 낮음',
+                subLabel: '이미 알려짐',
               ),
-            ],
-          ),
+            ),
+          ],
         ),
-        const SizedBox(height: AppSpacing.lg),
-        Container(
-          padding: const EdgeInsets.all(AppSpacing.lg),
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            border: Border.all(color: AppColors.border),
-            borderRadius: BorderRadius.circular(AppRadius.card),
-          ),
-          child: Column(
-            children: [
-              Text(
-                '지도에서는 이렇게 표시돼요',
-                style: AppTextStyles.bodyMedium
+      ],
+    );
+  }
+}
+
+/// One labelled progress bar inside the highlighted metric box — "검색
+/// 관심도" / "실제 방문", each with an icon, a 0~100 value, and a filled
+/// track proportional to it.
+class _GapMetricBar extends StatelessWidget {
+  const _GapMetricBar({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  final IconData icon;
+  final String label;
+  final int value;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Icon(icon, size: 16, color: color),
+            const SizedBox(width: AppSpacing.xs),
+            Expanded(
+              child: Text(
+                label,
+                style: AppTextStyles.bodySmall
                     .copyWith(fontWeight: FontWeight.w600),
               ),
-              const SizedBox(height: AppSpacing.md),
-              Row(
-                children: [
-                  Text('낮음', style: AppTextStyles.caption),
-                  const SizedBox(width: AppSpacing.sm),
-                  Expanded(
-                    child: Container(
-                      height: 14,
-                      decoration: BoxDecoration(
-                        gradient: gapIndexGradient,
-                        borderRadius: BorderRadius.circular(AppRadius.pill),
-                        border: Border.all(color: AppColors.border),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: AppSpacing.sm),
-                  Text('높음', style: AppTextStyles.caption),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              Text(
-                '남청색에 가까울수록 평균 갭지수가 높고,\n붉은색에 가까울수록 낮은 지역이에요.',
-                textAlign: TextAlign.center,
-                style: AppTextStyles.caption,
-              ),
-            ],
+            ),
+            Text(
+              '$value',
+              style: AppTextStyles.bodyMedium
+                  .copyWith(fontWeight: FontWeight.w700, color: color),
+            ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.xs),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(AppRadius.pill),
+          child: Container(
+            height: 10,
+            color: AppColors.surfaceDisabled,
+            child: FractionallySizedBox(
+              alignment: Alignment.centerLeft,
+              widthFactor: (value / 100).clamp(0.0, 1.0),
+              child: Container(color: color),
+            ),
           ),
         ),
       ],
@@ -298,86 +343,104 @@ class _GapIndexInfoBody extends StatelessWidget {
   }
 }
 
-/// A term rendered bold, followed by its plain-text definition, on one line
-/// (wrapping as needed) — the "검색 관심도: …" / "실제 방문 집중도: …" rows.
-class _TermLine extends StatelessWidget {
-  const _TermLine({required this.term, required this.description});
+/// One of the paired "갭지수 높음" / "갭지수 낮음" example cards, tinted with
+/// the app's existing error/info status colors.
+class _GapCompareCard extends StatelessWidget {
+  const _GapCompareCard({
+    required this.title,
+    required this.bodyIcon,
+    required this.tag,
+    required this.background,
+    required this.foreground,
+  });
 
-  final String term;
-  final String description;
+  final String title;
+  final IconData bodyIcon;
+  final String tag;
+  final Color background;
+  final Color foreground;
 
   @override
   Widget build(BuildContext context) {
-    return Text.rich(
-      TextSpan(
-        style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(AppRadius.listRow),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          TextSpan(
-            text: '$term  ',
-            style: const TextStyle(
-              fontWeight: FontWeight.w700,
-              color: AppColors.textPrimary,
+          SizedBox(
+            width: double.infinity,
+            child: Text(
+              title,
+              textAlign: TextAlign.center,
+              style: AppTextStyles.bodyMedium.copyWith(
+                fontWeight: FontWeight.w700,
+                color: foreground,
+              ),
             ),
           ),
-          TextSpan(text: description),
+          const SizedBox(height: AppSpacing.sm),
+          Center(child: Icon(bodyIcon, size: 32, color: foreground)),
+          const SizedBox(height: AppSpacing.sm),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(AppRadius.pill),
+            ),
+            child: Text(
+              tag,
+              textAlign: TextAlign.center,
+              style: AppTextStyles.caption
+                  .copyWith(fontWeight: FontWeight.w700, color: foreground),
+            ),
+          ),
         ],
       ),
     );
   }
 }
 
-/// One of the paired "갭지수 높음" / "갭지수 낮음" example cards. The
-/// [emphasized] one uses the filled olive treatment.
-class _GapCompareCard extends StatelessWidget {
-  const _GapCompareCard({
-    required this.title,
-    required this.description,
-    required this.art,
-    required this.emphasized,
-  });
+/// One dot + label in the "지도 색상 범례" row — [subLabel] is only set on the
+/// two ends of the scale (매우 높음/매우 낮음), matching the app's own
+/// [gapIndexAccent] scale rather than an arbitrary new color set.
+class _GapLegendDot extends StatelessWidget {
+  const _GapLegendDot({required this.color, required this.label, this.subLabel});
 
-  final String title;
-  final String description;
-  final String art;
-  final bool emphasized;
+  final Color color;
+  final String label;
+  final String? subLabel;
 
   @override
   Widget build(BuildContext context) {
-    final foreground =
-        emphasized ? AppColors.textOnPrimaryButton : AppColors.textPrimary;
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.md,
-        vertical: AppSpacing.sm,
-      ),
-      decoration: BoxDecoration(
-        color: emphasized ? AppColors.primary : AppColors.surfaceSelected,
-        borderRadius: BorderRadius.circular(AppRadius.listRow),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+    return Column(
+      children: [
+        Container(
+          width: 14,
+          height: 14,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(height: AppSpacing.xs),
+        Text(
+          label,
+          textAlign: TextAlign.center,
+          style: AppTextStyles.caption.copyWith(fontWeight: FontWeight.w600),
+        ),
+        if (subLabel != null)
           Text(
-            title,
-            style: AppTextStyles.bodyMedium
-                .copyWith(fontWeight: FontWeight.w600, color: foreground),
-          ),
-          const SizedBox(height: AppSpacing.xs),
-          Text(
-            description,
+            '($subLabel)',
+            textAlign: TextAlign.center,
             style: AppTextStyles.caption.copyWith(
-              color: emphasized
-                  ? AppColors.textOnPrimaryButton.withValues(alpha: 0.85)
-                  : AppColors.textSecondary,
+              fontSize: 10,
+              height: 1.2,
+              color: AppColors.textSecondary,
             ),
           ),
-          const SizedBox(height: AppSpacing.xs),
-          Align(
-            alignment: Alignment.centerRight,
-            child: _PlaceholderArt(asset: art, height: 30),
-          ),
-        ],
-      ),
+      ],
     );
   }
 }
@@ -405,25 +468,6 @@ class _DialogCloseButton extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-/// Watercolor illustration slot — renders nothing (just reserves height)
-/// until the asset is supplied.
-class _PlaceholderArt extends StatelessWidget {
-  const _PlaceholderArt({required this.asset, required this.height});
-
-  final String asset;
-  final double height;
-
-  @override
-  Widget build(BuildContext context) {
-    return Image.asset(
-      asset,
-      height: height,
-      fit: BoxFit.contain,
-      errorBuilder: (context, error, stackTrace) => SizedBox(height: height),
     );
   }
 }

@@ -38,12 +38,11 @@ dependencies:
   # NestJS 백엔드 REST 연동 (frontend-api-spec.md) — Auth / Users / Regions /
   # Categories / Places / Visit Verifications. `lib/api/` 참고.
   http: ^1.2.2
+  http_parser: ^4.1.2
+  image_picker: ^1.2.3
 
   # JWT Access Token · 로그인 세션 · "로그인 상태 유지" 영속화 (lib/api/auth_store.dart).
   shared_preferences: ^2.3.2
-
-  # Used to load the "Gowun Batang" / "Noto Serif" design-system fonts.
-  google_fonts: ^6.2.1
 
   # Functional icons: use Symbols.<name>_rounded (Material Symbols Rounded)
   # instead of the built-in Icons class. See CLAUDE.md §6.
@@ -87,6 +86,7 @@ flutter:
     - assets/branding/
     - assets/maps/
     - assets/illustrations/sparrow/
+    - assets/illustrations/categories/
     - assets/illustrations/rewards/
     - assets/illustrations/rewards/ingredient/
     - assets/illustrations/rewards/dish/
@@ -125,11 +125,28 @@ flutter:
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
 
+  # CLAUDE.md §2 design-system fonts, bundled locally (not via `google_fonts`
+  # runtime download) so text never silently falls back to the system font
+  # when the device has no network access.
+  fonts:
+    - family: Gowun Batang
+      fonts:
+        - asset: assets/fonts/GowunBatang-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/GowunBatang-Bold.ttf
+          weight: 700
+    - family: Noto Serif
+      fonts:
+        - asset: assets/fonts/NotoSerif-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/NotoSerif-SemiBold.ttf
+          weight: 600
+
 # 홈 화면 앱 아이콘 생성 (CLAUDE.md §9). 소스 1장을 넣고
 #   dart run flutter_launcher_icons
 # 를 실행하면 android mipmap-* / iOS AppIcon.appiconset 을 전부 덮어쓴다.
 flutter_launcher_icons:
-  image_path: "assets/branding/app_icon.png"
+  image_path: "assets/branding/app_icon_2.png"
   android: true
   ios: true
   # iOS 아이콘은 투명도 불가 — 앱 배경색으로 평탄화.
@@ -139,4 +156,4 @@ flutter_launcher_icons:
   # 소스(가운데 여백을 둔 로고 기준). 전용 전경 이미지를 따로 주면
   # assets/branding/app_icon_foreground.png 로 교체.
   adaptive_icon_background: "#FAE7C0"
-  adaptive_icon_foreground: "assets/branding/app_icon.png"
+  adaptive_icon_foreground: "assets/branding/app_icon_2.png"

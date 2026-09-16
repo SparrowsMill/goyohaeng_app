@@ -18,8 +18,6 @@ import 'place_info_screen.dart';
 /// /places/{id}`의 `verification.enabled`로 실시간 판단해 이 화면으로
 /// 보낸다. Explains why, then recommends similar-trend nearby spots that
 /// can be visited now. Tapping a recommendation opens its `<장소 정보 페이지>`.
-///
-/// * TODO: "추천 장소 보기" — 지도/목록 화면 연결 (지금은 첫 추천 장소로 이동)
 class VisitUnavailableScreen extends StatefulWidget {
   const VisitUnavailableScreen({super.key, required this.spot, this.placeId});
 
@@ -42,14 +40,21 @@ class _VisitUnavailableScreenState extends State<VisitUnavailableScreen> {
     super.initState();
     final id = widget.placeId;
     if (id != null) {
-      GapService().recommendations(id).then((recs) {
-        if (!mounted || recs.isEmpty) return;
+      GapService().recommendations(id, limit: 4).then((result) async {
+        // `available: false`(GAP/지역/카테고리 정보 부족)면 mock 폴백을
+        // 그대로 유지 — 단순히 비슷한 장소가 0건인 것과 구분한다.
+        if (!mounted || !result.available || result.items.isEmpty) return;
+        // `gapPlaceToSpot(p)`를 categoryName 없이 바로 쓰면 카테고리가 항상
+        // mock 기본값(액티비티)으로 보인다 — 랭킹 목록과 같은 `GapSpots`
+        // categoryId→이름 매핑을 거쳐야 목록에서 보던 카테고리가 그대로 붙는다.
+        final spots = await GapSpots.instance.toSpots(result.items);
+        if (!mounted) return;
         setState(() {
           _suggestions = [
-            for (final p in recs.take(4))
+            for (final s in spots)
               NearbySpotSuggestion(
-                spot: gapPlaceToSpot(p),
-                distanceLabel: '같은 지역 · 비슷한 갭지수',
+                spot: s,
+                distanceLabel: '같은 지역 · 비슷한 고요 지수',
               ),
           ];
         });
@@ -128,17 +133,6 @@ class _VisitUnavailableScreenState extends State<VisitUnavailableScreen> {
             onTap: (next) => _openSpot(context, next),
           ),
           const SizedBox(height: AppSpacing.lg),
-          if (suggestions.isNotEmpty) ...[
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: () => _openSpot(context, suggestions.first.spot),
-                icon: const Icon(Symbols.location_on_rounded, size: 22),
-                label: const Text('추천 장소 보기'),
-              ),
-            ),
-            const SizedBox(height: AppSpacing.md),
-          ],
           SizedBox(
             width: double.infinity,
             child: OutlinedButton(
@@ -262,7 +256,12 @@ class _SuggestionRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final spot = suggestion.spot;
-    final keywords = spot.trendKeywords.take(2).map((k) => '#$k').join(' · ');
+    // 실 추천 스팟(placeId 있음)은 GAP 추천 API가 트렌드 키워드를 안 줘서
+    // `spot.trendKeywords`가 목업 고정 문구('숨은명소' 등)로 남아있다 — 실
+    // 장소인 것처럼 보이는 가짜 키워드를 노출하지 않도록 목업 스팟에만 쓴다.
+    final keywords = spot.placeId != null
+        ? ''
+        : spot.trendKeywords.take(2).map((k) => '#$k').join(' · ');
 
     return Material(
       color: AppColors.surface,
@@ -328,8 +327,6 @@ class _SuggestionRow extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                       ),
                     ],
-                    const SizedBox(height: AppSpacing.xs),
-                    const _VisitableChip(),
                   ],
                 ),
               ),
@@ -342,40 +339,6 @@ class _SuggestionRow extends StatelessWidget {
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _VisitableChip extends StatelessWidget {
-  const _VisitableChip();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 24,
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
-      decoration: BoxDecoration(
-        color: AppColors.successBackground,
-        borderRadius: BorderRadius.circular(AppRadius.pill),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(
-            Symbols.check_circle_rounded,
-            size: 13,
-            color: AppColors.success,
-          ),
-          const SizedBox(width: AppSpacing.xs),
-          Text(
-            '방문 가능',
-            style: AppTextStyles.caption.copyWith(
-              color: AppColors.success,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
       ),
     );
   }

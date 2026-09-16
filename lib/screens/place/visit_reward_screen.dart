@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
+import '../../api/api.dart';
 import '../../data/mock_region_ranking.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_radius.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
+import '../food/ingredient_bag_screen.dart';
 import '../record/footprint_write_screen.dart';
 
 /// 재료 이름 → 전용 일러스트 경로. 아직 그림이 없는 재료(단풍잎/느티나무잎/갈대/
@@ -24,31 +26,31 @@ String? _ingredientAssetPath(String? ingredient) {
 }
 
 /// `<방문 인증 보상 페이지>` (user_flow §6) — reached when 방문 인증이 성공했을 때
-/// `<방문 인증 확인 페이지>`에서 넘어온다. 방앗간 재료 + 귀여운 일러스트, 해당
-/// 재료로 만들 수 있는 음식 추천, 기록용 플랫폼 공유 버튼, 확인 옵션을 보여준다.
+/// `<방문 인증 확인 페이지>`에서 넘어온다. 방앗간 재료 + 귀여운 일러스트, 재료
+/// 가방 바로가기, 기록용 플랫폼 공유 버튼, 확인 옵션을 보여준다.
 ///
-/// [placeId]가 있으면(실 방문 인증 세션 경로) 실제로 어떤 재료가 몇 개
-/// 지급됐는지 이 화면 시점엔 알 수 없다 — GAP 퍼센타일 기반 랜덤 드롭이
-/// 관리자 승인 시점에 서버에서 결정되기 때문(스펙 §7.4–§7.5), 이 화면이 읽을 수
-/// 있는 동기 응답이 없다. 그래서 실 세션일 때는 [spot.ingredient]/
-/// [spot.ingredientCount](목업 값)를 실제 지급 내역인 것처럼 보여주지 않고,
-/// 재료 이름·개수를 특정하지 않는 안전한 문구로 대체한다.
-///
-/// * TODO(backend): 추천 음식 연동 (§4 `<음식 정보>` 화면 필요) — 지역 기반
-///   추천은 `FoodInfoScreen`이 목업 `MockFoodInfo`만 받는 구조라 실 `Food`를
-///   그대로 연결할 어댑터가 없어 보류.
+/// [placeId]가 있으면(실 방문 인증 세션 경로) `GET /visit-verifications/{id}`가
+/// `VERIFIED` 상태와 함께 즉시 내려주는 [reward]로 실제 지급 재료(이름/개수/
+/// 등급)를 그대로 보여준다(스펙 §8.2, 2026-09-13 반영) — 별도 폴링/추론이
+/// 필요 없다. [reward]가 없으면(목업 경로) [spot.ingredient]/
+/// [spot.ingredientCount]를 대신 쓴다.
 class VisitRewardScreen extends StatelessWidget {
   const VisitRewardScreen({
     super.key,
     required this.spot,
     this.placeId,
     this.visitVerificationId,
+    this.benefit,
+    this.reward,
   });
 
   final MockTouristSpot spot;
 
-  /// 실 방문 인증 세션의 장소 ID. `null`이면 목업 경로 — 기존처럼
-  /// `spot.ingredient`/`spot.ingredientCount`를 그대로 보여준다.
+  /// `<방문 인증 페이지>`에서 이미 조회해 넘겨준 실 방문 혜택. null이면 목업
+  /// `spot.storeBenefit`을 그대로 쓴다.
+  final String? benefit;
+
+  /// 실 방문 인증 세션의 장소 ID. `null`이면 목업 경로.
   final int? placeId;
 
   /// 실 방문 인증 세션의 ID(`VERIFIED` 상태) — "기록 플랫폼" 공유로 넘어갈 때
@@ -56,12 +58,22 @@ class VisitRewardScreen extends StatelessWidget {
   /// `visitVerificationId`를 함께 보낼 수 있게 한다. `null`이면 목업 경로.
   final int? visitVerificationId;
 
-  bool get _isRealVisit => placeId != null;
+  /// 실 방문 인증 세션에서 승인 즉시 지급된 실제 재료(스펙 §8.2). `null`이면
+  /// 목업 경로 — [spot.ingredient]/[spot.ingredientCount]를 대신 쓴다.
+  final VisitVerificationReward? reward;
 
-  void _todo(BuildContext context, String message) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+  String? get _ingredientName => reward?.name ?? spot.ingredient;
+  int get _ingredientCount => reward?.quantity ?? spot.ingredientCount;
+
+  /// "재료 가방 바로가기" → `<재료 가방>`. 지급된 재료 이름을 알고 있으므로
+  /// 그 재료가 속한 등급 탭을 미리 선택해준다.
+  void _openIngredientBag(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) =>
+            IngredientBagScreen(initialIngredientName: _ingredientName),
+      ),
+    );
   }
 
   /// "기록 플랫폼" 공유 → `<기록 플랫폼 글쓰기>` (user_flow §6→§8). 방문 날짜·
@@ -72,7 +84,7 @@ class VisitRewardScreen extends StatelessWidget {
         builder: (_) => FootprintWriteScreen(
           initialPlaceId: placeId,
           initialPlace: spot.name,
-          initialPhotoAssets: [?_ingredientAssetPath(spot.ingredient)],
+          initialPhotoAssets: [?_ingredientAssetPath(_ingredientName)],
           initialVisitVerificationId: visitVerificationId,
         ),
       ),
@@ -124,14 +136,22 @@ class VisitRewardScreen extends StatelessWidget {
             ),
           ),
           const SizedBox(height: AppSpacing.lg),
-          _RewardTitle(spot: spot, isRealVisit: _isRealVisit),
+          _RewardTitle(
+            ingredientName: _ingredientName,
+            ingredientCount: _ingredientCount,
+          ),
           const SizedBox(height: AppSpacing.xs),
           const _RewardSubtitle(),
           const SizedBox(height: AppSpacing.xl),
-          _RewardSummaryCard(spot: spot, isRealVisit: _isRealVisit),
+          _RewardSummaryCard(
+            spot: spot,
+            ingredientName: _ingredientName,
+            ingredientCount: _ingredientCount,
+            benefit: benefit,
+          ),
           const SizedBox(height: AppSpacing.lg),
-          _RecommendedFoodCard(
-            onTap: () => _todo(context, '추천 음식 정보는 준비 중이에요.'),
+          _IngredientBagLinkCard(
+            onTap: () => _openIngredientBag(context),
           ),
           const SizedBox(height: AppSpacing.xl),
           _ShareSection(
@@ -152,18 +172,16 @@ class VisitRewardScreen extends StatelessWidget {
   }
 }
 
-/// "대나무잎 1개 획득" — 재료 이름은 진하게, 개수는 강조색으로. 실 방문
-/// 세션([isRealVisit])이면 어떤 재료가 지급됐는지 알 수 없으므로(스펙 §7.4–
-/// §7.5) 재료명을 특정하지 않는 일반 문구를 대신 보여준다.
+/// "대나무잎 1개 획득" — 재료 이름은 진하게, 개수는 강조색으로.
 class _RewardTitle extends StatelessWidget {
-  const _RewardTitle({required this.spot, required this.isRealVisit});
+  const _RewardTitle({required this.ingredientName, required this.ingredientCount});
 
-  final MockTouristSpot spot;
-  final bool isRealVisit;
+  final String? ingredientName;
+  final int ingredientCount;
 
   @override
   Widget build(BuildContext context) {
-    if (isRealVisit || spot.ingredient == null) {
+    if (ingredientName == null) {
       return Text(
         '방문 인증을 완료했어요!',
         textAlign: TextAlign.center,
@@ -174,9 +192,9 @@ class _RewardTitle extends StatelessWidget {
       TextSpan(
         style: AppTextStyles.h1,
         children: [
-          TextSpan(text: '${spot.ingredient} '),
+          TextSpan(text: '$ingredientName '),
           TextSpan(
-            text: '${spot.ingredientCount}개',
+            text: '$ingredientCount개',
             style: const TextStyle(color: AppColors.success),
           ),
           const TextSpan(text: ' 획득'),
@@ -223,19 +241,22 @@ class _RewardSubtitle extends StatelessWidget {
 }
 
 /// "담양 죽녹원 방문 완료 / 대나무잎 1개 획득 / 입장권 10% 할인 혜택" 요약 카드.
-/// 실 방문 세션([isRealVisit])이면 재료 행을 "재료를 획득했어요! 재료
-/// 가방에서 확인해보세요"로 대체한다 — 실제 지급 재료·개수는 관리자 승인
-/// 시점의 GAP 퍼센타일 랜덤 드롭으로 결정되어(스펙 §7.4–§7.5) 이 화면이
-/// 동기적으로 알 수 없기 때문.
 class _RewardSummaryCard extends StatelessWidget {
-  const _RewardSummaryCard({required this.spot, required this.isRealVisit});
+  const _RewardSummaryCard({
+    required this.spot,
+    required this.ingredientName,
+    required this.ingredientCount,
+    this.benefit,
+  });
 
   final MockTouristSpot spot;
-  final bool isRealVisit;
+  final String? ingredientName;
+  final int ingredientCount;
+  final String? benefit;
 
   @override
   Widget build(BuildContext context) {
-    final ingredientPath = isRealVisit ? null : _ingredientAssetPath(spot.ingredient);
+    final ingredientPath = _ingredientAssetPath(ingredientName);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(AppSpacing.lg),
@@ -264,19 +285,15 @@ class _RewardSummaryCard extends StatelessWidget {
           _SummaryRow(
             assetPath: ingredientPath,
             fallbackIcon: Symbols.eco_rounded,
-            text: isRealVisit
-                ? '재료를 획득했어요! 재료 가방에서 확인해보세요'
-                : (spot.ingredient == null
-                    ? '획득 재료 없음'
-                    : '${spot.ingredient} ${spot.ingredientCount}개 획득'),
+            text: ingredientName == null
+                ? '획득 재료 없음'
+                : '$ingredientName $ingredientCount개 획득',
           ),
           const SizedBox(height: AppSpacing.md),
           _SummaryRow(
             assetPath: 'assets/illustrations/icon/benefit.png',
             fallbackIcon: Symbols.redeem_rounded,
-            text: spot.storeBenefit == null
-                ? '제공 혜택 없음'
-                : '${spot.storeBenefit} 혜택',
+            text: benefit == null ? '제공 혜택 없음' : '$benefit 혜택',
           ),
         ],
       ),
@@ -325,8 +342,9 @@ class _SummaryRow extends StatelessWidget {
   }
 }
 
-class _RecommendedFoodCard extends StatelessWidget {
-  const _RecommendedFoodCard({required this.onTap});
+/// "재료 가방 바로가기" — `<재료 가방>`으로 이동하는 카드형 버튼.
+class _IngredientBagLinkCard extends StatelessWidget {
+  const _IngredientBagLinkCard({required this.onTap});
 
   final VoidCallback onTap;
 
@@ -346,14 +364,16 @@ class _RecommendedFoodCard extends StatelessWidget {
           ),
           child: Row(
             children: [
-              Image.asset(
-                'assets/illustrations/icon/dish_3.png',
+              SizedBox(
                 width: 24,
                 height: 24,
-                errorBuilder: (context, error, stackTrace) => const Icon(
-                  Symbols.restaurant_rounded,
-                  size: 24,
-                  color: AppColors.primary,
+                child: Image.asset(
+                  'assets/illustrations/icon/ingredient_2.png',
+                  errorBuilder: (context, error, stackTrace) => const Icon(
+                    Symbols.shopping_bag_rounded,
+                    size: 24,
+                    color: AppColors.primary,
+                  ),
                 ),
               ),
               const SizedBox(width: AppSpacing.md),
@@ -362,13 +382,13 @@ class _RecommendedFoodCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '이 재료로 만들 수 있는 음식',
+                      '재료 가방 바로가기',
                       style: AppTextStyles.bodyMedium.copyWith(
                         fontWeight: FontWeight.w600,
                       ),
                     ),
                     const SizedBox(height: 2),
-                    Text('추천 음식 보러 가기', style: AppTextStyles.caption),
+                    Text('재료를 확인하세요', style: AppTextStyles.caption),
                   ],
                 ),
               ),
@@ -394,10 +414,9 @@ class _ShareSection extends StatelessWidget {
   Widget build(BuildContext context) {
     return SizedBox(
       width: double.infinity,
-      child: OutlinedButton.icon(
+      child: OutlinedButton(
         onPressed: onShareRecord,
-        icon: const Icon(Symbols.edit_note_rounded, size: 18),
-        label: const Text('기록 플랫폼'),
+        child: const Text('기록 플랫폼'),
       ),
     );
   }

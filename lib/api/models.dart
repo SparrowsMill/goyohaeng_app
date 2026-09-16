@@ -9,6 +9,16 @@ bool _asBool(dynamic v) => v == true || v == 'true' || v == 1;
 DateTime? _asDate(dynamic v) =>
     v is String && v.isNotEmpty ? DateTime.tryParse(v) : null;
 
+/// 장소 참조는 과거 문자열 응답과 현재 `{ id, name }` 응답을 모두 지원한다.
+String? _asPlaceName(dynamic value) {
+  if (value is String) return value.trim().isEmpty ? null : value;
+  if (value is Map) {
+    final name = value['name'];
+    return name is String && name.trim().isNotEmpty ? name : null;
+  }
+  return null;
+}
+
 /// 로그인 응답의 `user`, 그리고 회원가입 응답에서 공통으로 쓰는 최소 사용자 정보.
 class AuthUser {
   const AuthUser({required this.id, required this.username, required this.realName});
@@ -108,6 +118,7 @@ class Region {
     required this.parentId,
     required this.regionType,
     required this.name,
+    this.sgisCode,
   });
 
   final int id;
@@ -117,37 +128,17 @@ class Region {
   final String regionType;
   final String name;
 
+  /// 통계청 SGIS 행정구역코드(시군구 adm_cd, 5자리 문자열, 2026-09-14 추가).
+  /// 앞자리 `0`이 있을 수 있어 문자열로 유지한다. 현재 서울 25개 구만 값이
+  /// 있고 그 외 지역은 `null`([[gap-score-api]]).
+  final String? sgisCode;
+
   factory Region.fromJson(Map<String, dynamic> json) => Region(
         id: _asInt(json['id']) ?? 0,
         parentId: _asInt(json['parentId']),
         regionType: json['regionType'] as String? ?? '',
         name: json['name'] as String? ?? '',
-      );
-}
-
-/// `GET /regions/{id}/spot-counts` 응답 (본인 + children).
-class RegionSpotCounts {
-  const RegionSpotCounts({
-    required this.regionId,
-    required this.regionName,
-    required this.spotCount,
-    required this.children,
-  });
-
-  final int regionId;
-  final String regionName;
-  final int spotCount;
-  final List<RegionSpotCounts> children;
-
-  factory RegionSpotCounts.fromJson(Map<String, dynamic> json) =>
-      RegionSpotCounts(
-        regionId: _asInt(json['regionId']) ?? 0,
-        regionName: json['regionName'] as String? ?? '',
-        spotCount: _asInt(json['spotCount']) ?? 0,
-        children: ((json['children'] as List?) ?? const [])
-            .whereType<Map>()
-            .map((e) => RegionSpotCounts.fromJson(e.cast<String, dynamic>()))
-            .toList(),
+        sgisCode: json['sgisCode'] as String?,
       );
 }
 
@@ -205,6 +196,25 @@ class PlaceImage {
 }
 
 /// `availableIngredients[]` 항목 (스펙 §6.2).
+/// 매장 방문 혜택 한 건 (스펙 §6.2 `benefits[]` 원소 — `{id, title, description}`).
+class PlaceBenefit {
+  const PlaceBenefit({
+    required this.id,
+    required this.title,
+    this.description,
+  });
+
+  final int id;
+  final String title;
+  final String? description;
+
+  factory PlaceBenefit.fromJson(Map<String, dynamic> json) => PlaceBenefit(
+        id: _asInt(json['id']) ?? 0,
+        title: json['title'] as String? ?? '',
+        description: json['description'] as String?,
+      );
+}
+
 class AvailableIngredient {
   const AvailableIngredient({
     required this.id,
@@ -279,6 +289,7 @@ class Place {
     this.images = const [],
     this.operatingHours = const [],
     this.isOpenNow,
+    this.operatingStatus,
     this.benefits = const [],
     this.availableIngredients = const [],
     this.verification,
@@ -308,7 +319,16 @@ class Place {
   final List<PlaceImage> images;
   final List<Map<String, dynamic>> operatingHours;
   final bool? isOpenNow;
-  final List<Map<String, dynamic>> benefits;
+
+  /// 세분화된 영업 상태 (2026-09-16 백엔드 추가) — `OPEN`/`BEFORE_OPEN`/
+  /// `BREAK_TIME`/`CLOSED`/`DAY_OFF`/`UNKNOWN` 중 하나. `isOpenNow`는 하위
+  /// 호환용으로 남아 있을 뿐 `operatingStatus == 'OPEN'`과 동치([businessStatusFromApi]
+  /// 참고) — 화면 표시는 이 필드를 우선한다.
+  final String? operatingStatus;
+
+  /// 매장 방문 혜택 목록 (스펙 §6.2 `benefits[]` — `{id, title, description}` 배열,
+  /// 단일 문자열이 아니다). 없으면 빈 배열.
+  final List<PlaceBenefit> benefits;
   final List<AvailableIngredient> availableIngredients;
   final PlaceVerificationConfig? verification;
 
@@ -317,6 +337,11 @@ class Place {
 
   String? get address => roadAddress ?? lotAddress;
   bool get hasLocation => latitude != null && longitude != null;
+
+  /// 화면에 한 줄로 보여줄 방문 혜택 요약 — 여러 건이면 " · "로 이어 붙인다.
+  /// 없으면 null.
+  String? get benefitLabel =>
+      benefits.isEmpty ? null : benefits.map((b) => b.title).join(' · ');
 
   factory Place.fromJson(Map<String, dynamic> json) => Place(
         id: _asInt(json['id']) ?? 0,
@@ -342,10 +367,18 @@ class Place {
             .whereType<Map>()
             .map((e) => e.cast<String, dynamic>())
             .toList(),
-        isOpenNow: json.containsKey('isOpenNow') ? _asBool(json['isOpenNow']) : null,
+        // `containsKey` 체크만으론 값이 키는 있는데 명시적 JSON null인 경우를
+        // 놓쳐 `_asBool(null)`이 false(영업 종료)로 잘못 굳어진다 — "정보 부족
+        // → null" 3단 의미를 지키려면 값 자체가 null인지부터 봐야 한다.
+        isOpenNow: json['isOpenNow'] == null ? null : _asBool(json['isOpenNow']),
+        operatingStatus: json['operatingStatus'] as String?,
+        // `benefits`는 문자열이 아니라 `{id, title, description}` 객체 배열이다
+        // (백엔드 `places.service.ts` `PlaceBenefit[]`) — 예전엔 `as String?`
+        // 캐스트를 시도해 실 응답에서 매번 던지고 화면이 통째로 mock으로
+        // 폴백했다 (2026-09-15 발견).
         benefits: ((json['benefits'] as List?) ?? const [])
             .whereType<Map>()
-            .map((e) => e.cast<String, dynamic>())
+            .map((e) => PlaceBenefit.fromJson(e.cast<String, dynamic>()))
             .toList(),
         availableIngredients:
             ((json['availableIngredients'] as List?) ?? const [])
@@ -405,6 +438,31 @@ class VisitStatus {
       );
 }
 
+/// `VisitVerification.reward` — `VERIFIED` 상태일 때 승인 즉시 지급된 재료
+/// (스펙 §8.2, 2026-09-13 반영). `status`가 `VERIFIED`가 아니면 항상 `null`이라
+/// 별도 폴링/추론 없이 이 필드를 그대로 쓰면 된다.
+class VisitVerificationReward {
+  const VisitVerificationReward({
+    required this.ingredientId,
+    required this.name,
+    required this.quantity,
+    this.rarity,
+  });
+
+  final int ingredientId;
+  final String name;
+  final int quantity;
+  final String? rarity;
+
+  factory VisitVerificationReward.fromJson(Map<String, dynamic> json) =>
+      VisitVerificationReward(
+        ingredientId: _asInt(json['ingredientId']) ?? 0,
+        name: json['name'] as String? ?? '',
+        quantity: _asInt(json['quantity']) ?? 0,
+        rarity: json['rarity'] as String?,
+      );
+}
+
 /// 방문 인증 세션 (스펙 §7). 생성·조회·검증 응답이 모두 이 형태다.
 class VisitVerification {
   const VisitVerification({
@@ -420,6 +478,7 @@ class VisitVerification {
     this.verifiedAt,
     this.failReason,
     this.createdAt,
+    this.reward,
   });
 
   final int id;
@@ -436,6 +495,9 @@ class VisitVerification {
   final DateTime? verifiedAt;
   final String? failReason;
   final DateTime? createdAt;
+
+  /// `VERIFIED`일 때만 채워지는 실제 지급 재료.
+  final VisitVerificationReward? reward;
 
   bool get isVerified => status == 'VERIFIED';
   bool get isExpired => status == 'EXPIRED';
@@ -457,6 +519,38 @@ class VisitVerification {
         verifiedAt: _asDate(json['verifiedAt']),
         failReason: json['failReason'] as String?,
         createdAt: _asDate(json['createdAt']),
+        reward: json['reward'] is Map
+            ? VisitVerificationReward.fromJson(
+                (json['reward'] as Map).cast<String, dynamic>(),
+              )
+            : null,
+      );
+}
+
+/// `GET /users/me/sparrow` 응답 (2026-09-16 백엔드 신설) — 참새 레벨/경험치 +
+/// 가입일로부터 "함께한 지 N일째"(가입 당일 = 1일째). `xpForNextLevel`은 현재
+/// 고정값 100(`XP_PER_LEVEL`)이지만 서버 값을 그대로 쓰고 하드코딩하지 않는다.
+class Sparrow {
+  const Sparrow({
+    required this.level,
+    required this.xp,
+    required this.xpForNextLevel,
+    required this.daysTogether,
+  });
+
+  final int level;
+  final int xp;
+  final int xpForNextLevel;
+  final int daysTogether;
+
+  double get xpProgress =>
+      xpForNextLevel == 0 ? 0 : (xp / xpForNextLevel).clamp(0, 1);
+
+  factory Sparrow.fromJson(Map<String, dynamic> json) => Sparrow(
+        level: _asInt(json['level']) ?? 1,
+        xp: _asInt(json['xp']) ?? 0,
+        xpForNextLevel: _asInt(json['xpForNextLevel']) ?? 100,
+        daysTogether: _asInt(json['daysTogether']) ?? 1,
       );
 }
 
@@ -468,6 +562,7 @@ class VisitVerification {
 class Dashboard {
   const Dashboard({
     required this.monthlyVisitCount,
+    required this.visitedPlaceCount,
     required this.ingredientCount,
     required this.verifiedVisitCount,
     required this.madeFoodCount,
@@ -475,6 +570,7 @@ class Dashboard {
   });
 
   final int monthlyVisitCount;
+  final int visitedPlaceCount;
   final int ingredientCount;
   final int verifiedVisitCount;
   final int madeFoodCount;
@@ -482,6 +578,7 @@ class Dashboard {
 
   factory Dashboard.fromJson(Map<String, dynamic> json) => Dashboard(
         monthlyVisitCount: _asInt(json['monthlyVisitCount']) ?? 0,
+        visitedPlaceCount: _asInt(json['visitedPlaceCount']) ?? 0,
         ingredientCount: _asInt(json['ingredientCount']) ?? 0,
         verifiedVisitCount: _asInt(json['verifiedVisitCount']) ?? 0,
         madeFoodCount: _asInt(json['madeFoodCount']) ?? 0,
@@ -600,7 +697,9 @@ class FavoriteToggleResult {
       );
 }
 
-/// `GET /users/me/ingredients` 항목 (스펙 §3.8).
+/// `GET /users/me/ingredients` 항목 (스펙 §3.8) — 전체 27개 재료를 항상 다
+/// 내려준다(안 가진 것도 `quantity: 0, owned: false`로 포함, 백엔드 실측
+/// 2026-09-14) — 도감처럼 쓸 수 있다.
 class UserIngredient {
   const UserIngredient({
     required this.id,
@@ -608,6 +707,7 @@ class UserIngredient {
     this.description,
     this.ingredientType,
     required this.quantity,
+    required this.owned,
     this.imageUrl,
     this.illustrationUrl,
     this.rarity,
@@ -623,6 +723,10 @@ class UserIngredient {
   /// `BASIC` | `REGIONAL` …
   final String? ingredientType;
   final int quantity;
+
+  /// 보유 여부 — `quantity > 0`과 항상 일치해야 하지만, 서버가 주는 값을
+  /// 그대로 신뢰한다(`IngredientDetail.obtained`와 같은 개념, 필드명만 다름).
+  final bool owned;
   final String? imageUrl;
   final String? illustrationUrl;
   final String? rarity;
@@ -638,6 +742,9 @@ class UserIngredient {
         description: json['description'] as String?,
         ingredientType: json['ingredientType'] as String?,
         quantity: _asInt(json['quantity']) ?? 0,
+        owned: json.containsKey('owned')
+            ? _asBool(json['owned'])
+            : (_asInt(json['quantity']) ?? 0) > 0,
         imageUrl: json['imageUrl'] as String?,
         illustrationUrl: json['illustrationUrl'] as String?,
         rarity: json['rarity'] as String?,
@@ -670,7 +777,8 @@ class UserIngredients {
 }
 
 /// `foods[].specialIngredients[]` / `GET /users/me/foods` 항목의 특별 재료 1건
-/// (스펙 §3.9). `sourcePlace`는 FIFO 출처 추적 미지원으로 `null`일 수 있다.
+/// (스펙 §3.9). 백엔드의 `sourcePlace: { id, name }`에서 이름만 보관하며,
+/// FIFO 출처 추적 미지원 기록은 `null`일 수 있다.
 class UserFoodSpecialIngredient {
   const UserFoodSpecialIngredient({
     required this.ingredientId,
@@ -692,7 +800,7 @@ class UserFoodSpecialIngredient {
         name: json['name'] as String? ?? '',
         quantity: _asInt(json['quantity']) ?? 0,
         rarity: json['rarity'] as String?,
-        sourcePlace: json['sourcePlace'] as String?,
+        sourcePlace: _asPlaceName(json['sourcePlace']),
       );
 }
 
@@ -748,6 +856,7 @@ class Food {
     this.imageUrl,
     this.illustrationUrl,
     required this.canMake,
+    required this.isCompleted,
     required this.ingredients,
   });
 
@@ -759,6 +868,13 @@ class Food {
   final String? imageUrl;
   final String? illustrationUrl;
   final bool canMake;
+
+  /// 이 사용자가 이 음식을 한 번이라도 만든 적 있는지(`UserFood` 존재 여부,
+  /// 백엔드 실측 2026-09-14). `food_dex_screen.dart`는 여전히
+  /// `GET /users/me/foods` 목록과 대조해 `userFoodId`(히스토리 진입용)까지
+  /// 알아내므로 이 필드로 그 로직을 대체하진 않는다 — 둘은 항상 같은 값이어야
+  /// 한다.
+  final bool isCompleted;
   final List<FoodIngredient> ingredients;
 
   factory Food.fromJson(Map<String, dynamic> json) => Food(
@@ -770,6 +886,7 @@ class Food {
         imageUrl: json['imageUrl'] as String?,
         illustrationUrl: json['illustrationUrl'] as String?,
         canMake: _asBool(json['canMake']),
+        isCompleted: _asBool(json['isCompleted']),
         ingredients: ((json['ingredients'] as List?) ?? const [])
             .whereType<Map>()
             .map((e) => FoodIngredient.fromJson(e.cast<String, dynamic>()))
@@ -777,11 +894,14 @@ class Food {
       );
 }
 
-/// `foods[].ingredients[]` — 레시피 1줄 (필요량 vs 보유량).
+/// `foods[].ingredients[]` — 레시피 1줄 (필요량 vs 보유량). `description`/
+/// `regionId`는 `GET /foods/{id}`(상세)에만 있고 목록(`GET /foods`)엔 없다
+/// (백엔드 실측 2026-09-14).
 class FoodIngredient {
   const FoodIngredient({
     required this.id,
     required this.name,
+    this.description,
     this.ingredientType,
     required this.requiredQuantity,
     required this.ownedQuantity,
@@ -789,10 +909,12 @@ class FoodIngredient {
     this.imageUrl,
     this.illustrationUrl,
     this.rarity,
+    this.regionId,
   });
 
   final int id;
   final String name;
+  final String? description;
   final String? ingredientType;
   final int requiredQuantity;
   final int ownedQuantity;
@@ -800,6 +922,7 @@ class FoodIngredient {
   final String? imageUrl;
   final String? illustrationUrl;
   final String? rarity;
+  final int? regionId;
 
   int get shortage =>
       (requiredQuantity - ownedQuantity) > 0 ? requiredQuantity - ownedQuantity : 0;
@@ -807,6 +930,7 @@ class FoodIngredient {
   factory FoodIngredient.fromJson(Map<String, dynamic> json) => FoodIngredient(
         id: _asInt(json['id']) ?? 0,
         name: json['name'] as String? ?? '',
+        description: json['description'] as String?,
         ingredientType: json['ingredientType'] as String?,
         requiredQuantity: _asInt(json['requiredQuantity']) ?? 0,
         ownedQuantity: _asInt(json['ownedQuantity']) ?? 0,
@@ -814,6 +938,7 @@ class FoodIngredient {
         imageUrl: json['imageUrl'] as String?,
         illustrationUrl: json['illustrationUrl'] as String?,
         rarity: json['rarity'] as String?,
+        regionId: _asInt(json['regionId']),
       );
 }
 
@@ -1018,6 +1143,9 @@ class GapPlace {
     this.onlineScore,
     this.offlineScore,
     this.explanation,
+    this.verificationAvailable,
+    this.isOpenNow,
+    this.operatingStatus,
   });
 
   final int placeId;
@@ -1039,6 +1167,20 @@ class GapPlace {
   final double? offlineScore;
   final String? explanation;
 
+  /// 방문 인증 설정 존재 + `enabled = true`일 때만 `true` (2026-09-14 백엔드
+  /// 추가, 랭킹/지도 응답 전용 — 추천 응답엔 아직 없어 `null`로 내려온다).
+  final bool? verificationAvailable;
+
+  /// 조회 시점 실 영업 상태 (2026-09-15 백엔드 추가 — 랭킹/지도/추천 응답
+  /// 공통). `true`=영업 중, `false`=영업 종료·휴무·브레이크타임,
+  /// `null`=운영시간 정보 부족으로 판단 불가. `Place.isOpenNow`(상세 응답)와
+  /// 같은 계산 기준.
+  final bool? isOpenNow;
+
+  /// 세분화된 영업 상태 (2026-09-16 백엔드 추가, 랭킹/지도/추천 응답 공통) —
+  /// [Place.operatingStatus]와 같은 값 집합. 화면 표시는 이 필드를 우선한다.
+  final String? operatingStatus;
+
   int get gapIndex => gapScore.round();
   bool get hasLocation => latitude != null && longitude != null;
 
@@ -1056,6 +1198,13 @@ class GapPlace {
         onlineScore: _asDouble(json['onlineScore']),
         offlineScore: _asDouble(json['offlineScore']),
         explanation: json['explanation'] as String?,
+        verificationAvailable: json.containsKey('verificationAvailable')
+            ? _asBool(json['verificationAvailable'])
+            : null,
+        // Place.isOpenNow와 같은 이유로 `containsKey`가 아니라 값 자체의
+        // null 여부로 판단 — 명시적 null(정보 부족)을 false로 오인하지 않게.
+        isOpenNow: json['isOpenNow'] == null ? null : _asBool(json['isOpenNow']),
+        operatingStatus: json['operatingStatus'] as String?,
       );
 }
 
@@ -1114,6 +1263,27 @@ class GapMapData {
       );
 }
 
+/// `GET /places/{id}/recommendations` 응답 (스펙 §6.8).
+class GapRecommendations {
+  const GapRecommendations({required this.available, required this.items});
+
+  /// GAP/지역/카테고리 정보가 부족해 추천 자체가 불가능하면 `false`(이때
+  /// `items`는 보통 빈 배열) — 비슷한 장소가 단순히 0건인 경우와 구분한다.
+  final bool available;
+  final List<GapPlace> items;
+
+  factory GapRecommendations.fromJson(Map<String, dynamic> json) =>
+      GapRecommendations(
+        available: json.containsKey('available')
+            ? _asBool(json['available'])
+            : true,
+        items: ((json['items'] as List?) ?? const [])
+            .whereType<Map>()
+            .map((e) => GapPlace.fromJson(e.cast<String, dynamic>()))
+            .toList(),
+      );
+}
+
 /// `GET /regions/gap-scores` 항목 — 지역별 최신 GAP Score 평균.
 class RegionGapScore {
   const RegionGapScore({
@@ -1133,7 +1303,11 @@ class RegionGapScore {
   factory RegionGapScore.fromJson(Map<String, dynamic> json) => RegionGapScore(
         regionId: _asInt(json['regionId']) ?? 0,
         regionName: json['regionName'] as String?,
-        averageGapScore: _asDouble(json['averageGapScore']) ?? 0,
+        // 실제 서버 응답 필드명은 `gapScore`다(`RegionsService.getGapScores`
+        // 실측 2026-09-14) — 문서 §4엔 확정 필드명이 없어 `averageGapScore`로
+        // 짐작해 지었던 것이 잘못 지어졌었다. 옛 이름도 방어적으로 남겨둔다.
+        averageGapScore:
+            _asDouble(json['gapScore']) ?? _asDouble(json['averageGapScore']) ?? 0,
         placeCount: _asInt(json['placeCount']) ?? 0,
       );
 }
@@ -1176,16 +1350,22 @@ class IngredientDropProbability {
   const IngredientDropProbability({
     required this.policyCode,
     required this.probability,
+    this.minGapPercentile,
+    this.maxGapPercentile,
   });
 
   /// `NO_GAP` | `GAP_LOW` | `GAP_MID` | `GAP_HIGH` | `GAP_TOP`.
   final String policyCode;
   final double probability;
+  final double? minGapPercentile;
+  final double? maxGapPercentile;
 
   factory IngredientDropProbability.fromJson(Map<String, dynamic> json) =>
       IngredientDropProbability(
         policyCode: json['policyCode'] as String? ?? '',
         probability: _asDouble(json['probability']) ?? 0,
+        minGapPercentile: _asDouble(json['minGapPercentile']),
+        maxGapPercentile: _asDouble(json['maxGapPercentile']),
       );
 }
 
@@ -1230,6 +1410,7 @@ class IngredientUsedFood {
   const IngredientUsedFood({
     required this.foodId,
     required this.name,
+    this.description,
     this.imageUrl,
     this.illustrationUrl,
     this.requiredQuantity,
@@ -1237,6 +1418,7 @@ class IngredientUsedFood {
 
   final int foodId;
   final String name;
+  final String? description;
   final String? imageUrl;
   final String? illustrationUrl;
   final int? requiredQuantity;
@@ -1245,6 +1427,7 @@ class IngredientUsedFood {
       IngredientUsedFood(
         foodId: _asInt(json['foodId'] ?? json['id']) ?? 0,
         name: json['name'] as String? ?? '',
+        description: json['description'] as String?,
         imageUrl: json['imageUrl'] as String?,
         illustrationUrl: json['illustrationUrl'] as String?,
         requiredQuantity: _asInt(json['requiredQuantity']),
@@ -1349,7 +1532,8 @@ class FoodHistoryFoodRef {
 }
 
 /// `specialIngredients[]` / `normalIngredients[]` 공통 항목 (스펙 §11.1).
-/// `obtainedPlace`는 FIFO 출처 추적 미지원으로 현재 `null`일 수 있다.
+/// 백엔드의 `obtainedPlace: { id, name }`에서 이름만 보관한다. FIFO 출처 추적
+/// 미지원 기록은 `null`일 수 있다.
 class FoodHistoryIngredient {
   const FoodHistoryIngredient({
     required this.ingredientId,
@@ -1371,7 +1555,7 @@ class FoodHistoryIngredient {
         name: json['name'] as String? ?? '',
         quantity: _asInt(json['quantity']) ?? 0,
         rarity: json['rarity'] as String?,
-        obtainedPlace: json['obtainedPlace'] as String?,
+        obtainedPlace: _asPlaceName(json['obtainedPlace']),
       );
 }
 
@@ -1390,9 +1574,12 @@ class FoodHistoryDetail {
 
   factory FoodHistoryDetail.fromJson(Map<String, dynamic> json) =>
       FoodHistoryDetail(
-        food: FoodHistoryFoodRef.fromJson(
-          ((json['food'] as Map?) ?? const {}).cast<String, dynamic>(),
-        ),
+        // 현재 백엔드는 `madeAt`을 `food` 내부가 아닌 응답 최상위에 둔다.
+        // 과거/대체 응답의 중첩 값도 유지하되 최상위 값이 있으면 우선한다.
+        food: FoodHistoryFoodRef.fromJson({
+          ...((json['food'] as Map?) ?? const {}).cast<String, dynamic>(),
+          if (json['madeAt'] != null) 'madeAt': json['madeAt'],
+        }),
         specialIngredients: ((json['specialIngredients'] as List?) ?? const [])
             .whereType<Map>()
             .map((e) => FoodHistoryIngredient.fromJson(e.cast<String, dynamic>()))
@@ -1462,6 +1649,7 @@ class RecordDetail {
     required this.id,
     required this.date,
     this.place,
+    this.manualPlaceName,
     this.food,
     this.title,
     required this.body,
@@ -1474,6 +1662,9 @@ class RecordDetail {
   /// `YYYY-MM-DD`, KST 기준(스펙 §12.1).
   final String date;
   final RecordPlaceRef? place;
+
+  /// 직접 입력한 장소명 — [place]와 동시에 값을 가질 수 없다(2026-09-15 추가).
+  final String? manualPlaceName;
   final RecordFoodRef? food;
   final String? title;
   final String body;
@@ -1486,6 +1677,7 @@ class RecordDetail {
         place: (json['place'] as Map?) == null
             ? null
             : RecordPlaceRef.fromJson((json['place'] as Map).cast<String, dynamic>()),
+        manualPlaceName: json['manualPlaceName'] as String?,
         food: (json['food'] as Map?) == null
             ? null
             : RecordFoodRef.fromJson((json['food'] as Map).cast<String, dynamic>()),

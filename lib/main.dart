@@ -2,12 +2,15 @@ import 'package:flutter/material.dart';
 
 import 'api/auth_store.dart';
 import 'data/mock_map_regions.dart' show loadRealRegionStats;
+import 'navigation/root_navigator.dart';
 import 'screens/auth/login_screen.dart';
 import 'screens/mill/mill_home_screen.dart';
 import 'screens/splash/splash_screen.dart';
 import 'theme/app_motion.dart';
 import 'theme/app_theme.dart';
+import 'widgets/makeable_food_banner.dart';
 import 'widgets/paper_texture_overlay.dart';
+import 'widgets/visit_timer_overlay.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -20,11 +23,14 @@ class GoyohaengApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: rootNavigatorKey,
       title: '고요행',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
       home: const _Bootstrap(),
-      builder: (context, child) => PaperTextureOverlay(child: child),
+      builder: (context, child) => MakeableFoodBanner(
+        child: VisitTimerOverlay(child: PaperTextureOverlay(child: child)),
+      ),
     );
   }
 }

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../api/api.dart' show Category, GapPlace, GapService;
 import '../../data/gap_spots.dart';
@@ -8,22 +7,29 @@ import '../../data/korea_map_geo.dart';
 import '../../data/mock_map_regions.dart' show kSidoShortName;
 import '../../data/mock_region_ranking.dart';
 import '../../theme/app_colors.dart';
+import '../../theme/app_motion.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
 import '../../widgets/app_bottom_nav_bar.dart';
+import '../../widgets/loading_overlay.dart';
+import '../../widgets/place_search_bar.dart';
 import '../../widgets/ranking_card.dart';
-import '../map/map_screen.dart';
-import '../place/place_info_screen.dart';
-import '../record/my_footprint_screen.dart';
+import '../../widgets/region_lock.dart';
+import '../map/place_search_screen.dart';
+import 'region_ranking_screen.dart';
 
 /// `<전체 랭킹>` — the bottom nav "랭킹" tab's landing page. Unlike
 /// `<지역별 랭킹>`(`RegionRankingScreen`, reached by tapping a 시군구 on
-/// `<지도>`), this shows every GAP 스팟 nationwide by default; the 시도/시군구
-/// dropdowns at the top narrow it down, same as picking a region on the map.
+/// `<지도>`), this can browse any region's GAP 스팟, defaulting to 서울(the
+/// only region with real GAP data, [[region_lock]]) instead of 전국. The app
+/// bar's filter icon opens a bottom sheet with the 시도/시군구 dropdowns,
+/// category, and sort/방문 인증 필터; the top of the body itself is a search
+/// bar (`<지도>`와 같은 컴포넌트).
 ///
-/// 카테고리·정렬 필터는 `RegionRankingScreen`과 같은 `SharedPreferences` 키를
-/// 공유한다 — "지역 무관 전역 설정 하나"로 취급해 두 화면 어디서 바꾸든 다음
-/// 방문 시 그대로 유지된다.
+/// 필터는 저장되지 않는다 — 이 탭을 나갔다가 다시 들어오면(바텀 네비게이션이
+/// 매번 새 인스턴스를 만든다) 항상 기본값(서울·전체 카테고리·고요 지수
+/// 높은순)으로 초기화된다. 현재 선택된 필터는 검색 바 아래 한 줄 문구로
+/// 보여준다(예: "서울/동대문구/축제/고요 지수 낮은순").
 class RankingScreen extends StatefulWidget {
   const RankingScreen({super.key});
 
@@ -32,21 +38,28 @@ class RankingScreen extends StatefulWidget {
 }
 
 class _RankingScreenState extends State<RankingScreen> {
-  static const _kPrefCategory = 'ranking.filter.categoryId';
-  static const _kPrefDescending = 'ranking.filter.descending';
-
   /// 전국 GAP 랭킹이 이 페이지 수 넘게 계속 이어지진 않을 거라 보고 안전장치로
   /// 둔 상한 — 냉동창고(cold-start) 단계 데이터 규모 기준([[gap-score-api]]).
   static const _maxNationwidePages = 10;
   static const _nationwidePageLimit = 50;
 
-  String? _sidoCode;
+  /// 진입 시 기본 지역 — 서울(11)만 실 GAP 데이터가 있어 유일하게 잠금 해제돼
+  /// 있다([[region_lock]]). "전체 시/도"(전국)가 아니라 서울이 기본값.
+  static const _kDefaultSidoCode = '11';
+
+  String? _sidoCode = _kDefaultSidoCode;
   String? _sigunguCode;
   int? _category;
   bool _descending = true;
 
+  /// "방문 인증 가능만" — 켜면 [_visibleSpots]에서 `visitVerifiable != true`인
+  /// 스팟을 뺀다. 서버가 걸러주는 값이 아니라 클라이언트에서 로드된 목록을 거른다.
+  bool _visitVerifiableOnly = false;
+
   List<GeoRegion> _sidoList = const [];
   List<GeoRegion> _sigunguOptions = const [];
+
+  /// 필터 시트 + 상단 필터 문구용 level-1 카테고리.
   List<Category> _categories = const [];
 
   List<MockTouristSpot> _spots = const [];
@@ -58,43 +71,33 @@ class _RankingScreenState extends State<RankingScreen> {
   void initState() {
     super.initState();
     _loadFilterOptions();
-    _restorePrefsAndLoad();
+    GapSpots.instance
+        .level1Categories()
+        .then((cats) {
+          if (mounted) setState(() => _categories = cats);
+        })
+        .catchError((_) {
+          /* 필터엔 "전체"만 노출 */
+        });
+    _load();
   }
 
   Future<void> _loadFilterOptions() async {
     final geo = await KoreaGeo.load();
-    if (mounted) setState(() => _sidoList = geo.sido);
-    GapSpots.instance.level1Categories().then((cats) {
-      if (mounted) setState(() => _categories = cats);
-    }).catchError((_) {/* 필터 전체만 노출 */});
-  }
-
-  Future<void> _restorePrefsAndLoad() async {
-    final prefs = await SharedPreferences.getInstance();
     if (!mounted) return;
-    setState(() {
-      _category =
-          prefs.containsKey(_kPrefCategory) ? prefs.getInt(_kPrefCategory) : null;
-      _descending = prefs.getBool(_kPrefDescending) ?? true;
-    });
-    _load();
-  }
-
-  Future<void> _saveCategoryPref(int? categoryId) async {
-    final prefs = await SharedPreferences.getInstance();
-    if (categoryId == null) {
-      await prefs.remove(_kPrefCategory);
-    } else {
-      await prefs.setInt(_kPrefCategory, categoryId);
+    setState(() => _sidoList = geo.sido);
+    if (_sidoCode != null) {
+      await geo.ensureSigungu();
+      if (!mounted || _sidoCode == null) return;
+      setState(() => _sigunguOptions = geo.sigunguOf(_sidoCode!));
     }
   }
 
-  Future<void> _saveDescendingPref(bool descending) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_kPrefDescending, descending);
-  }
-
   Future<void> _onSidoChanged(String? code) async {
+    if (code != null && isSidoLocked(code)) {
+      showRegionComingSoonToast(context);
+      return;
+    }
     setState(() {
       _sidoCode = code;
       _sigunguCode = null;
@@ -117,18 +120,40 @@ class _RankingScreenState extends State<RankingScreen> {
   void _onCategoryChanged(int? categoryId) {
     setState(() => _category = categoryId);
     _load();
-    _saveCategoryPref(categoryId);
   }
 
-  void _onSortChanged(bool descending) {
+  /// 정렬/방문인증 필터는 순수 클라이언트 처리(재정렬/재필터)라 실제 지연은
+  /// 없지만, 지역·카테고리 필터(서버 재조회, [_load])와 같은 로딩 피드백을 줘서
+  /// 필터 세 개가 일관되게 느껴지도록 짧게 [LoadingOverlay]를 보여준 뒤 적용한다.
+  Future<void> _flashLoading(VoidCallback apply) async {
+    setState(() => _loading = true);
+    await Future.delayed(AppMotion.standard);
+    if (!mounted) return;
     setState(() {
-      _descending = descending;
-      _spots = [..._spots]..sort((a, b) => descending
-          ? b.gapIndex.compareTo(a.gapIndex)
-          : a.gapIndex.compareTo(b.gapIndex));
+      apply();
+      _loading = false;
     });
-    _saveDescendingPref(descending);
   }
+
+  Future<void> _onSortChanged(bool descending) {
+    return _flashLoading(() {
+      _descending = descending;
+      _spots = [..._spots]
+        ..sort(
+          (a, b) => descending
+              ? b.gapIndex.compareTo(a.gapIndex)
+              : a.gapIndex.compareTo(b.gapIndex),
+        );
+    });
+  }
+
+  Future<void> _onVisitVerifiableOnlyChanged(bool value) {
+    return _flashLoading(() => _visitVerifiableOnly = value);
+  }
+
+  List<MockTouristSpot> get _visibleSpots => _visitVerifiableOnly
+      ? _spots.where((s) => s.visitVerifiable == true).toList()
+      : _spots;
 
   Future<void> _load() async {
     final requestId = ++_requestId;
@@ -142,8 +167,10 @@ class _RankingScreenState extends State<RankingScreen> {
     var failed = false;
     try {
       spots = regionCode != null
-          ? await GapSpots.instance
-              .spotsInRegion(regionCode, categoryId: _category)
+          ? await GapSpots.instance.spotsInRegion(
+              regionCode,
+              categoryId: _category,
+            )
           : await _loadNationwide(_category);
     } catch (_) {
       spots = const [];
@@ -151,9 +178,12 @@ class _RankingScreenState extends State<RankingScreen> {
     }
     if (!mounted || requestId != _requestId) return;
 
-    spots = [...spots]..sort((a, b) => _descending
-        ? b.gapIndex.compareTo(a.gapIndex)
-        : a.gapIndex.compareTo(b.gapIndex));
+    spots = [...spots]
+      ..sort(
+        (a, b) => _descending
+            ? b.gapIndex.compareTo(a.gapIndex)
+            : a.gapIndex.compareTo(b.gapIndex),
+      );
     setState(() {
       _spots = spots;
       _loading = false;
@@ -179,110 +209,174 @@ class _RankingScreenState extends State<RankingScreen> {
     return GapSpots.instance.toSpots(places);
   }
 
+  /// 카드 탭 — `<장소 정보>`로 바로 가는 대신 `<지역별 랭킹>`을 단일 스팟
+  /// 모드로 열어 실제 위치 핀을 지도에서 보여준다(이 화면엔 지도가 없다).
+  /// `regionKey`는 지도 폴리곤 표시에만 쓰이고 핀 위치엔 영향이 없어, 현재
+  /// 시도/시군구 필터를 그대로 최선노력으로 넘긴다.
   void _openSpot(MockTouristSpot spot) {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => PlaceInfoScreen(spot: spot, placeId: spot.placeId),
+        builder: (_) => RegionRankingScreen(
+          regionKey: _sigunguCode ?? _sidoCode ?? '',
+          regionName: spot.name,
+          initialSpot: spot,
+        ),
       ),
     );
   }
 
+  void _openFilterSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => _RankingFilterSheet(
+        sidoList: _sidoList,
+        initialSigunguOptions: _sigunguOptions,
+        initialSidoCode: _sidoCode,
+        initialSigunguCode: _sigunguCode,
+        categories: _categories,
+        initialCategory: _category,
+        initialDescending: _descending,
+        initialVisitVerifiableOnly: _visitVerifiableOnly,
+        onSidoChanged: _onSidoChanged,
+        onSigunguChanged: _onSigunguChanged,
+        onCategoryChanged: _onCategoryChanged,
+        onSortChanged: _onSortChanged,
+        onVisitVerifiableOnlyChanged: _onVisitVerifiableOnlyChanged,
+        currentSigunguOptions: () => _sigunguOptions,
+      ),
+    );
+  }
+
+  /// "서울/동대문구/축제/고요 지수 낮은순" 형태의 현재 필터 한 줄 요약.
+  String get _filterSummary {
+    final sidoLabel = _sidoCode != null
+        ? (kSidoShortName[_sidoCode] ??
+              _sidoList
+                  .firstWhere(
+                    (r) => r.id == _sidoCode,
+                    orElse: () =>
+                        GeoRegion(id: '', title: '전체', rings: const []),
+                  )
+                  .title)
+        : '전체';
+    final sigunguLabel = _sigunguCode != null
+        ? _sigunguOptions
+              .firstWhere(
+                (r) => r.id == _sigunguCode,
+                orElse: () => GeoRegion(id: '', title: '전체', rings: const []),
+              )
+              .title
+        : '전체';
+    String categoryLabel = '전체';
+    for (final c in _categories) {
+      if (c.id == _category) {
+        categoryLabel = c.name;
+        break;
+      }
+    }
+    final sortLabel = _descending ? '고요 지수 높은순' : '고요 지수 낮은순';
+    final summary = '$sidoLabel/$sigunguLabel/$categoryLabel/$sortLabel';
+    return _visitVerifiableOnly ? '$summary · 방문 인증 가능만' : summary;
+  }
+
   @override
   Widget build(BuildContext context) {
-    final regionHint = _sigunguCode != null
-        ? _sigunguOptions
-            .firstWhere((r) => r.id == _sigunguCode,
-                orElse: () => GeoRegion(id: '', title: '', rings: const []))
-            .title
-        : _sidoCode != null
-            ? (kSidoShortName[_sidoCode] ??
-                _sidoList
-                    .firstWhere((r) => r.id == _sidoCode,
-                        orElse: () => GeoRegion(id: '', title: '', rings: const []))
-                    .title)
-            : '전국';
-
     return Scaffold(
       backgroundColor: AppColors.appBackground,
-      appBar: AppBar(title: const Text('전체 랭킹')),
-      body: Column(
-        children: [
-          _RegionFilterRow(
-            sidoList: _sidoList,
-            sigunguOptions: _sigunguOptions,
-            sidoCode: _sidoCode,
-            sigunguCode: _sigunguCode,
-            onSidoChanged: _onSidoChanged,
-            onSigunguChanged: _onSigunguChanged,
+      appBar: AppBar(
+        title: const Text('전체 랭킹'),
+        actions: [
+          IconButton(
+            onPressed: _openFilterSheet,
+            icon: const Icon(Symbols.tune_rounded),
+            tooltip: '필터',
           ),
-          RankingFilterBar(
-            category: _category,
-            categories: _categories,
-            onCategory: _onCategoryChanged,
-            descending: _descending,
-            onSort: _onSortChanged,
-            hint: '$regionHint 기준 갭지수 랭킹이에요',
-          ),
-          Expanded(child: _buildBody()),
         ],
       ),
-      bottomNavigationBar: AppBottomNavBar(
-        currentIndex: 2,
-        onTap: (index) {
-          if (index == 0) {
-            Navigator.of(context).popUntil((route) => route.isFirst);
-          } else if (index == 1) {
-            Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const MapScreen()),
-            );
-          } else if (index == 3) {
-            Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const MyFootprintScreen()),
-            );
-          }
-        },
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.xl,
+              AppSpacing.sm,
+              AppSpacing.xl,
+              AppSpacing.xs,
+            ),
+            child: PlaceSearchBar(
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const PlaceSearchScreen()),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.xl,
+              0,
+              AppSpacing.xl,
+              AppSpacing.sm,
+            ),
+            child: Text(_filterSummary, style: AppTextStyles.caption),
+          ),
+          Expanded(
+            child: LoadingOverlay(loading: _loading, child: _buildBody()),
+          ),
+        ],
       ),
+      extendBody: true,
+      bottomNavigationBar: const AppBottomNavBar(currentIndex: 2),
     );
   }
 
   Widget _buildBody() {
     if (_loading) {
-      return const Center(child: CircularProgressIndicator());
+      // The Expanded-level LoadingOverlay already shows the loading pill.
+      return const SizedBox.shrink();
     }
-    if (_spots.isEmpty) {
+    final spots = _visibleSpots;
+    if (spots.isEmpty) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(AppSpacing.xxl),
           child: Text(
-            _error ? '랭킹을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.' : '해당하는 관광 스팟이 아직 없어요.',
+            _error
+                ? '랭킹을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.'
+                : _visitVerifiableOnly
+                ? '방문 인증 가능한 장소가 아직 없어요.'
+                : '해당하는 관광 스팟이 아직 없어요.',
             textAlign: TextAlign.center,
-            style:
-                AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary),
+            style: AppTextStyles.bodyMedium.copyWith(
+              color: AppColors.textSecondary,
+            ),
           ),
         ),
       );
     }
     return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.xl,
-        AppSpacing.lg,
-        AppSpacing.xl,
-        AppSpacing.xxl,
+      padding: AppBottomNavBar.scrollPadding(
+        context,
+        const EdgeInsets.fromLTRB(
+          AppSpacing.xl,
+          AppSpacing.lg,
+          AppSpacing.xl,
+          AppSpacing.xxl,
+        ),
       ),
-      itemCount: _spots.length,
+      itemCount: spots.length,
       separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.xs),
       itemBuilder: (_, i) => RankingCard(
         rank: i + 1,
-        spot: _spots[i],
-        onTap: () => _openSpot(_spots[i]),
-        onDetail: () => _openSpot(_spots[i]),
+        spot: spots[i],
+        onTap: () => _openSpot(spots[i]),
+        onDetail: () => _openSpot(spots[i]),
       ),
     );
   }
 }
 
 /// 시도 → 시군구 두 단계 드롭다운. 시도를 고르면 그 안의 시군구만 채워지고,
-/// 시도를 "전체"로 되돌리면 시군구도 같이 "전체"로 리셋된다.
+/// 시도를 "전체"로 되돌리면 시군구도 같이 "전체"로 리셋된다. `<전체 랭킹>`의 필터
+/// 바텀시트(`_RankingFilterSheet`) 안에서만 쓰인다.
 class _RegionFilterRow extends StatelessWidget {
   const _RegionFilterRow({
     required this.sidoList,
@@ -302,49 +396,189 @@ class _RegionFilterRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      color: AppColors.appBackground,
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.xl,
-        AppSpacing.sm,
-        AppSpacing.xl,
-        AppSpacing.xs,
-      ),
-      child: Row(
-        children: [
-          const Icon(
-            Symbols.location_on_rounded,
-            size: 18,
-            color: AppColors.iconInactive,
+    return Row(
+      children: [
+        const Icon(
+          Symbols.location_on_rounded,
+          size: 18,
+          color: AppColors.iconInactive,
+        ),
+        const SizedBox(width: AppSpacing.xs),
+        Expanded(
+          child: PillDropdown<String?>(
+            value: sidoCode,
+            onChanged: onSidoChanged,
+            items: [const DropdownMenuItem(value: '11', child: Text('서울'))],
           ),
-          const SizedBox(width: AppSpacing.xs),
-          Expanded(
-            child: PillDropdown<String?>(
-              value: sidoCode,
-              onChanged: onSidoChanged,
-              items: [
-                const DropdownMenuItem(value: null, child: Text('전체 시/도')),
-                for (final s in sidoList)
-                  DropdownMenuItem(
-                    value: s.id,
-                    child: Text(kSidoShortName[s.id] ?? s.title),
+        ),
+        const SizedBox(width: AppSpacing.sm),
+        Expanded(
+          child: PillDropdown<String?>(
+            value: sigunguCode,
+            onChanged: sidoCode == null ? null : onSigunguChanged,
+            items: [
+              const DropdownMenuItem(value: null, child: Text('전체 시/군/구')),
+              for (final s in sigunguOptions)
+                DropdownMenuItem(value: s.id, child: Text(s.title)),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// The `<전체 랭킹>` filter bottom sheet — region, category, sort, and 방문
+/// 인증 필터, all in one place behind the app bar's filter icon. Owns a local
+/// copy of the filter state so its controls update instantly while calling
+/// straight through to [_RankingScreenState]'s own handlers, which do the
+/// actual loading/persisting.
+class _RankingFilterSheet extends StatefulWidget {
+  const _RankingFilterSheet({
+    required this.sidoList,
+    required this.initialSigunguOptions,
+    required this.initialSidoCode,
+    required this.initialSigunguCode,
+    required this.categories,
+    required this.initialCategory,
+    required this.initialDescending,
+    required this.initialVisitVerifiableOnly,
+    required this.onSidoChanged,
+    required this.onSigunguChanged,
+    required this.onCategoryChanged,
+    required this.onSortChanged,
+    required this.onVisitVerifiableOnlyChanged,
+    required this.currentSigunguOptions,
+  });
+
+  final List<GeoRegion> sidoList;
+  final List<GeoRegion> initialSigunguOptions;
+  final String? initialSidoCode;
+  final String? initialSigunguCode;
+  final List<Category> categories;
+  final int? initialCategory;
+  final bool initialDescending;
+  final bool initialVisitVerifiableOnly;
+
+  /// `_RankingScreenState._onSidoChanged` — updates the parent's region state
+  /// and reloads. Awaited so the sheet knows when [currentSigunguOptions] is
+  /// safe to re-read.
+  final Future<void> Function(String? code) onSidoChanged;
+  final ValueChanged<String?> onSigunguChanged;
+  final ValueChanged<int?> onCategoryChanged;
+  final ValueChanged<bool> onSortChanged;
+  final ValueChanged<bool> onVisitVerifiableOnlyChanged;
+
+  /// Reads `_RankingScreenState._sigunguOptions` after [onSidoChanged]
+  /// finishes loading the new 시도's 시군구 list.
+  final List<GeoRegion> Function() currentSigunguOptions;
+
+  @override
+  State<_RankingFilterSheet> createState() => _RankingFilterSheetState();
+}
+
+class _RankingFilterSheetState extends State<_RankingFilterSheet> {
+  late String? _sidoCode = widget.initialSidoCode;
+  late String? _sigunguCode = widget.initialSigunguCode;
+  late List<GeoRegion> _sigunguOptions = widget.initialSigunguOptions;
+  late int? _category = widget.initialCategory;
+  late bool _descending = widget.initialDescending;
+  late bool _visitVerifiableOnly = widget.initialVisitVerifiableOnly;
+
+  Future<void> _onSido(String? code) async {
+    if (code != null && isSidoLocked(code)) {
+      showRegionComingSoonToast(context);
+      return;
+    }
+    setState(() {
+      _sidoCode = code;
+      _sigunguCode = null;
+      _sigunguOptions = const [];
+    });
+    await widget.onSidoChanged(code);
+    if (!mounted || _sidoCode != code) return;
+    setState(() => _sigunguOptions = widget.currentSigunguOptions());
+  }
+
+  void _onSigungu(String? code) {
+    setState(() => _sigunguCode = code);
+    widget.onSigunguChanged(code);
+  }
+
+  void _onCategory(int? categoryId) {
+    setState(() => _category = categoryId);
+    widget.onCategoryChanged(categoryId);
+  }
+
+  void _onSort(bool descending) {
+    setState(() => _descending = descending);
+    widget.onSortChanged(descending);
+  }
+
+  void _onVisitVerifiableOnly(bool value) {
+    setState(() => _visitVerifiableOnly = value);
+    widget.onVisitVerifiableOnlyChanged(value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(
+          AppSpacing.xxl,
+          AppSpacing.lg,
+          AppSpacing.xxl,
+          AppSpacing.xxl + MediaQuery.viewInsetsOf(context).bottom,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('필터', style: AppTextStyles.title),
+            const SizedBox(height: AppSpacing.lg),
+            _RegionFilterRow(
+              sidoList: widget.sidoList,
+              sigunguOptions: _sigunguOptions,
+              sidoCode: _sidoCode,
+              sigunguCode: _sigunguCode,
+              onSidoChanged: _onSido,
+              onSigunguChanged: _onSigungu,
+            ),
+            const SizedBox(height: AppSpacing.md),
+            Row(
+              children: [
+                Expanded(
+                  child: PillDropdown<int?>(
+                    value: _category,
+                    onChanged: _onCategory,
+                    items: [
+                      const DropdownMenuItem(value: null, child: Text('전체')),
+                      for (final c in widget.categories)
+                        DropdownMenuItem(value: c.id, child: Text(c.name)),
+                    ],
                   ),
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: PillDropdown<bool>(
+                    value: _descending,
+                    onChanged: (v) => _onSort(v ?? true),
+                    items: const [
+                      DropdownMenuItem(value: true, child: Text('고요 지수 높은순')),
+                      DropdownMenuItem(value: false, child: Text('고요 지수 낮은순')),
+                    ],
+                  ),
+                ),
               ],
             ),
-          ),
-          const SizedBox(width: AppSpacing.sm),
-          Expanded(
-            child: PillDropdown<String?>(
-              value: sigunguCode,
-              onChanged: sidoCode == null ? null : onSigunguChanged,
-              items: [
-                const DropdownMenuItem(value: null, child: Text('전체 시/군/구')),
-                for (final s in sigunguOptions)
-                  DropdownMenuItem(value: s.id, child: Text(s.title)),
-              ],
+            const SizedBox(height: AppSpacing.md),
+            VisitVerifiableFilterChip(
+              active: _visitVerifiableOnly,
+              onTap: () => _onVisitVerifiableOnly(!_visitVerifiableOnly),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

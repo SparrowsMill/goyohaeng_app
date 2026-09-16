@@ -9,16 +9,15 @@ import '../../theme/app_shadows.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
 import '../../widgets/app_bottom_nav_bar.dart';
+import '../../widgets/fading_scene_background.dart';
 import '../../widgets/mini_korea_map.dart';
 import '../food/my_food_screen.dart';
 import '../map/map_screen.dart';
-import '../ranking/ranking_screen.dart';
-import '../record/my_footprint_screen.dart';
 import '../sparrow/sparrow_screen.dart';
 
 /// Mill home ("방앗간") screen — the app's main landing tab. `_TopBar` (logo)
 /// is persistent, like the bottom nav. `_MillHeader` below it
-/// (background scene + greeting + sparrow + speech bubble) scrolls away with
+/// (background scene + greeting + sparrow + speech bubble) scrolls with
 /// the rest of the content like any other section.
 class MillHomeScreen extends StatefulWidget {
   const MillHomeScreen({super.key});
@@ -33,6 +32,7 @@ class _MillHomeScreenState extends State<MillHomeScreen> {
     super.initState();
     // 방앗간에 들어올 때마다 스탯을 최신화 (방문 인증·음식 만들기 후 반영).
     DashboardStore.instance.refresh();
+    SparrowStore.instance.ensureLoaded();
   }
 
   @override
@@ -62,11 +62,14 @@ class _MillHomeScreenState extends State<MillHomeScreen> {
                     ],
                   ),
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(
-                      AppSpacing.xl,
-                      100,
-                      AppSpacing.xl,
-                      AppSpacing.xxl,
+                    padding: AppBottomNavBar.scrollPadding(
+                      context,
+                      const EdgeInsets.fromLTRB(
+                        AppSpacing.xl,
+                        100,
+                        AppSpacing.xl,
+                        AppSpacing.xxl,
+                      ),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -74,7 +77,7 @@ class _MillHomeScreenState extends State<MillHomeScreen> {
                         Text('어디로 떠나볼까요?', style: AppTextStyles.h2),
                         const SizedBox(height: AppSpacing.xs),
                         Text(
-                          '내 위치 주변의 갭지수와 다녀온 곳을 한눈에',
+                          '내 위치 주변의 고요 지수와 다녀온 곳을 한눈에',
                           style: AppTextStyles.bodyMedium.copyWith(
                             color: AppColors.textSecondary,
                             fontWeight: FontWeight.w600,
@@ -88,11 +91,13 @@ class _MillHomeScreenState extends State<MillHomeScreen> {
                           height: 56,
                           child: Material(
                             color: AppColors.primary,
-                            borderRadius:
-                                BorderRadius.circular(AppRadius.primaryButton),
+                            borderRadius: BorderRadius.circular(
+                              AppRadius.primaryButton,
+                            ),
                             child: InkWell(
-                              borderRadius:
-                                  BorderRadius.circular(AppRadius.primaryButton),
+                              borderRadius: BorderRadius.circular(
+                                AppRadius.primaryButton,
+                              ),
                               onTap: () => Navigator.of(context).push(
                                 MaterialPageRoute(
                                   settings: const RouteSettings(
@@ -109,11 +114,13 @@ class _MillHomeScreenState extends State<MillHomeScreen> {
                                     width: 40,
                                     height: 40,
                                     errorBuilder:
-                                        (context, error, stackTrace) => const Icon(
-                                      Symbols.soup_kitchen_rounded,
-                                      size: 24,
-                                      color: AppColors.textOnPrimaryButton,
-                                    ),
+                                        (context, error, stackTrace) =>
+                                            const Icon(
+                                              Symbols.soup_kitchen_rounded,
+                                              size: 24,
+                                              color:
+                                                  AppColors.textOnPrimaryButton,
+                                            ),
                                   ),
                                   const SizedBox(width: AppSpacing.sm),
                                   Text(
@@ -136,30 +143,15 @@ class _MillHomeScreenState extends State<MillHomeScreen> {
           ),
         ],
       ),
-      bottomNavigationBar: AppBottomNavBar(
-        currentIndex: 0,
-        onTap: (index) {
-          if (index == 1) {
-            Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const MapScreen()),
-            );
-          } else if (index == 2) {
-            Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const RankingScreen()),
-            );
-          } else if (index == 3) {
-            Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const MyFootprintScreen()),
-            );
-          }
-        },
-      ),
+      extendBody: true,
+      bottomNavigationBar: const AppBottomNavBar(currentIndex: 0),
     );
   }
 }
 
-/// Persistent top bar (logo) — stays on screen at all times, like the bottom
-/// navigation, unlike `_MillHeader` below it which scrolls away with the page.
+/// Persistent top bar (logo + 마이 페이지 profile icon) — stays on screen at
+/// all times, like the bottom navigation, unlike `_MillHeader` below it which
+/// scrolls away with the page.
 class _TopBar extends StatelessWidget {
   const _TopBar();
 
@@ -175,10 +167,21 @@ class _TopBar extends StatelessWidget {
         child: Row(
           children: [
             Image.asset(
-              'assets/branding/app_logo.png',
+              'assets/branding/app_logo_2.png',
               height: 50,
               errorBuilder: (context, error, stackTrace) =>
                   Text('고요행', style: AppTextStyles.h3),
+            ),
+            const Spacer(),
+            IconButton(
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const SparrowScreen()),
+              ),
+              icon: const Icon(
+                Symbols.account_circle_rounded,
+                size: 28,
+                color: AppColors.iconPrimary,
+              ),
             ),
           ],
         ),
@@ -201,10 +204,13 @@ class _MillHeader extends StatelessWidget {
     return (name == null || name.isEmpty) ? '여행자님' : '$name님';
   }
 
-  void _openSparrow(BuildContext context) {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const SparrowScreen()),
-    );
+  /// 현재 시각대에 맞는 인사말.
+  String _greetingTimeOfDay() {
+    final hour = DateTime.now().hour;
+    if (hour >= 5 && hour < 12) return '좋은 아침이에요';
+    if (hour >= 12 && hour < 18) return '좋은 오후예요';
+    if (hour >= 18 && hour < 23) return '좋은 저녁이에요';
+    return '좋은 밤이에요';
   }
 
   @override
@@ -220,11 +226,10 @@ class _MillHeader extends StatelessWidget {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            Image.asset(
-              'assets/illustrations/scenes/main_bg.png',
+            const FadingSceneBackground(
+              asset: 'assets/illustrations/scenes/main_bg.png',
+              height: _height,
               fit: BoxFit.cover,
-              alignment: Alignment.topCenter,
-              errorBuilder: (context, error, stackTrace) => const SizedBox(),
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(
@@ -237,7 +242,7 @@ class _MillHeader extends StatelessWidget {
                 TextSpan(
                   children: [
                     TextSpan(
-                      text: '좋은 오후예요, ',
+                      text: '${_greetingTimeOfDay()}, ',
                       style: AppTextStyles.bodyLarge.copyWith(
                         color: AppColors.textSecondary,
                         fontWeight: FontWeight.w600,
@@ -284,45 +289,31 @@ class _MillHeader extends StatelessWidget {
             ),
             // Sparrow level card — overlaps the scene on the left, below the
             // greeting.
-            const Positioned(
-              left: 184,
-              top: 184,
-              child: _SparrowLevelCard(),
-            ),
-            // "마이페이지로 이동" button. Kept clear of the `_StatBar` that
-            // overlaps up into the banner bottom.
+            const Positioned(left: 184, top: 184, child: _SparrowLevelCard()),
+            // "마이페이지로 이동" — small pill button, "내 음식 보기"와 같은
+            // 초록(`AppColors.primary`) 색상. 아이콘 없이 문구만.
             Positioned(
               right: AppSpacing.md,
               bottom: 34,
               child: Material(
-                color: AppColors.textPrimary.withValues(alpha: 0.35),
+                color: AppColors.primary,
                 borderRadius: BorderRadius.circular(AppRadius.pill),
                 child: InkWell(
                   borderRadius: BorderRadius.circular(AppRadius.pill),
-                  onTap: () => _openSparrow(context),
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(
-                      AppSpacing.md,
-                      AppSpacing.sm,
-                      AppSpacing.sm,
-                      AppSpacing.sm,
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const SparrowScreen()),
+                  ),
+                  child: Container(
+                    height: 36,
+                    alignment: Alignment.center,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.md,
                     ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          '마이페이지로 이동',
-                          style: AppTextStyles.caption.copyWith(
-                            color: AppColors.textOnPrimaryButton,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        const Icon(
-                          Symbols.chevron_right_rounded,
-                          size: 16,
-                          color: AppColors.textOnPrimaryButton,
-                        ),
-                      ],
+                    child: Text(
+                      '마이페이지로 이동',
+                      style: AppTextStyles.buttonMedium.copyWith(
+                        color: AppColors.textOnPrimaryButton,
+                      ),
                     ),
                   ),
                 ),
@@ -337,12 +328,23 @@ class _MillHeader extends StatelessWidget {
 
 /// Sparrow level indicator on the mill-home header — no card frame, just the
 /// profile avatar + "참새 Lv.N" name, with the XP bar directly below.
+///
+/// `GET /users/me/sparrow`(2026-09-16 신설, [SparrowStore])의 실 레벨/경험치로
+/// 덮어쓴다. 못 받았거나 아직 로드 전이면 `mock_sparrow` placeholder를 쓴다.
 class _SparrowLevelCard extends StatelessWidget {
   const _SparrowLevelCard();
 
   @override
   Widget build(BuildContext context) {
-    final p = mockSparrowProfile;
+    return ListenableBuilder(
+      listenable: SparrowStore.instance,
+      builder: (context, _) => _buildCard(SparrowStore.instance.data),
+    );
+  }
+
+  Widget _buildCard(Sparrow? live) {
+    final level = live?.level ?? mockSparrowProfile.level;
+    final xpProgress = live?.xpProgress ?? mockSparrowProfile.xpProgress;
     return SizedBox(
       width: 160,
       child: Column(
@@ -357,10 +359,7 @@ class _SparrowLevelCard extends StatelessWidget {
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: AppColors.surfaceSelected,
-                  border: Border.all(
-                    color: AppColors.textPrimary,
-                    width: 1.5,
-                  ),
+                  border: Border.all(color: AppColors.textPrimary, width: 1.5),
                 ),
                 child: ClipOval(
                   child: Image.asset(
@@ -375,7 +374,7 @@ class _SparrowLevelCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: AppSpacing.xs),
-              _OutlinedText('참새 Lv.${p.level}'),
+              _OutlinedText('참새 Lv.$level'),
             ],
           ),
           const SizedBox(height: AppSpacing.sm),
@@ -389,7 +388,7 @@ class _SparrowLevelCard extends StatelessWidget {
             child: ClipRRect(
               borderRadius: BorderRadius.circular(AppRadius.pill),
               child: LinearProgressIndicator(
-                value: p.xpProgress,
+                value: xpProgress,
                 minHeight: 6,
                 backgroundColor: AppColors.surfaceSelected,
                 valueColor: const AlwaysStoppedAnimation<Color>(
@@ -425,10 +424,7 @@ class _OutlinedText extends StatelessWidget {
               ..color = AppColors.textPrimary,
           ),
         ),
-        Text(
-          text,
-          style: base.copyWith(color: AppColors.textOnPrimaryButton),
-        ),
+        Text(text, style: base.copyWith(color: AppColors.textOnPrimaryButton)),
       ],
     );
   }
@@ -461,7 +457,9 @@ class _SpeechBubble extends StatelessWidget {
           child: Text(
             text,
             textAlign: TextAlign.center,
-            style: AppTextStyles.bodySmall.copyWith(fontWeight: FontWeight.w600),
+            style: AppTextStyles.bodySmall.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ),
         CustomPaint(
@@ -509,8 +507,11 @@ class _StatBar extends StatelessWidget {
         // Between appBackground (warm cream) and surface (near-white) —
         // brighter than the page background instead of blending flush into
         // it, but without going back to a stark white card.
-        color: Color.lerp(AppColors.appBackground, AppColors.surface, 1.0)!
-            .withValues(alpha: _opacity),
+        color: Color.lerp(
+          AppColors.appBackground,
+          AppColors.surface,
+          1.0,
+        )!.withValues(alpha: _opacity),
         border: Border.all(color: AppColors.border),
         borderRadius: BorderRadius.circular(28),
         boxShadow: AppShadows.card,
@@ -601,8 +602,9 @@ class _StatItem extends StatelessWidget {
                 label,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: AppTextStyles.caption
-                    .copyWith(fontWeight: FontWeight.w600),
+                style: AppTextStyles.caption.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
               ),
               Text(
                 value,
@@ -655,9 +657,9 @@ class _HomeMapCard extends StatelessWidget {
             right: AppSpacing.md,
             bottom: AppSpacing.md,
             child: _OpenMapButton(
-              onTap: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const MapScreen()),
-              ),
+              onTap: () => Navigator.of(
+                context,
+              ).push(MaterialPageRoute(builder: (_) => const MapScreen())),
             ),
           ),
         ],
@@ -677,7 +679,8 @@ class _TopVisitedPanel extends StatelessWidget {
       listenable: DashboardStore.instance,
       builder: (context, _) {
         final top =
-            (DashboardStore.instance.data?.topRegions ?? const <DashboardRegion>[])
+            (DashboardStore.instance.data?.topRegions ??
+                    const <DashboardRegion>[])
                 .take(3)
                 .toList();
         return Container(
@@ -697,15 +700,17 @@ class _TopVisitedPanel extends StatelessWidget {
             children: [
               Text(
                 '방문 TOP 3',
-                style:
-                    AppTextStyles.caption.copyWith(fontWeight: FontWeight.w700),
+                style: AppTextStyles.caption.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
               ),
               const SizedBox(height: 4),
               if (top.isEmpty)
                 Text(
                   '아직 방문 인증이 없어요',
-                  style: AppTextStyles.caption
-                      .copyWith(color: AppColors.textSecondary),
+                  style: AppTextStyles.caption.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
                 )
               else
                 for (var i = 0; i < top.length; i++) ...[
@@ -798,8 +803,9 @@ class _OpenMapButton extends StatelessWidget {
             children: [
               Text(
                 '지도 열기',
-                style: AppTextStyles.buttonMedium
-                    .copyWith(color: AppColors.textOnPrimaryButton),
+                style: AppTextStyles.buttonMedium.copyWith(
+                  color: AppColors.textOnPrimaryButton,
+                ),
               ),
               const SizedBox(width: 2),
               const Icon(

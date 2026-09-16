@@ -1,23 +1,28 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 import 'app_colors.dart';
 
 /// Type scale defined in CLAUDE.md — Global Design System §2.
 ///
-/// Korean text uses "Gowun Batang"; English/numerals use "Noto Serif".
+/// Korean text uses "Gowun Batang"; English/numerals use "Noto Serif". Both
+/// are bundled locally as assets (`pubspec.yaml` `fonts:`, downloaded from
+/// Google Fonts) rather than fetched at runtime via the `google_fonts`
+/// package — that package silently falls back to the system font whenever
+/// the device has no network access at first use, which read as "the font
+/// changed" even though no code changed.
+///
 /// [korean] applies both fonts (Gowun Batang first) so mixed Korean/English
 /// strings render correctly; use [latin] only for pure English/numeral
 /// content (e.g. verification codes, scores) where a Noto Serif-only look
 /// is wanted.
 abstract final class AppTextStyles {
-  static TextStyle korean(TextStyle style) =>
-      GoogleFonts.gowunBatang(textStyle: style).copyWith(
-        fontFamilyFallback: [GoogleFonts.notoSerif().fontFamily!, 'serif'],
+  static TextStyle korean(TextStyle style) => style.copyWith(
+        fontFamily: 'Gowun Batang',
+        fontFamilyFallback: const ['Noto Serif', 'serif'],
       );
 
-  static TextStyle latin(TextStyle style) =>
-      GoogleFonts.notoSerif(textStyle: style).copyWith(
+  static TextStyle latin(TextStyle style) => style.copyWith(
+        fontFamily: 'Noto Serif',
         fontFamilyFallback: const ['serif'],
       );
 

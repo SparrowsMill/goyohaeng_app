@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../api/api.dart';
+import '../theme/app_colors.dart';
 import 'korea_map_geo.dart';
 
 /// 갭지수 / 관광 스팟 수 for the `<지도>` screen, keyed by the 행정구역 codes
@@ -23,10 +24,23 @@ class RegionStats {
 /// Short 시도 names for on-map labels, keyed by the GeoJSON's 행정구역 코드
 /// (legacy 2-digit scheme). Falls back to the GeoJSON title if a code is new.
 const kSidoShortName = <String, String>{
-  '11': '서울', '21': '부산', '22': '대구', '23': '인천', '24': '광주',
-  '25': '대전', '26': '울산', '29': '세종', '31': '경기', '32': '강원',
-  '33': '충북', '34': '충남', '35': '전북', '36': '전남', '37': '경북',
-  '38': '경남', '39': '제주',
+  '11': '서울',
+  '21': '부산',
+  '22': '대구',
+  '23': '인천',
+  '24': '광주',
+  '25': '대전',
+  '26': '울산',
+  '29': '세종',
+  '31': '경기',
+  '32': '강원',
+  '33': '충북',
+  '34': '충남',
+  '35': '전북',
+  '36': '전남',
+  '37': '경북',
+  '38': '경남',
+  '39': '제주',
 };
 
 /// 시도 code → stats. All 17 시도 present.
@@ -94,9 +108,40 @@ Future<void> _loadRealRegionStats() async {
     for (final s in scores) {
       final code = codeByName[s.regionName];
       if (code == null) continue;
-      stats[code] =
-          RegionStats(avgGapIndex: s.gapIndex, spotCount: s.placeCount);
+      stats[code] = RegionStats(
+        avgGapIndex: s.gapIndex,
+        spotCount: s.placeCount,
+      );
     }
+
+    // `GET /regions/gap-scores`는 구(시군구, 5자리) 단위 평균만 내려주고
+    // 시도(2자리) 단위 집계는 아예 안 준다(`RegionsService.getGapScores`가
+    // `districtRegionId`로만 그룹핑, 2026-09-14 확인) — 그래서 매칭된 구들의
+    // 평균을 여기서 직접 내 시도 값을 보완한다. 지금은 서울만 구 단위 실
+    // 데이터가 있어 사실상 서울(11)에만 적용된다. 나중에 백엔드가 시도
+    // 단위를 직접 내려주면(시도 이름이 [codeByName]에 매칭돼) 위 루프에서
+    // 이미 채워지므로, 여기서는 그 값을 덮어쓰지 않는다.
+    final byProvince = <String, List<RegionStats>>{};
+    for (final entry in stats.entries) {
+      if (entry.key.length != 5) continue; // 시군구 코드만 모은다.
+      byProvince
+          .putIfAbsent(entry.key.substring(0, 2), () => [])
+          .add(entry.value);
+    }
+    for (final province in byProvince.entries) {
+      if (stats.containsKey(province.key)) continue;
+      final regions = province.value;
+      final avgGap =
+          (regions.map((r) => r.avgGapIndex).reduce((a, b) => a + b) /
+                  regions.length)
+              .round();
+      final totalSpots = regions.fold(0, (sum, r) => sum + r.spotCount);
+      stats[province.key] = RegionStats(
+        avgGapIndex: avgGap,
+        spotCount: totalSpots,
+      );
+    }
+
     _realStats = stats;
   } catch (_) {
     _realStatsLoading = null;
@@ -136,16 +181,18 @@ RegionStats _deterministicStats(String code) {
 const gapIndexScaleMin = 20;
 const gapIndexScaleMax = 80;
 
-/// Muted terracotta — 갭지수가 낮은 쪽 (관심 대비 방문이 이미 많음).
-const _gapLow = Color(0xFFB75E4D);
+/// 갭지수가 낮은 쪽 (관심 대비 방문이 이미 많음) — 갭지수 설명 다이얼로그의
+/// "고요지수 낮음" 카드와 같은 빨간색([AppColors.error]).
+const _gapLow = AppColors.error;
 
 /// Neutral warm grey — the middle of the scale. Deliberately near-colourless
 /// (balanced RGB) so it never reads as a third category and the red↔blue lerp
 /// doesn't pass through a muddy green.
 const _gapMid = Color(0xFFC9C5BF);
 
-/// Muted slate blue — 갭지수가 높은 쪽 (숨은 명소).
-const _gapHigh = Color(0xFF4C6B8A);
+/// 갭지수가 높은 쪽 (숨은 명소) — 갭지수 설명 다이얼로그의 "고요지수 높음"
+/// 카드와 같은 파란색([AppColors.info]).
+const _gapHigh = AppColors.info;
 
 /// Color for a given 갭지수 on the low→mid→high scale used by the map, pins,
 /// and legend.
@@ -167,9 +214,7 @@ Color gapIndexAccent(num gapIndex) {
 }
 
 /// The full low→high gradient, for the legend bar.
-const gapIndexGradient = LinearGradient(
-  colors: [_gapLow, _gapMid, _gapHigh],
-);
+const gapIndexGradient = LinearGradient(colors: [_gapLow, _gapMid, _gapHigh]);
 
 /// Soft watercolor sea behind the land on every Korea map (the `<지도>` vector
 /// map and the mill-home mini map) — a muted sky blue that still sits inside

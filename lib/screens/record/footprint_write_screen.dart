@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:flutter/services.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
@@ -10,8 +11,6 @@ import '../../theme/app_text_styles.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/app_bottom_nav_bar.dart';
 import '../../widgets/app_text_field.dart';
-import '../map/map_screen.dart';
-import '../ranking/ranking_screen.dart';
 
 const _titleMaxLength = 50;
 const _bodyMaxLength = 200;
@@ -23,25 +22,29 @@ const _maxPhotos = 5;
 ///
 /// "기록용 플랫폼에 공유"(방문 인증 보상 / 셰프의 주방)로 진입한 경우 날짜·
 /// 장소·획득 일러스트가 미리 채워진 채로 열린다 — 그래서 [initialDate] /
-/// [initialPlace] / [initialPhotoAssets] (첨부 이미지 에셋 경로) 를 받는다.
+/// [initialPlace] / [initialPhotoAssets] (첨부 이미지 에셋 경로, 다른 사진과
+/// 동일하게 실제 업로드·저장된다) 를 받는다.
 ///
 /// 나의 발자국에서 기록을 눌러 들어오면 [editing] 이 `true`, [recordId] 가
 /// 그 기록의 ID로 채워진 채 열린다. 저장은 `RecordService().create(...)` /
 /// `.update(...)`로 실제 백엔드에 반영되고, 성공하면 `Navigator.pop(true)`로
 /// 호출한 화면에 알려 목록을 다시 불러오게 한다.
 ///
-/// * 장소는 자유 텍스트가 아니라 실제 `Place` 중에서 고른다([_pickPlace] —
-///   `PlaceService().list()`로 가져온 페이지를 이름으로 클라이언트 검색).
-///   서버 검증을 통과하려면 실제 `placeId`가 필요하기 때문. 완전히 선택
-///   사항이라 고르지 않아도 저장할 수 있다.
-/// * 만든 음식도 선택적으로 붙일 수 있다([_pickUserFood] —
-///   `UserService().getFoods()`).
-/// * 사진 첨부는 앱 안에서만 보이는 미리보기다 — 백엔드에 이미지 업로드
-///   엔드포인트가 아직 없어 실제 저장 시에는 `imageUrls: []`로 보낸다
-///   (아래 "사진 첨부" 섹션 캡션 참고).
-/// * TODO: 갤러리 사진 선택 — image_picker 연동. 지금은 "+" 누르면 스낵바.
-/// * TODO(asset): 이 화면 배경 `assets/illustrations/scenes/footprint_bg.png`
-///   (§9, 나의 발자국과 공유) 미납품 — 그 전까지 평면 #FAE7C0.
+/// * 장소는 입력칸 하나뿐이다 — [initialPlace]/[initialManualPlaceName]으로
+///   자동 채워지고(방문 인증 보상 화면 등), 그대로 두면 등록 장소([placeId])로
+///   저장되고 사용자가 글자를 고치는 순간부터는 수동 장소명으로 취급한다
+///   (전체 장소 175,000여 개를 훑어 방문 여부를 하나씩 조회하던 기존 검색
+///   팝업은 그 규모에서 사실상 로딩이 끝나지 않아 제거했다). 수정 시 장소
+///   변경·해제도 지원하며, 기존에 연결된 방문 인증이 있었다면 서버가 그
+///   연결을 해제한다(인증 기록 자체는 유지).
+/// * 만든 음식 선택 UI는 제공하지 않는다. 음식 화면에서 전달된 기존 연결은 유지한다.
+/// * 갤러리에서 고른 사진과 [initialPhotoAssets]로 미리 채워진 번들 에셋(보상
+///   일러스트 등)은 모두 저장 시 `POST /uploads/images`로 업로드하고 받은
+///   URL을 기록의 `imageUrls`로 저장한다(스펙 2026-09-15) — 번들 에셋은
+///   `initState`에서 바이트를 미리 읽어와 갤러리 사진과 동일하게 취급한다.
+///   수정 화면에서는 기존 사진([initialImageUrls])도 처음부터 [_PhotoStrip]에
+///   함께 표시돼 수정 대상에 포함된다 — 다른 사진과 똑같이 ✕ 배지로 개별
+///   삭제할 수 있고, 저장 시 지우지 않은 것만 그대로 유지된다.
 class FootprintWriteScreen extends StatefulWidget {
   const FootprintWriteScreen({
     super.key,
@@ -50,9 +53,11 @@ class FootprintWriteScreen extends StatefulWidget {
     this.initialDate,
     this.initialPlaceId,
     this.initialPlace,
+    this.initialManualPlaceName,
     this.initialTitle,
     this.initialText,
     this.initialPhotoAssets = const [],
+    this.initialImageUrls = const [],
     this.initialUserFoodId,
     this.initialUserFoodName,
     this.initialVisitVerificationId,
@@ -72,12 +77,21 @@ class FootprintWriteScreen extends StatefulWidget {
   /// 장소 표시 이름 — [initialPlaceId]가 없어도(목업 스팟 이름 등) 화면에는
   /// 보여준다. 실제 `placeId`가 없으면 저장 시 장소는 전송되지 않는다.
   final String? initialPlace;
+
+  /// 기존 기록에 저장된 수동 장소명(`record.manualPlaceName`) — [editing]일
+  /// 때만 채워진다. [initialPlaceId]와 동시에 채워지지 않는다.
+  final String? initialManualPlaceName;
   final String? initialTitle;
   final String? initialText;
 
-  /// 미리 첨부되는 이미지 — 전체 에셋 경로(`assets/...png`). 앱 내 미리보기
-  /// 전용이며 저장되지 않는다.
+  /// 미리 첨부되는 이미지 — 전체 에셋 경로(`assets/...png`). 갤러리에서 고른
+  /// 사진과 동일하게 실제 업로드되어 기록에 저장된다.
   final List<String> initialPhotoAssets;
+
+  /// 기존 기록에 이미 업로드된 사진들(`record.images[].imageUrl`) — [editing]일
+  /// 때만 채워진다. 화면에는 표시하지 않지만, 새 사진을 추가로 골라 저장할 때
+  /// 이 목록과 합쳐 보내 기존 사진이 지워지지 않게 한다.
+  final List<String> initialImageUrls;
 
   /// 미리 선택된 만든 음식 (`UserFood.id`) — 이름과 함께 알고 있을 때만.
   final int? initialUserFoodId;
@@ -91,29 +105,67 @@ class FootprintWriteScreen extends StatefulWidget {
 }
 
 class _FootprintWriteScreenState extends State<FootprintWriteScreen> {
-  late final _titleController =
-      TextEditingController(text: widget.initialTitle ?? '');
-  late final _bodyController =
-      TextEditingController(text: widget.initialText ?? '');
+  late final _titleController = TextEditingController(
+    text: widget.initialTitle ?? '',
+  );
+  late final _bodyController = TextEditingController(
+    text: widget.initialText ?? '',
+  );
 
+  /// 방문 인증 보상 화면 등에서 넘어온 장소명, 또는 수정 시 기존 수동
+  /// 장소명으로 미리 채워진다. 그대로 두면 [_placeId]가 살아 있어 등록
+  /// 장소로 저장되고, 사용자가 고치는 순간 [_placeId]가 풀리며 수동
+  /// 장소명으로 취급된다.
+  late final _placeController = TextEditingController(
+    text: widget.initialPlace ?? widget.initialManualPlaceName ?? '',
+  );
   late DateTime _date = widget.initialDate ?? DateTime.now();
-  late int? _placeId = widget.initialPlaceId;
-  late String? _placeName = widget.initialPlace;
-  late int? _userFoodId = widget.initialUserFoodId;
-  late String? _userFoodName = widget.initialUserFoodName;
-  late final List<String> _photoAssets = [...widget.initialPhotoAssets];
+  int? _placeId;
+  late final List<String> _photoAssets = [
+    ...widget.initialImageUrls,
+    ...widget.initialPhotoAssets,
+  ];
+  final Map<String, MemoryImage> _selectedPhotos = {};
+  bool _pickingPhotos = false;
   bool _submitting = false;
 
   @override
   void initState() {
     super.initState();
+    _placeId = widget.initialPlaceId;
+    // 자동 채워진 장소명을 사용자가 직접 고치면 더 이상 등록 장소(실제
+    // Place.id)와 연결됐다고 볼 수 없다 — 그 순간부터 수동 장소명으로
+    // 취급한다.
+    _placeController.addListener(() {
+      if (_placeId != null) setState(() => _placeId = null);
+    });
     _bodyController.addListener(() => setState(() {}));
+    _loadInitialAssetPhotos();
+  }
+
+  /// [widget.initialPhotoAssets]로 미리 채워진 번들 에셋의 바이트를 읽어와
+  /// 갤러리에서 고른 사진과 동일하게 `_selectedPhotos`에 담는다 — 저장 시
+  /// 업로드 대상 판별(`_submit`)이 이 맵에 있는지만 보기 때문에, 여기 담아야
+  /// 실제로 `POST /uploads/images`에 올라가 기록에 저장된다.
+  Future<void> _loadInitialAssetPhotos() async {
+    for (final path in widget.initialPhotoAssets) {
+      try {
+        final data = await rootBundle.load(path);
+        if (!mounted) return;
+        setState(() {
+          _selectedPhotos[path] = MemoryImage(data.buffer.asUint8List());
+        });
+      } catch (_) {
+        // 에셋을 못 읽으면 미리보기(AssetImage)로만 남고 업로드에서는 빠진다.
+      }
+    }
   }
 
   @override
   void dispose() {
     _titleController.dispose();
     _bodyController.dispose();
+    _placeController.dispose();
     super.dispose();
   }
 
@@ -141,121 +193,133 @@ class _FootprintWriteScreenState extends State<FootprintWriteScreen> {
     if (picked != null) setState(() => _date = picked);
   }
 
-  Future<void> _pickPlace() async {
-    final result = await showModalBottomSheet<_PickerResult>(
-      context: context,
-      isScrollControlled: true,
-      builder: (_) => _PickerSheet(
-        title: '장소 선택',
-        hintText: '장소 이름으로 검색',
-        emptyText: '조건에 맞는 장소가 없어요.',
-        icon: Symbols.location_on_rounded,
-        loader: () async {
-          final page = await PlaceService().list(limit: 100);
-          return [
-            for (final p in page.items)
-              _PickerItem(id: p.id, title: p.name, subtitle: p.address),
-          ];
-        },
-      ),
-    );
-    if (result == null || !mounted) return;
-    setState(() {
-      if (result.cleared) {
-        _placeId = null;
-        _placeName = null;
-      } else {
-        _placeId = result.item!.id;
-        _placeName = result.item!.title;
-      }
-    });
-  }
-
-  Future<void> _pickUserFood() async {
-    final result = await showModalBottomSheet<_PickerResult>(
-      context: context,
-      isScrollControlled: true,
-      builder: (_) => _PickerSheet(
-        title: '만든 음식 선택',
-        hintText: '음식 이름으로 검색',
-        emptyText: '아직 만든 음식이 없어요.',
-        icon: Symbols.restaurant_rounded,
-        loader: () async {
-          final page = await UserService().getFoods(limit: 100);
-          return [
-            for (final f in page.items)
-              _PickerItem(
-                id: f.id,
-                title: f.name,
-                subtitle: f.madeAt == null
-                    ? null
-                    : '${f.madeAt!.year}.${f.madeAt!.month}.${f.madeAt!.day} 제작',
-              ),
-          ];
-        },
-      ),
-    );
-    if (result == null || !mounted) return;
-    setState(() {
-      if (result.cleared) {
-        _userFoodId = null;
-        _userFoodName = null;
-      } else {
-        _userFoodId = result.item!.id;
-        _userFoodName = result.item!.title;
-      }
-    });
-  }
-
   void _removePhoto(int index) {
-    setState(() => _photoAssets.removeAt(index));
+    if (_submitting || _pickingPhotos) return;
+    setState(() {
+      _selectedPhotos.remove(_photoAssets.removeAt(index));
+    });
   }
 
-  void _addPhoto() {
+  Future<void> _addPhoto() async {
+    if (_pickingPhotos || _submitting) return;
     if (_photoAssets.length >= _maxPhotos) {
       _snack('사진은 최대 $_maxPhotos장까지 첨부할 수 있어요.');
       return;
     }
-    _snack('갤러리에서 사진 첨부는 곧 만나요.');
+    setState(() => _pickingPhotos = true);
+    try {
+      final files = await ImagePicker().pickMultiImage(
+        maxWidth: 1920,
+        maxHeight: 1920,
+        imageQuality: 85,
+        requestFullMetadata: false,
+      );
+      if (!mounted) return;
+      final remaining = _maxPhotos - _photoAssets.length;
+      final images = <String, MemoryImage>{};
+      for (final file in files.take(remaining)) {
+        images[file.path] = MemoryImage(await file.readAsBytes());
+      }
+      if (!mounted) return;
+      setState(() {
+        for (final entry in images.entries) {
+          if (!_photoAssets.contains(entry.key)) _photoAssets.add(entry.key);
+          _selectedPhotos[entry.key] = entry.value;
+        }
+      });
+      if (files.length > remaining) {
+        _snack('사진은 최대 $_maxPhotos장까지 첨부할 수 있어요.');
+      }
+    } catch (_) {
+      if (mounted) _snack('사진을 불러오지 못했어요. 사진 접근 권한을 확인해주세요.');
+    } finally {
+      if (mounted) setState(() => _pickingPhotos = false);
+    }
   }
 
   Future<void> _submit() async {
+    if (_pickingPhotos || _submitting) return;
     final title = _titleController.text.trim();
     final body = _bodyController.text.trim();
     if (body.isEmpty) {
       _snack('짧은 글을 남겨주세요.');
       return;
     }
-    if (_submitting) return;
     setState(() => _submitting = true);
 
     final dateStr =
         '${_date.year.toString().padLeft(4, '0')}-'
         '${_date.month.toString().padLeft(2, '0')}-'
         '${_date.day.toString().padLeft(2, '0')}';
+    // _placeId가 살아 있으면(자동 채워진 뒤 손대지 않았으면) 등록 장소로
+    // 보내고, 그렇지 않으면(비어 있었거나 사용자가 고쳤으면) 입력칸 글자를
+    // 수동 장소명으로 보낸다 — 둘은 상호 배타적이다.
+    final manualPlaceName = _placeId == null
+        ? _placeController.text.trim()
+        : '';
 
     try {
+      // `_photoAssets` 순서대로 최종 `imageUrls`를 만든다 — 이미 올라가 있던
+      // 기존 사진(원격 URL)은 그대로 두고, 갤러리에서 고른 사진과
+      // `_loadInitialAssetPhotos`가 읽어둔 번들 에셋(둘 다 `_selectedPhotos`에
+      // 바이트가 있음)만 새로 업로드한다. 사용자가 [_removePhoto]로 기존
+      // 사진을 지웠으면 `_photoAssets`에서 이미 빠져 있어 자연히 반영된다.
+      final finalImageUrls = <String>[];
+      for (final key in _photoAssets) {
+        if (key.startsWith('http://') || key.startsWith('https://')) {
+          finalImageUrls.add(key);
+          continue;
+        }
+        final photo = _selectedPhotos[key];
+        if (photo == null) continue;
+        finalImageUrls.add(await UploadService().uploadImage(photo.bytes));
+      }
+
       final recordId = widget.recordId;
+      String message;
       if (widget.editing && recordId != null) {
+        // placeId/manualPlaceName은 상호 배타적이라 항상 함께 반영한다 —
+        // 둘 다 바뀌지 않았으면 생략해 기존 장소 연결(및 방문 인증 연결)을
+        // 그대로 유지한다(스펙 2026-09-15).
+        final placeChanged = _placeId != widget.initialPlaceId;
+        final manualChanged =
+            manualPlaceName != (widget.initialManualPlaceName?.trim() ?? '');
         await RecordService().update(
           recordId,
           date: dateStr,
           title: title.isEmpty ? '' : title,
           body: body,
+          placeId: placeChanged || manualChanged
+              ? _placeId
+              : recordFieldUnset,
+          manualPlaceName: placeChanged || manualChanged
+              ? (manualPlaceName.isEmpty ? null : manualPlaceName)
+              : recordFieldUnset,
+          // PATCH의 imageUrls는 전체 교체라, 새로 고른 사진 유무와 무관하게
+          // 항상 현재 상태(`finalImageUrls`)를 그대로 보낸다 — 그래야 기존
+          // 사진을 지운 경우(새로 고른 사진 없이 삭제만 한 경우)도 반영된다.
+          imageUrls: finalImageUrls,
         );
+        // PATCH /records/{id} 응답엔 message가 없다(스펙 §12.5) — 고정 문구.
+        message = '기록을 수정했어요.';
       } else {
-        await RecordService().create(
+        final result = await RecordService().create(
           placeId: _placeId,
-          userFoodId: _userFoodId,
-          visitVerificationId: widget.initialVisitVerificationId,
+          manualPlaceName: manualPlaceName.isEmpty ? null : manualPlaceName,
+          userFoodId: widget.initialUserFoodId,
+          visitVerificationId:
+              _placeId != null && _placeId == widget.initialPlaceId
+              ? widget.initialVisitVerificationId
+              : null,
           date: dateStr,
           title: title.isEmpty ? null : title,
           body: body,
-          imageUrls: const [],
+          imageUrls: finalImageUrls,
         );
+        message = result.message;
       }
       if (!mounted) return;
-      _snack(widget.editing ? '기록을 수정했어요.' : '발자국을 남겼어요.');
+      _snack(message);
       Navigator.of(context).pop(true);
     } on ApiException catch (e) {
       if (!mounted) return;
@@ -266,32 +330,64 @@ class _FootprintWriteScreenState extends State<FootprintWriteScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final bgHeight = MediaQuery.sizeOf(context).width / (1587 / 991);
+    final fadeHeight = bgHeight * 0.3;
     return Scaffold(
       backgroundColor: AppColors.appBackground,
+      appBar: AppBar(
+        leading: IconButton(
+          onPressed: () => Navigator.of(context).maybePop(),
+          icon: const Icon(Symbols.arrow_back_rounded),
+        ),
+        title: Text(widget.editing ? '발자국 수정하기' : '발자국 남기기'),
+      ),
       body: Stack(
         children: [
           Align(
             alignment: Alignment.topCenter,
             child: Image.asset(
-              'assets/illustrations/scenes/footprint_bg.png',
+              'assets/illustrations/scenes/diary_bg.png',
               width: double.infinity,
               fit: BoxFit.fitWidth,
               alignment: Alignment.topCenter,
               errorBuilder: (context, error, stackTrace) => const SizedBox(),
             ),
           ),
+          Positioned(
+            top: bgHeight - fadeHeight,
+            left: 0,
+            right: 0,
+            height: fadeHeight,
+            child: IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      AppColors.appBackground.withValues(alpha: 0),
+                      AppColors.appBackground,
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
           SafeArea(
             bottom: false,
             child: ListView(
-              padding: const EdgeInsets.fromLTRB(
-                AppSpacing.xl,
-                AppSpacing.sm,
-                AppSpacing.xl,
-                AppSpacing.huge,
+              padding: AppBottomNavBar.scrollPadding(
+                context,
+                const EdgeInsets.fromLTRB(
+                  AppSpacing.xl,
+                  AppSpacing.sm,
+                  AppSpacing.xl,
+                  AppSpacing.huge,
+                ),
               ),
               children: [
                 _Header(editing: widget.editing),
-                const SizedBox(height: AppSpacing.xxl),
+                SizedBox(height: (bgHeight * 0.65).clamp(96.0, 200.0)),
                 Container(
                   padding: const EdgeInsets.all(AppSpacing.xl),
                   decoration: AppDecorations.card(radius: AppRadius.largeCard),
@@ -305,20 +401,15 @@ class _FootprintWriteScreenState extends State<FootprintWriteScreen> {
                         onTap: _pickDate,
                       ),
                       const SizedBox(height: AppSpacing.xl),
-                      const _FieldLabel('장소 (선택)'),
-                      _PickerBox(
-                        icon: Symbols.location_on_rounded,
-                        value: _placeName ?? '장소를 선택해주세요',
-                        muted: _placeName == null,
-                        onTap: _pickPlace,
-                      ),
-                      const SizedBox(height: AppSpacing.xl),
-                      const _FieldLabel('만든 음식 (선택)'),
-                      _PickerBox(
-                        icon: Symbols.restaurant_rounded,
-                        value: _userFoodName ?? '만든 음식을 선택해주세요',
-                        muted: _userFoodName == null,
-                        onTap: _pickUserFood,
+                      const _FieldLabel('장소'),
+                      TextField(
+                        controller: _placeController,
+                        enabled: !_submitting,
+                        maxLength: 100,
+                        decoration: const InputDecoration(
+                          hintText: '장소 이름을 입력해주세요',
+                          prefixIcon: Icon(Symbols.edit_location_alt_rounded),
+                        ),
                       ),
                       const SizedBox(height: AppSpacing.xl),
                       const _FieldLabel('제목'),
@@ -343,21 +434,13 @@ class _FootprintWriteScreenState extends State<FootprintWriteScreen> {
                         children: [
                           const _FieldLabel('사진 첨부', bottomGap: 0),
                           const Spacer(),
-                          Text(
-                            '최대 $_maxPhotos장',
-                            style: AppTextStyles.caption,
-                          ),
+                          Text('최대 $_maxPhotos장', style: AppTextStyles.caption),
                         ],
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        '사진은 앱 안에서만 보여요. 서버에는 저장되지 않아요.',
-                        style: AppTextStyles.caption
-                            .copyWith(color: AppColors.textDisabled),
                       ),
                       const SizedBox(height: AppSpacing.md),
                       _PhotoStrip(
                         photoAssets: _photoAssets,
+                        selectedPhotos: _selectedPhotos,
                         onRemove: _removePhoto,
                         onAdd: _addPhoto,
                       ),
@@ -373,57 +456,10 @@ class _FootprintWriteScreenState extends State<FootprintWriteScreen> {
               ],
             ),
           ),
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(
-                AppSpacing.xl,
-                AppSpacing.sm,
-                AppSpacing.xl,
-                0,
-              ),
-              child: Align(
-                alignment: Alignment.topLeft,
-                child: Material(
-                  color: AppColors.surface,
-                  shape: const CircleBorder(
-                    side: BorderSide(color: AppColors.border),
-                  ),
-                  child: InkWell(
-                    customBorder: const CircleBorder(),
-                    onTap: () => Navigator.of(context).maybePop(),
-                    child: const Padding(
-                      padding: EdgeInsets.all(AppSpacing.sm),
-                      child: Icon(
-                        Symbols.arrow_back_rounded,
-                        size: 24,
-                        color: AppColors.iconPrimary,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
         ],
       ),
-      bottomNavigationBar: AppBottomNavBar(
-        currentIndex: 3,
-        onTap: (index) {
-          if (index == 0) {
-            Navigator.of(context).popUntil((route) => route.isFirst);
-          } else if (index == 1) {
-            Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const MapScreen()),
-            );
-          } else if (index == 2) {
-            Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const RankingScreen()),
-            );
-          } else if (index == 3) {
-            Navigator.of(context).maybePop();
-          }
-        },
-      ),
+      extendBody: true,
+      bottomNavigationBar: const AppBottomNavBar(currentIndex: 3),
     );
   }
 }
@@ -438,30 +474,12 @@ class _Header extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(editing ? '발자국 다듬기' : '발자국 남기기', style: AppTextStyles.h1),
-            const SizedBox(width: AppSpacing.sm),
-            Image.asset(
-              'assets/illustrations/sparrow/sparrow_happy.png',
-              width: 44,
-              height: 44,
-              errorBuilder: (context, error, stackTrace) => const Icon(
-                Symbols.flutter_dash_rounded,
-                size: 32,
-                color: AppColors.primary,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: AppSpacing.xs),
         Text(
-          editing
-              ? '그날의 기록을 다시 들여다볼까요.'
-              : '여행의 순간을 차근차근 기록해보세요.',
-          style: AppTextStyles.bodyMedium
-              .copyWith(color: AppColors.textSecondary),
+          editing ? '그날의 기록을 다시 들여다볼까요.' : '여행의 순간을 차근차근 기록해보세요.',
+          style: AppTextStyles.bodyMedium.copyWith(
+            color: AppColors.textPrimary,
+            fontWeight: FontWeight.w600,
+          ),
         ),
       ],
     );
@@ -486,19 +504,17 @@ class _FieldLabel extends StatelessWidget {
   }
 }
 
-/// 값 + 우측 펼침 표시(∨) 형태의 탭 가능한 상자 — 날짜·장소·음식 선택에 쓴다.
+/// 값 + 우측 펼침 표시(∨) 형태의 탭 가능한 상자 — 날짜 선택에 쓴다.
 class _PickerBox extends StatelessWidget {
   const _PickerBox({
     required this.icon,
     required this.value,
     required this.onTap,
-    this.muted = false,
   });
 
   final IconData icon;
   final String value;
   final VoidCallback onTap;
-  final bool muted;
 
   @override
   Widget build(BuildContext context) {
@@ -523,7 +539,7 @@ class _PickerBox extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: AppTextStyles.bodyLarge.copyWith(
-                  color: muted ? AppColors.textDisabled : AppColors.textPrimary,
+                  color: AppColors.textPrimary,
                 ),
               ),
             ),
@@ -588,16 +604,32 @@ class _BodyField extends StatelessWidget {
 }
 
 /// 첨부 사진 가로 줄 — 각 사진에 삭제(✕) 배지, 마지막에 점선 "+" 추가 칸.
+/// [photoAssets]는 세 종류의 키를 섞어서 담는다: 이미 서버에 올라간 기존
+/// 사진(원격 URL, 수정 화면 진입 시 채워짐 — [selectedPhotos]엔 없다),
+/// 갤러리에서 새로 고른 사진과 번들 에셋(둘 다 [selectedPhotos]에 바이트로
+/// 있음, 로컬 파일 경로/에셋 경로가 키), 아직 안 읽힌 번들 에셋(로딩 중이라
+/// [selectedPhotos]엔 아직 없음 — 자기 자신을 [AssetImage]로 보여준다).
 class _PhotoStrip extends StatelessWidget {
   const _PhotoStrip({
     required this.photoAssets,
+    required this.selectedPhotos,
     required this.onRemove,
     required this.onAdd,
   });
 
   final List<String> photoAssets;
+  final Map<String, MemoryImage> selectedPhotos;
   final ValueChanged<int> onRemove;
   final VoidCallback onAdd;
+
+  ImageProvider _resolveImage(String key) {
+    final bytes = selectedPhotos[key];
+    if (bytes != null) return bytes;
+    if (key.startsWith('http://') || key.startsWith('https://')) {
+      return NetworkImage(key);
+    }
+    return AssetImage(key);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -613,11 +645,7 @@ class _PhotoStrip extends StatelessWidget {
         separatorBuilder: (_, _) => const SizedBox(width: AppSpacing.sm),
         itemBuilder: (context, i) {
           if (i == photoAssets.length) {
-            return _AddTile(
-              width: tileWidth,
-              height: tileHeight,
-              onTap: onAdd,
-            );
+            return _AddTile(width: tileWidth, height: tileHeight, onTap: onAdd);
           }
           return SizedBox(
             width: tileWidth,
@@ -627,8 +655,8 @@ class _PhotoStrip extends StatelessWidget {
               children: [
                 ClipRRect(
                   borderRadius: BorderRadius.circular(AppRadius.inputField),
-                  child: Image.asset(
-                    photoAssets[i],
+                  child: Image(
+                    image: _resolveImage(photoAssets[i]),
                     width: tileWidth,
                     height: tileHeight,
                     fit: BoxFit.cover,
@@ -654,7 +682,10 @@ class _PhotoStrip extends StatelessWidget {
                       decoration: BoxDecoration(
                         color: AppColors.textPrimary.withValues(alpha: 0.75),
                         shape: BoxShape.circle,
-                        border: Border.all(color: AppColors.surface, width: 1.5),
+                        border: Border.all(
+                          color: AppColors.surface,
+                          width: 1.5,
+                        ),
                       ),
                       child: const Icon(
                         Symbols.close_rounded,
@@ -724,10 +755,7 @@ class _DashedBorderPainter extends CustomPainter {
     for (final metric in path.computeMetrics()) {
       var distance = 0.0;
       while (distance < metric.length) {
-        canvas.drawPath(
-          metric.extractPath(distance, distance + dash),
-          paint,
-        );
+        canvas.drawPath(metric.extractPath(distance, distance + dash), paint);
         distance += dash + gap;
       }
     }
@@ -782,182 +810,6 @@ class _SubmitButton extends StatelessWidget {
                   ),
                 ],
               ),
-      ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// 장소 / 만든 음식 선택 바텀시트 — 서버에 이름 검색 API가 없어 한 페이지를
-// 가져온 뒤 클라이언트에서 필터링한다 (스펙 §13-1 참고).
-// ---------------------------------------------------------------------------
-
-/// [_PickerSheet]가 보여주는 선택지 한 건 — 실제 백엔드 id + 표시 문구.
-class _PickerItem {
-  const _PickerItem({required this.id, required this.title, this.subtitle});
-
-  final int id;
-  final String title;
-  final String? subtitle;
-}
-
-/// [_PickerSheet]의 결과 — 선택 해제([cleared]) 또는 고른 [item].
-typedef _PickerResult = ({bool cleared, _PickerItem? item});
-
-/// 장소/만든 음식 공용 검색·선택 바텀시트.
-class _PickerSheet extends StatefulWidget {
-  const _PickerSheet({
-    required this.title,
-    required this.hintText,
-    required this.emptyText,
-    required this.icon,
-    required this.loader,
-  });
-
-  final String title;
-  final String hintText;
-  final String emptyText;
-  final IconData icon;
-  final Future<List<_PickerItem>> Function() loader;
-
-  @override
-  State<_PickerSheet> createState() => _PickerSheetState();
-}
-
-class _PickerSheetState extends State<_PickerSheet> {
-  final _controller = TextEditingController();
-  List<_PickerItem>? _items;
-  String? _error;
-  String _query = '';
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    try {
-      final items = await widget.loader();
-      if (!mounted) return;
-      setState(() => _items = items);
-    } on ApiException catch (e) {
-      if (!mounted) return;
-      setState(() => _error = e.message);
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final all = _items;
-    final q = _query.trim().toLowerCase();
-    final results = all == null
-        ? const <_PickerItem>[]
-        : (q.isEmpty
-            ? all
-            : all.where((e) => e.title.toLowerCase().contains(q)).toList());
-
-    return DraggableScrollableSheet(
-      initialChildSize: 0.7,
-      minChildSize: 0.4,
-      maxChildSize: 0.92,
-      expand: false,
-      builder: (context, scrollController) => Padding(
-        padding: const EdgeInsets.fromLTRB(
-          AppSpacing.xl,
-          AppSpacing.lg,
-          AppSpacing.xl,
-          AppSpacing.lg,
-        ),
-        child: Column(
-          children: [
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: AppColors.border,
-                borderRadius: BorderRadius.circular(AppRadius.pill),
-              ),
-            ),
-            const SizedBox(height: AppSpacing.md),
-            Text(widget.title, style: AppTextStyles.title),
-            const SizedBox(height: AppSpacing.md),
-            AppTextField(
-              controller: _controller,
-              hintText: widget.hintText,
-              prefixIcon: Symbols.search_rounded,
-              onChanged: (v) => setState(() => _query = v),
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            Expanded(
-              child: _error != null
-                  ? Center(
-                      child: Text(
-                        _error!,
-                        textAlign: TextAlign.center,
-                        style: AppTextStyles.bodyMedium
-                            .copyWith(color: AppColors.error),
-                      ),
-                    )
-                  : all == null
-                      ? const Center(
-                          child: CircularProgressIndicator(
-                            color: AppColors.primary,
-                          ),
-                        )
-                      : ListView(
-                          controller: scrollController,
-                          children: [
-                            ListTile(
-                              leading: const Icon(
-                                Symbols.block_rounded,
-                                color: AppColors.iconInactive,
-                              ),
-                              title: const Text('선택 안 함'),
-                              onTap: () => Navigator.of(context)
-                                  .pop((cleared: true, item: null)),
-                            ),
-                            const Divider(height: 1, color: AppColors.divider),
-                            if (results.isEmpty)
-                              Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: AppSpacing.xxl,
-                                ),
-                                child: Center(
-                                  child: Text(
-                                    widget.emptyText,
-                                    style: AppTextStyles.bodyMedium
-                                        .copyWith(color: AppColors.textSecondary),
-                                  ),
-                                ),
-                              )
-                            else
-                              for (final item in results)
-                                ListTile(
-                                  leading:
-                                      Icon(widget.icon, color: AppColors.primary),
-                                  title: Text(item.title),
-                                  subtitle: item.subtitle == null
-                                      ? null
-                                      : Text(
-                                          item.subtitle!,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                  onTap: () => Navigator.of(context)
-                                      .pop((cleared: false, item: item)),
-                                ),
-                          ],
-                        ),
-            ),
-          ],
-        ),
       ),
     );
   }

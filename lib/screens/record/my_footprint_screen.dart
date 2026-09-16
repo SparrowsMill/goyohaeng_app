@@ -10,8 +10,7 @@ import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/app_bottom_nav_bar.dart';
-import '../map/map_screen.dart';
-import '../ranking/ranking_screen.dart';
+import '../../widgets/loading_overlay.dart';
 import 'footprint_write_screen.dart';
 
 /// `<기록 플랫폼>` "나의 발자국" (user_flow §8) — 하단 네비게이션 기록 탭 화면.
@@ -23,9 +22,6 @@ import 'footprint_write_screen.dart';
 /// `RecordService`(`GET /records`, `GET /records/calendar`, `DELETE /records/
 /// {id}`)로 실제 백엔드와 연동한다 — 목록은 최근순 페이지 1장(최대 50건),
 /// 달력은 표시 중인 달만 별도 조회한다. 로그인하지 않은 상태면 안내만 보여준다.
-///
-/// * TODO(asset): 이 화면 배경 `assets/illustrations/scenes/footprint_bg.png`
-///   (§9, 불투명 헤더 밴드 PNG) 미납품 — 그 전까지 평면 #FAE7C0.
 class MyFootprintScreen extends StatefulWidget {
   const MyFootprintScreen({super.key});
 
@@ -38,9 +34,26 @@ class _MyFootprintScreenState extends State<MyFootprintScreen> {
   String? _error;
   List<RecordDetail> _entries = [];
   RecordCalendar? _calendar;
+  DateTime? _selectedDay;
+  final _scrollController = ScrollController();
+  bool _showScrollToTop = false;
+
+  void _onScroll() {
+    final show = _scrollController.hasClients && _scrollController.offset > 100;
+    if (show != _showScrollToTop) setState(() => _showScrollToTop = show);
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
 
   /// 달력이 보여주는 달 (1일로 정규화).
-  late DateTime _visibleMonth = DateTime(DateTime.now().year, DateTime.now().month);
+  late DateTime _visibleMonth = DateTime(
+    DateTime.now().year,
+    DateTime.now().month,
+  );
 
   bool get _signedIn => AuthStore.instance.isSignedIn;
 
@@ -57,6 +70,8 @@ class _MyFootprintScreenState extends State<MyFootprintScreen> {
   @override
   void initState() {
     super.initState();
+    _selectedDay = DateUtils.dateOnly(DateTime.now());
+    _scrollController.addListener(_onScroll);
     if (_signedIn) {
       _loadAll();
     } else {
@@ -84,12 +99,21 @@ class _MyFootprintScreenState extends State<MyFootprintScreen> {
       _error = null;
     });
     try {
-      final list = await RecordService().list(limit: 50);
-      final cal = await RecordService()
-          .calendar(year: _visibleMonth.year, month: _visibleMonth.month);
+      final records = <RecordDetail>[];
+      var page = 1;
+      while (true) {
+        final list = await RecordService().list(page: page, limit: 50);
+        records.addAll(list.records);
+        if (!list.hasMore || list.records.isEmpty) break;
+        page++;
+      }
+      final cal = await RecordService().calendar(
+        year: _visibleMonth.year,
+        month: _visibleMonth.month,
+      );
       if (!mounted) return;
       setState(() {
-        _entries = [...list.records]..sort((a, b) => b.date.compareTo(a.date));
+        _entries = records..sort((a, b) => b.date.compareTo(a.date));
         _calendar = cal;
         _loading = false;
       });
@@ -104,11 +128,19 @@ class _MyFootprintScreenState extends State<MyFootprintScreen> {
 
   Future<void> _shiftMonth(int delta) async {
     final next = DateTime(_visibleMonth.year, _visibleMonth.month + delta);
-    setState(() => _visibleMonth = next);
+    setState(() {
+      _visibleMonth = next;
+      _selectedDay = DateTime(next.year, next.month);
+      _calendar = null;
+    });
     if (!_signedIn) return;
     try {
-      final cal = await RecordService().calendar(year: next.year, month: next.month);
+      final cal = await RecordService().calendar(
+        year: next.year,
+        month: next.month,
+      );
       if (!mounted) return;
+      if (_visibleMonth != next) return;
       setState(() => _calendar = cal);
     } on ApiException catch (e) {
       if (!mounted) return;
@@ -116,20 +148,17 @@ class _MyFootprintScreenState extends State<MyFootprintScreen> {
     }
   }
 
-  /// 달력 날짜 탭 — 그 날 기록이 있으면 수정 화면, 없으면 안내.
+  /// 달력 아래에 선택한 날짜의 기록을 표시한다.
   void _onSelectDay(DateTime day) {
-    final match = _entries.where((e) => _isOn(e, day)).toList();
-    if (match.isEmpty) {
-      _snack('${day.month}월 ${day.day}일에는 아직 기록이 없어요.');
-    } else {
-      _editEntry(match.first);
-    }
+    setState(() => _selectedDay = day);
   }
 
   /// 우하단 연필 버튼 — 새 기록 작성.
   Future<void> _writeNew() async {
     final saved = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(builder: (_) => const FootprintWriteScreen()),
+      MaterialPageRoute(
+        builder: (_) => FootprintWriteScreen(initialDate: _selectedDay),
+      ),
     );
     if (saved == true && mounted) _loadAll();
   }
@@ -144,8 +173,10 @@ class _MyFootprintScreenState extends State<MyFootprintScreen> {
           initialDate: DateTime.tryParse(entry.date) ?? DateTime.now(),
           initialPlaceId: entry.place?.id,
           initialPlace: entry.place?.name,
+          initialManualPlaceName: entry.manualPlaceName,
           initialTitle: entry.title,
           initialText: entry.body,
+          initialImageUrls: entry.images.map((i) => i.imageUrl).toList(),
           initialUserFoodId: entry.food?.userFoodId,
           initialUserFoodName: entry.food?.name,
         ),
@@ -163,12 +194,18 @@ class _MyFootprintScreenState extends State<MyFootprintScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: const Icon(Symbols.edit_rounded, color: AppColors.iconPrimary),
+              leading: const Icon(
+                Symbols.edit_rounded,
+                color: AppColors.iconPrimary,
+              ),
               title: const Text('수정'),
               onTap: () => Navigator.of(context).pop('edit'),
             ),
             ListTile(
-              leading: const Icon(Symbols.delete_rounded, color: AppColors.error),
+              leading: const Icon(
+                Symbols.delete_rounded,
+                color: AppColors.error,
+              ),
               title: Text('삭제', style: TextStyle(color: AppColors.error)),
               onTap: () => Navigator.of(context).pop('delete'),
             ),
@@ -216,89 +253,97 @@ class _MyFootprintScreenState extends State<MyFootprintScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // "발자국 남기기"(`FootprintWriteScreen`)와 같은 diary_bg 배너 — 화면
+    // 너비에 원본 비율(1587/991)을 적용한 고정 높이로 상단에 깔고, 그 아래
+    // 30%를 `AppColors.appBackground`로 그라데이션 페이드해 스크롤되는
+    // 콘텐츠와 자연스럽게 이어지게 한다.
+    final bgHeight = MediaQuery.sizeOf(context).width / (1587 / 991);
+    final fadeHeight = bgHeight * 0.3;
     return Scaffold(
       backgroundColor: AppColors.appBackground,
-      body: Stack(
-        children: [
-          // 상단 고정 scene 밴드 — 다른 `*_bg` 화면과 동일하게 원본 비율로
-          // 상단에 깔고, 아래는 #FAE7C0 이 비쳐 보인다. 미납품이면 빈 박스.
-          Align(
-            alignment: Alignment.topCenter,
-            child: Image.asset(
-              'assets/illustrations/scenes/footprint_bg.png',
-              width: double.infinity,
-              fit: BoxFit.fitWidth,
+      appBar: AppBar(
+        automaticallyImplyLeading: false,
+        title: const Text('나의 발자국'),
+      ),
+      body: LoadingOverlay(
+        loading: _loading,
+        child: Stack(
+          children: [
+            Align(
               alignment: Alignment.topCenter,
-              errorBuilder: (context, error, stackTrace) => const SizedBox(),
-            ),
-          ),
-          SafeArea(
-            bottom: false,
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(
-                AppSpacing.xl,
-                AppSpacing.sm,
-                AppSpacing.xl,
-                AppSpacing.huge,
+              child: Image.asset(
+                'assets/illustrations/scenes/diary_bg.png',
+                width: double.infinity,
+                fit: BoxFit.fitWidth,
+                alignment: Alignment.topCenter,
+                errorBuilder: (context, error, stackTrace) =>
+                    const SizedBox(),
               ),
-              children: [
-                const _Header(),
-                const SizedBox(height: AppSpacing.xxl),
-                ..._buildContent(),
-              ],
             ),
-          ),
-          // 스크롤과 무관하게 좌상단에 고정되는 뒤로가기 (계정 센터와 동일).
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(
-                AppSpacing.xl,
-                AppSpacing.sm,
-                AppSpacing.xl,
-                0,
-              ),
-              child: Align(
-                alignment: Alignment.topLeft,
-                child: Material(
-                  color: AppColors.surface,
-                  shape: const CircleBorder(
-                    side: BorderSide(color: AppColors.border),
-                  ),
-                  child: InkWell(
-                    customBorder: const CircleBorder(),
-                    onTap: () => Navigator.of(context).maybePop(),
-                    child: const Padding(
-                      padding: EdgeInsets.all(AppSpacing.sm),
-                      child: Icon(
-                        Symbols.arrow_back_rounded,
-                        size: 24,
-                        color: AppColors.iconPrimary,
-                      ),
+            Positioned(
+              top: bgHeight - fadeHeight,
+              left: 0,
+              right: 0,
+              height: fadeHeight,
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        AppColors.appBackground.withValues(alpha: 0),
+                        AppColors.appBackground,
+                      ],
                     ),
                   ),
                 ),
               ),
             ),
-          ),
+            SafeArea(
+              bottom: false,
+              child: ListView(
+                controller: _scrollController,
+                padding: AppBottomNavBar.scrollPadding(
+                  context,
+                  const EdgeInsets.fromLTRB(
+                    AppSpacing.xl,
+                    AppSpacing.sm,
+                    AppSpacing.xl,
+                    AppSpacing.huge,
+                  ),
+                ),
+                children: [
+                  const _Header(),
+                  SizedBox(height: (bgHeight * 0.65).clamp(96.0, 200.0)),
+                  ..._buildContent(),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+      floatingActionButton: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (_showScrollToTop) ...[
+            FloatingActionButton.small(
+              heroTag: 'footprint-scroll-top',
+              tooltip: '맨 위로',
+              onPressed: () => _scrollController.animateTo(
+                0,
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeOut,
+              ),
+              child: const Icon(Icons.arrow_upward_rounded),
+            ),
+            const SizedBox(width: AppSpacing.sm),
+          ],
+          _WriteButton(onTap: _writeNew),
         ],
       ),
-      floatingActionButton: _WriteButton(onTap: _writeNew),
-      bottomNavigationBar: AppBottomNavBar(
-        currentIndex: 3,
-        onTap: (index) {
-          if (index == 0) {
-            Navigator.of(context).popUntil((route) => route.isFirst);
-          } else if (index == 1) {
-            Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const MapScreen()),
-            );
-          } else if (index == 2) {
-            Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const RankingScreen()),
-            );
-          }
-        },
-      ),
+      extendBody: true,
+      bottomNavigationBar: const AppBottomNavBar(currentIndex: 3),
     );
   }
 
@@ -313,14 +358,8 @@ class _MyFootprintScreenState extends State<MyFootprintScreen> {
       ];
     }
     if (_loading) {
-      return const [
-        Padding(
-          padding: EdgeInsets.symmetric(vertical: AppSpacing.xxxl),
-          child: Center(
-            child: CircularProgressIndicator(color: AppColors.primary),
-          ),
-        ),
-      ];
+      // The Scaffold-level LoadingOverlay already shows the loading pill.
+      return const [SizedBox(height: AppSpacing.massive)];
     }
     if (_error != null) {
       return [
@@ -331,29 +370,51 @@ class _MyFootprintScreenState extends State<MyFootprintScreen> {
         ),
       ];
     }
+    final entries = _selectedDay == null
+        ? _entries
+        : _entries.where((entry) => _isOn(entry, _selectedDay!)).toList();
     return [
       _CalendarCard(
         month: _visibleMonth,
         entryDays: _entryDays,
         today: DateTime.now(),
+        selectedDay: _selectedDay,
         onPrev: () => _shiftMonth(-1),
         onNext: () => _shiftMonth(1),
         onSelectDay: _onSelectDay,
       ),
       const SizedBox(height: AppSpacing.xxl),
-      if (_entries.isEmpty)
-        const _StatusMessage(
+      if (_selectedDay != null)
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                '${_selectedDay!.month}월 ${_selectedDay!.day}일의 기록',
+                style: AppTextStyles.title,
+              ),
+            ),
+            TextButton(
+              onPressed: () => setState(() => _selectedDay = null),
+              child: const Text('전체 기록'),
+            ),
+          ],
+        ),
+      if (entries.isEmpty)
+        _StatusMessage(
           icon: Symbols.footprint_rounded,
-          text: '아직 남긴 발자국이 없어요.\n여행의 순간을 첫 기록으로 남겨보세요.',
+          imageAsset: 'assets/illustrations/icon/footprint.png',
+          text: _selectedDay != null
+              ? '이날은 아직 기록이 없어요.'
+              : '아직 남긴 발자국이 없어요.\n여행의 순간을 첫 기록으로 남겨보세요.',
         )
       else
-        for (var i = 0; i < _entries.length; i++) ...[
+        for (var i = 0; i < entries.length; i++) ...[
           if (i != 0) const SizedBox(height: AppSpacing.lg),
           _FeedEntryCard(
-            key: ValueKey(_entries[i].id),
-            entry: _entries[i],
-            onEditText: () => _editEntry(_entries[i]),
-            onMenu: () => _openEntryMenu(_entries[i]),
+            key: ValueKey(entries[i].id),
+            entry: entries[i],
+            onEditText: () => _editEntry(entries[i]),
+            onMenu: () => _openEntryMenu(entries[i]),
           ),
         ],
     ];
@@ -362,9 +423,15 @@ class _MyFootprintScreenState extends State<MyFootprintScreen> {
 
 /// 로그인 필요 / 로딩 실패 / 빈 목록 안내 — 아이콘 + 문구 (+선택적 재시도 버튼).
 class _StatusMessage extends StatelessWidget {
-  const _StatusMessage({required this.icon, required this.text, this.onRetry});
+  const _StatusMessage({
+    required this.icon,
+    required this.text,
+    this.onRetry,
+    this.imageAsset,
+  });
 
   final IconData icon;
+  final String? imageAsset;
   final String text;
   final VoidCallback? onRetry;
 
@@ -376,12 +443,17 @@ class _StatusMessage extends StatelessWidget {
       decoration: AppDecorations.card(),
       child: Column(
         children: [
-          Icon(icon, size: 32, color: AppColors.iconInactive),
+          if (imageAsset != null)
+            Image.asset(imageAsset!, width: 32, height: 32, fit: BoxFit.contain)
+          else
+            Icon(icon, size: 32, color: AppColors.iconInactive),
           const SizedBox(height: AppSpacing.md),
           Text(
             text,
             textAlign: TextAlign.center,
-            style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary),
+            style: AppTextStyles.bodyMedium.copyWith(
+              color: AppColors.textSecondary,
+            ),
           ),
           if (onRetry != null) ...[
             const SizedBox(height: AppSpacing.lg),
@@ -401,27 +473,12 @@ class _Header extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text('나의 발자국', style: AppTextStyles.h1),
-            const SizedBox(width: AppSpacing.sm),
-            Image.asset(
-              'assets/illustrations/sparrow/sparrow_happy.png',
-              width: 44,
-              height: 44,
-              errorBuilder: (context, error, stackTrace) => const Icon(
-                Symbols.flutter_dash_rounded,
-                size: 32,
-                color: AppColors.primary,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: AppSpacing.xs),
         Text(
           '여행의 순간을 차곡차곡 남겨보세요.',
-          style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary),
+          style: AppTextStyles.bodyMedium.copyWith(
+            color: AppColors.textPrimary,
+            fontWeight: FontWeight.w600,
+          ),
         ),
       ],
     );
@@ -439,6 +496,7 @@ class _CalendarCard extends StatelessWidget {
     required this.month,
     required this.entryDays,
     required this.today,
+    required this.selectedDay,
     required this.onPrev,
     required this.onNext,
     required this.onSelectDay,
@@ -447,6 +505,7 @@ class _CalendarCard extends StatelessWidget {
   final DateTime month;
   final Set<DateTime> entryDays;
   final DateTime today;
+  final DateTime? selectedDay;
   final VoidCallback onPrev;
   final VoidCallback onNext;
   final ValueChanged<DateTime> onSelectDay;
@@ -465,14 +524,18 @@ class _CalendarCard extends StatelessWidget {
     }
     for (var day = 1; day <= daysInMonth; day++) {
       final date = DateTime(month.year, month.month, day);
-      cells.add(_DayCell(
-        day: day,
-        hasEntry: entryDays.contains(date),
-        isToday: date.year == today.year &&
-            date.month == today.month &&
-            date.day == today.day,
-        onTap: () => onSelectDay(date),
-      ));
+      cells.add(
+        _DayCell(
+          day: day,
+          hasEntry: entryDays.contains(date),
+          selected: date == selectedDay,
+          isToday:
+              date.year == today.year &&
+              date.month == today.month &&
+              date.day == today.day,
+          onTap: () => onSelectDay(date),
+        ),
+      );
     }
     while (cells.length % 7 != 0) {
       cells.add(const SizedBox.shrink());
@@ -504,8 +567,9 @@ class _CalendarCard extends StatelessWidget {
                   child: Text(
                     label,
                     textAlign: TextAlign.center,
-                    style: AppTextStyles.caption
-                        .copyWith(fontWeight: FontWeight.w600),
+                    style: AppTextStyles.caption.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
             ],
@@ -552,12 +616,14 @@ class _DayCell extends StatelessWidget {
     required this.day,
     required this.hasEntry,
     required this.isToday,
+    required this.selected,
     required this.onTap,
   });
 
   final int day;
   final bool hasEntry;
   final bool isToday;
+  final bool selected;
   final VoidCallback onTap;
 
   @override
@@ -572,7 +638,12 @@ class _DayCell extends StatelessWidget {
             width: 30,
             height: 30,
             alignment: Alignment.center,
-            decoration: isToday
+            decoration: selected
+                ? const BoxDecoration(
+                    color: AppColors.primary,
+                    shape: BoxShape.circle,
+                  )
+                : isToday
                 ? const BoxDecoration(
                     color: AppColors.surfaceSelected,
                     shape: BoxShape.circle,
@@ -581,20 +652,26 @@ class _DayCell extends StatelessWidget {
             child: Text(
               '$day',
               style: AppTextStyles.bodyMedium.copyWith(
-                fontWeight:
-                    hasEntry || isToday ? FontWeight.w700 : FontWeight.w400,
-                color: isToday ? AppColors.primaryPressed : AppColors.textPrimary,
+                fontWeight: selected || hasEntry || isToday
+                    ? FontWeight.w700
+                    : FontWeight.w400,
+                color: selected
+                    ? Colors.white
+                    : isToday
+                    ? AppColors.primaryPressed
+                    : AppColors.textPrimary,
               ),
             ),
           ),
           SizedBox(
             height: 14,
             child: hasEntry
-                ? const Icon(
-                    Symbols.pets_rounded,
-                    size: 12,
-                    color: AppColors.primary,
-                    fill: 1,
+                ? Image.asset(
+                    'assets/illustrations/icon/footprint.png',
+                    width: 14,
+                    height: 14,
+                    fit: BoxFit.contain,
+                    semanticLabel: '기록 있음',
                   )
                 : null,
           ),
@@ -644,8 +721,9 @@ class _FeedEntryCard extends StatelessWidget {
               const SizedBox(width: AppSpacing.xs),
               Text(
                 _dateLabel,
-                style: AppTextStyles.bodyMedium
-                    .copyWith(fontWeight: FontWeight.w600),
+                style: AppTextStyles.bodyMedium.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
               ),
               const Spacer(),
               InkResponse(
@@ -659,7 +737,7 @@ class _FeedEntryCard extends StatelessWidget {
               ),
             ],
           ),
-          if (entry.place != null) ...[
+          if (entry.place != null || entry.manualPlaceName != null) ...[
             const SizedBox(height: AppSpacing.xs),
             Row(
               children: [
@@ -670,9 +748,10 @@ class _FeedEntryCard extends StatelessWidget {
                 ),
                 const SizedBox(width: 2),
                 Text(
-                  entry.place!.name,
-                  style: AppTextStyles.caption
-                      .copyWith(fontWeight: FontWeight.w600),
+                  entry.place?.name ?? entry.manualPlaceName!,
+                  style: AppTextStyles.caption.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ],
             ),
@@ -689,8 +768,9 @@ class _FeedEntryCard extends StatelessWidget {
                 const SizedBox(width: 2),
                 Text(
                   entry.food!.name,
-                  style: AppTextStyles.caption
-                      .copyWith(fontWeight: FontWeight.w600),
+                  style: AppTextStyles.caption.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ],
             ),
@@ -709,10 +789,7 @@ class _FeedEntryCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   if (entry.title != null && entry.title!.isNotEmpty) ...[
-                    Text(
-                      entry.title!,
-                      style: AppTextStyles.title,
-                    ),
+                    Text(entry.title!, style: AppTextStyles.title),
                     const SizedBox(height: AppSpacing.xs),
                   ],
                   Text(
@@ -758,8 +835,9 @@ class _PhotoCarouselState extends State<_PhotoCarousel> {
   final _controller = PageController();
   int _index = 0;
 
-  List<RecordImage> get _sorted => [...widget.images]
-    ..sort((a, b) => (a.displayOrder ?? 0).compareTo(b.displayOrder ?? 0));
+  List<RecordImage> get _sorted =>
+      [...widget.images]
+        ..sort((a, b) => (a.displayOrder ?? 0).compareTo(b.displayOrder ?? 0));
 
   @override
   void dispose() {

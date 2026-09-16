@@ -10,15 +10,13 @@ import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/app_bottom_nav_bar.dart';
+import '../../widgets/fading_scene_background.dart';
 import '../account/account_center_screen.dart';
 import '../food/food_dex_screen.dart';
-import '../map/map_screen.dart';
-import '../ranking/ranking_screen.dart';
 import '../record/footprint_write_screen.dart';
-import '../record/my_footprint_screen.dart';
 
 /// `<참새>` (user_flow §3) — 본인 프로필 페이지. 방앗간 홈의 참새 캐릭터를 눌러
-/// 진입한다. 참새 캐릭터·닉네임·레벨, 활동 요약(방문 지역/방문 인증/완성 음식/
+/// 진입한다. 참새 캐릭터·닉네임·레벨, 활동 요약(방문 장소/방문 인증/완성 음식/
 /// 모은 재료), 최근 일기 미리보기, 계정 센터 연결을 제공한다.
 ///
 /// 뼈대만 구현 — 레벨/경험치/함께한 날수/일기는 여전히 `mock_sparrow`
@@ -45,7 +43,29 @@ class _SparrowScreenState extends State<SparrowScreen> {
   void initState() {
     super.initState();
     DashboardStore.instance.ensureLoaded();
+    SparrowStore.instance.ensureLoaded();
     _loadLatestDiary();
+  }
+
+  /// mock 프로필에 실 레벨/경험치/함께한 날수만 덮어써서 넘긴다 — 닉네임·활동
+  /// 요약·최근 일기는 계속 별도 소스([[_ActivitySummary]]는 `DashboardStore`,
+  /// 닉네임은 `Me.realName`, 일기는 `_latestRecord`).
+  SparrowProfile _effectiveProfile() {
+    final base = mockSparrowProfile;
+    final live = SparrowStore.instance.data;
+    if (live == null) return base;
+    return SparrowProfile(
+      name: base.name,
+      level: live.level,
+      xp: live.xp,
+      xpForNextLevel: live.xpForNextLevel,
+      daysTogether: live.daysTogether,
+      visitedPlaceCount: base.visitedPlaceCount,
+      verifiedStampCount: base.verifiedStampCount,
+      completedFoodCount: base.completedFoodCount,
+      collectedIngredientCount: base.collectedIngredientCount,
+      latestDiary: base.latestDiary,
+    );
   }
 
   Future<void> _loadLatestDiary() async {
@@ -69,8 +89,10 @@ class _SparrowScreenState extends State<SparrowScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final p = mockSparrowProfile;
-    final diaryText = _latestRecord?.body ?? p.latestDiary;
+    final p = _effectiveProfile();
+    final diaryText = _latestRecord?.body ?? '아직 작성한 기록이 없어요';
+    final diaryImages = _latestRecord?.images ?? const [];
+    final diaryImageUrl = diaryImages.isEmpty ? null : diaryImages.first.imageUrl;
     return Scaffold(
       backgroundColor: AppColors.appBackground,
       appBar: AppBar(
@@ -81,7 +103,7 @@ class _SparrowScreenState extends State<SparrowScreen> {
         title: const Text('마이 페이지'),
       ),
       body: ListView(
-        padding: EdgeInsets.zero,
+        padding: AppBottomNavBar.scrollPadding(context, EdgeInsets.zero),
         children: [
           _SceneBand(),
           Padding(
@@ -94,11 +116,14 @@ class _SparrowScreenState extends State<SparrowScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _ProfileCard(
-                  profile: p,
-                  onEditName: () => Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const AccountCenterScreen(),
+                ListenableBuilder(
+                  listenable: SparrowStore.instance,
+                  builder: (context, _) => _ProfileCard(
+                    profile: _effectiveProfile(),
+                    onEditName: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const AccountCenterScreen(),
+                      ),
                     ),
                   ),
                 ),
@@ -116,6 +141,7 @@ class _SparrowScreenState extends State<SparrowScreen> {
                 const SizedBox(height: AppSpacing.md),
                 _DiaryCard(
                   text: diaryText,
+                  imageUrl: diaryImageUrl,
                   onWrite: () => _openWriteDiary(context),
                 ),
                 const SizedBox(height: AppSpacing.lg),
@@ -131,26 +157,8 @@ class _SparrowScreenState extends State<SparrowScreen> {
           ),
         ],
       ),
-      bottomNavigationBar: AppBottomNavBar(
-        currentIndex: 0,
-        onTap: (index) {
-          if (index == 0) {
-            Navigator.of(context).popUntil((route) => route.isFirst);
-          } else if (index == 1) {
-            Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const MapScreen()),
-            );
-          } else if (index == 2) {
-            Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const RankingScreen()),
-            );
-          } else if (index == 3) {
-            Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const MyFootprintScreen()),
-            );
-          }
-        },
-      ),
+      extendBody: true,
+      bottomNavigationBar: const AppBottomNavBar(currentIndex: 0),
     );
   }
 }
@@ -166,13 +174,9 @@ class _SceneBand extends StatelessWidget {
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        Image.asset(
-          'assets/illustrations/scenes/start_bg.png',
-          width: double.infinity,
-          fit: BoxFit.fitWidth,
-          alignment: Alignment.topCenter,
-          errorBuilder: (context, error, stackTrace) =>
-              const SizedBox(height: 200),
+        FadingSceneBackground(
+          asset: 'assets/illustrations/scenes/start_bg.png',
+          height: MediaQuery.sizeOf(context).width * 627 / 1024,
         ),
         // 말풍선 + 참새를 한 그룹으로 묶어 같이 움직인다. 그룹 위치는 이
         // Positioned 의 left/bottom, 크기는 SizedBox width / Image width 로.
@@ -235,7 +239,9 @@ class _SpeechBubble extends StatelessWidget {
           ),
           child: Text(
             text,
-            style: AppTextStyles.bodySmall.copyWith(fontWeight: FontWeight.w600),
+            style: AppTextStyles.bodySmall.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ),
         const Padding(
@@ -410,8 +416,9 @@ class _XpBar extends StatelessWidget {
               value: profile.xpProgress,
               minHeight: 8,
               backgroundColor: AppColors.surfaceSelected,
-              valueColor:
-                  const AlwaysStoppedAnimation<Color>(AppColors.primary),
+              valueColor: const AlwaysStoppedAnimation<Color>(
+                AppColors.primary,
+              ),
             ),
           ),
         ),
@@ -442,18 +449,18 @@ class _ActivitySummary extends StatelessWidget {
       listenable: DashboardStore.instance,
       builder: (context, _) {
         final d = DashboardStore.instance.data;
-        final regionCount =
-            d != null ? d.topRegions.length : profile.visitedRegionCount;
+        final placeCount = d?.visitedPlaceCount ?? profile.visitedPlaceCount;
         final verified = d?.verifiedVisitCount ?? profile.verifiedStampCount;
         final madeFood = d?.madeFoodCount ?? profile.completedFoodCount;
-        final ingredients = d?.ingredientCount ?? profile.collectedIngredientCount;
+        final ingredients =
+            d?.ingredientCount ?? profile.collectedIngredientCount;
 
         final items = <_StatData>[
           _StatData(
             asset: 'assets/illustrations/icon/visited.png',
             fallback: Symbols.location_on_rounded,
-            label: '방문한 지역 수',
-            value: '$regionCount곳',
+            label: '방문 장소 수',
+            value: '$placeCount곳',
           ),
           _StatData(
             asset: 'assets/illustrations/icon/verified.png',
@@ -546,16 +553,18 @@ class _StatCard extends StatelessWidget {
                   data.label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: AppTextStyles.caption
-                      .copyWith(fontWeight: FontWeight.w600),
+                  style: AppTextStyles.caption.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
                 const SizedBox(height: 2),
                 Row(
                   children: [
                     Text(
                       data.value,
-                      style: AppTextStyles.title
-                          .copyWith(color: AppColors.success),
+                      style: AppTextStyles.title.copyWith(
+                        color: AppColors.success,
+                      ),
                     ),
                     if (data.onTap != null)
                       const Icon(
@@ -587,9 +596,13 @@ class _StatCard extends StatelessWidget {
 
 /// 최근 일기 미리보기 + "일기 쓰기".
 class _DiaryCard extends StatelessWidget {
-  const _DiaryCard({required this.text, required this.onWrite});
+  const _DiaryCard({required this.text, this.imageUrl, required this.onWrite});
 
   final String text;
+
+  /// 최근 발자국의 첫 번째 첨부 사진(`record.images[0].imageUrl`) — 사진이
+  /// 없는 기록이거나 아직 못 불러왔으면 `null`(아이콘 placeholder로 대체).
+  final String? imageUrl;
   final VoidCallback onWrite;
 
   @override
@@ -609,12 +622,34 @@ class _DiaryCard extends StatelessWidget {
                   width: 84,
                   height: 96,
                   color: AppColors.surfaceSelected,
-                  // * TODO(asset): 일기 대표 사진 슬롯 — 정해진 카테고리 없음.
-                  child: const Icon(
-                    Symbols.photo_rounded,
-                    size: 28,
-                    color: AppColors.iconInactive,
-                  ),
+                  child: imageUrl == null
+                      ? const Icon(
+                          Symbols.photo_rounded,
+                          size: 28,
+                          color: AppColors.iconInactive,
+                        )
+                      : Image.network(
+                          imageUrl!,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) =>
+                              const Icon(
+                                Symbols.photo_rounded,
+                                size: 28,
+                                color: AppColors.iconInactive,
+                              ),
+                          loadingBuilder: (context, child, progress) =>
+                              progress == null
+                              ? child
+                              : const Center(
+                                  child: SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  ),
+                                ),
+                        ),
                 ),
               ),
               const SizedBox(width: AppSpacing.md),
@@ -670,8 +705,9 @@ class _AccountCenterRow extends StatelessWidget {
               const SizedBox(width: AppSpacing.sm),
               Text(
                 '계정 센터로 이동',
-                style: AppTextStyles.bodyLarge
-                    .copyWith(fontWeight: FontWeight.w600),
+                style: AppTextStyles.bodyLarge.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
               ),
               const Spacer(),
               const Icon(

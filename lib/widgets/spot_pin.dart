@@ -30,12 +30,29 @@ class SpotPin extends StatelessWidget {
         ThemeData.estimateBrightnessForColor(pinColor) == Brightness.dark
             ? AppColors.surface
             : AppColors.textPrimary;
-    final size = selected ? 36.0 : 26.0;
+    final size = selected ? 42.0 : 26.0;
     final glyph =
         favorite ? Symbols.star_rounded : Symbols.location_on_rounded;
     final pin = Stack(
       alignment: Alignment.center,
       children: [
+        if (selected)
+          Container(
+            width: 50,
+            height: 50,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: pinColor.withValues(alpha: 0.2),
+              border: Border.all(color: pinColor, width: 2),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.2),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+          ),
         Icon(glyph, size: size + 4, color: AppColors.surface, fill: 1),
         Icon(glyph, size: size, color: pinColor, fill: 1),
       ],
@@ -55,6 +72,13 @@ class SpotPin extends StatelessWidget {
                 color: pinColor,
                 borderRadius: BorderRadius.circular(999),
                 border: Border.all(color: pinColor),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Colors.black26,
+                    blurRadius: 6,
+                    offset: Offset(0, 2),
+                  ),
+                ],
               ),
               child: Text(
                 label,

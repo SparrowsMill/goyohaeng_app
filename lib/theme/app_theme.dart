@@ -158,6 +158,20 @@ abstract final class AppTheme {
           ),
         ),
       ),
+      chipTheme: ChipThemeData(
+        backgroundColor: AppColors.surface,
+        selectedColor: AppColors.primary,
+        disabledColor: AppColors.surfaceDisabled,
+        labelStyle: AppTextStyles.bodySmall.copyWith(
+          fontWeight: FontWeight.w600,
+          color: AppColors.primaryPressed,
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        labelPadding: EdgeInsets.zero,
+        side: const BorderSide(color: AppColors.border),
+        shape: const StadiumBorder(),
+        checkmarkColor: AppColors.textOnPrimaryButton,
+      ),
       iconTheme: const IconThemeData(color: AppColors.iconPrimary, size: 20),
       pageTransitionsTheme: const PageTransitionsTheme(
         builders: {

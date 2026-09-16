@@ -88,7 +88,7 @@ class _SplashScreenState extends State<SplashScreen>
 }
 
 /// 로고 락업. 파일이 아직 없으면 단계적으로 대체한다:
-/// `splash.png` → `app_logo.png` → 아이콘 + 워드마크.
+/// `splash.png` → `app_logo_2.png` → 아이콘 + 워드마크.
 class _SplashLogo extends StatelessWidget {
   const _SplashLogo();
 
@@ -100,7 +100,7 @@ class _SplashLogo extends StatelessWidget {
       'assets/branding/splash.png',
       width: _width,
       errorBuilder: (context, error, stackTrace) => Image.asset(
-        'assets/branding/app_logo.png',
+        'assets/branding/app_logo_2.png',
         width: _width,
         errorBuilder: (context, error, stackTrace) => Column(
           mainAxisSize: MainAxisSize.min,

@@ -2,39 +2,32 @@ import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
 import '../../api/api.dart';
+import '../../data/food_catalog.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_radius.dart';
 import '../../theme/app_shadows.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
 import '../../widgets/app_bottom_nav_bar.dart';
-import '../map/map_screen.dart';
-import '../ranking/ranking_screen.dart';
-import '../record/my_footprint_screen.dart';
+import '../../widgets/loading_overlay.dart';
+import '../../widgets/reward_image.dart';
 import 'food_history_screen.dart';
 import 'food_info_screen.dart';
 
 /// `<음식 도감>` (user_flow §4) — 내 음식 보기에서 "음식 도감"을 눌렀을 때. 만든
-/// 음식 / 곧 만들 수 있는 음식 / 아직 못 만든 음식을 도감 형태로 보여준다. "구분"
-/// 드롭다운으로 전체 보기 / 지역별 보기를 고르고, 지역별 보기일 때만 옆의 "지역"
-/// 드롭다운이 활성화된다.
+/// 음식 / 곧 만들 수 있는 음식 / 아직 못 만든 음식을 보여준다.
+/// 공통·수도권 음식 중 기본 재료와 수도권 지역 재료만 사용하는 레시피를 포함한다.
 ///
 /// `GET /foods` (스펙 §10.1) + `GET /users/me/foods` (스펙 §3.9) 를 함께 읽어
 /// 각 음식의 도감 상태(만듦/거의/잠김)를 계산한다. 이미 만든 음식 탭 → 실제
 /// `UserFood.id` 로 `<음식 히스토리>`, 미제작 음식 탭 → 실제 `foodId` 로
 /// `<음식 정보>` 로 연결된다.
-///
-/// * TODO(asset): 이 화면 배경 scene 미납품 —
-///   `assets/illustrations/scenes/food_dex_bg.png` (§9, 펼친 책 헤더 밴드 PNG).
-///   그 전까지 평면 #FAE7C0 위에 콘텐츠만 표시.
 class FoodDexScreen extends StatefulWidget {
   const FoodDexScreen({super.key});
 
   @override
   State<FoodDexScreen> createState() => _FoodDexScreenState();
 }
-
-enum _DexView { all, byRegion }
 
 /// 도감 상태 — 백엔드에 대응 필드가 없어 [Food.canMake] + 사용자 제작 이력으로
 /// 프론트에서 계산한다.
@@ -51,7 +44,14 @@ enum _DexFoodState {
 }
 
 class _DexEntry {
-  const _DexEntry({required this.food, required this.state, this.userFoodId});
+  const _DexEntry({
+    required this.food,
+    required this.state,
+    required this.difficulty,
+    this.userFoodId,
+  });
+
+  final _Difficulty? difficulty;
 
   final Food food;
   final _DexFoodState state;
@@ -61,16 +61,29 @@ class _DexEntry {
   final int? userFoodId;
 }
 
-/// 이 화면이 한 번에 필요로 하는 두 응답 — 전체 음식 목록 + 내가 만든 음식 목록.
-typedef _DexData = ({List<Food> foods, List<UserFood> made});
+enum _Difficulty {
+  low('하', '일반'),
+  medium('중', '고급'),
+  high('상', '희귀'),
+  legendary('최상', '전설');
+
+  const _Difficulty(this.label, this.filterLabel);
+  final String label;
+  final String filterLabel;
+}
+
+/// 레시피의 재료 ID를 전체 재료 목록 및 지역 정보와 대조한다.
+typedef _DexData = ({
+  List<Food> foods,
+  List<UserFood> made,
+  Map<int, String?> ingredientRarities,
+});
 
 class _FoodDexScreenState extends State<FoodDexScreen> {
-  _DexView _view = _DexView.byRegion;
-
-  /// 지역별 보기에서 선택된 지역. 전체 보기일 때는 무시된다.
-  String? _region;
+  static const _kBgAspectRatio = 1588 / 990;
 
   late Future<_DexData> _future;
+  _Difficulty? _difficulty;
 
   @override
   void initState() {
@@ -85,10 +98,15 @@ class _FoodDexScreenState extends State<FoodDexScreen> {
     final results = await Future.wait([
       FoodService().list(),
       UserService().getFoods(limit: 100),
+      UserService().getIngredients(),
     ]);
     return (
       foods: results[0] as List<Food>,
       made: (results[1] as Paged<UserFood>).items,
+      ingredientRarities: {
+        for (final ingredient in (results[2] as UserIngredients).items)
+          ingredient.id: ingredient.rarity,
+      },
     );
   }
 
@@ -102,11 +120,29 @@ class _FoodDexScreenState extends State<FoodDexScreen> {
   List<_DexEntry> _buildEntries(_DexData data) {
     return [
       for (final food in data.foods)
-        _entryFor(food, data.made),
+        if (FoodCatalog.isOpen(food.name))
+          _entryFor(food, data.made, _difficultyFor(food, data)),
     ];
   }
 
-  _DexEntry _entryFor(Food food, List<UserFood> made) {
+  _Difficulty? _difficultyFor(Food food, _DexData data) {
+    var level = _Difficulty.low;
+    for (final ingredient in food.ingredients) {
+      final rarity = data.ingredientRarities[ingredient.id];
+      final current = switch (rarity) {
+        'COMMON' => _Difficulty.low,
+        'UNCOMMON' => _Difficulty.medium,
+        'RARE' => _Difficulty.high,
+        'LEGENDARY' => _Difficulty.legendary,
+        _ => null,
+      };
+      if (current == null) return null;
+      if (current.index > level.index) level = current;
+    }
+    return level;
+  }
+
+  _DexEntry _entryFor(Food food, List<UserFood> made, _Difficulty? difficulty) {
     final matches = made.where((f) => f.foodId == food.id).toList();
     if (matches.isNotEmpty) {
       matches.sort((a, b) {
@@ -117,12 +153,14 @@ class _FoodDexScreenState extends State<FoodDexScreen> {
       });
       return _DexEntry(
         food: food,
+        difficulty: difficulty,
         state: _DexFoodState.made,
         userFoodId: matches.first.id,
       );
     }
     return _DexEntry(
       food: food,
+      difficulty: difficulty,
       state: (food.canMake || _isAlmost(food))
           ? _DexFoodState.almost
           : _DexFoodState.locked,
@@ -147,70 +185,97 @@ class _FoodDexScreenState extends State<FoodDexScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final bgHeight = MediaQuery.sizeOf(context).width / _kBgAspectRatio;
+    final fadeHeight = bgHeight * 0.3;
+    final contentClearance = bgHeight - fadeHeight * 0.6;
     return Scaffold(
       backgroundColor: AppColors.appBackground,
-      body: SafeArea(
-        bottom: false,
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _HeaderBar(onBack: () => Navigator.of(context).maybePop()),
-              // 상단 헤더 밴드 scene. 납품 전까지 errorBuilder 로 아무것도
-              // 그리지 않고 #FAE7C0 base 가 그대로 보이게 둔다.
-              Image.asset(
-                'assets/illustrations/scenes/food_dex_bg.png',
-                height: 180,
-                width: double.infinity,
-                fit: BoxFit.cover,
+      appBar: AppBar(
+        automaticallyImplyLeading: false,
+        toolbarHeight: 52,
+        titleSpacing: 0,
+        title: _HeaderBar(onBack: () => Navigator.of(context).maybePop()),
+      ),
+      body: SizedBox.expand(
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: Align(
                 alignment: Alignment.topCenter,
-                errorBuilder: (context, error, stackTrace) => const SizedBox(),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.xl,
-                  AppSpacing.lg,
-                  AppSpacing.xl,
-                  AppSpacing.xxl,
+                child: Image.asset(
+                  'assets/illustrations/scenes/food_history_bg.png',
+                  width: double.infinity,
+                  fit: BoxFit.fitWidth,
+                  alignment: Alignment.topCenter,
+                  errorBuilder: (context, error, stackTrace) =>
+                      const SizedBox(),
                 ),
+              ),
+            ),
+            Positioned(
+              top: bgHeight - fadeHeight,
+              left: 0,
+              right: 0,
+              height: fadeHeight,
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        AppColors.appBackground.withValues(alpha: 0),
+                        AppColors.appBackground,
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            Positioned.fill(
+              child: SafeArea(
+                bottom: false,
                 child: FutureBuilder<_DexData>(
                   future: _future,
-                  builder: (context, snapshot) => _buildBody(context, snapshot),
+                  builder: (context, snapshot) => LoadingOverlay(
+                    loading: snapshot.connectionState != ConnectionState.done,
+                    child: SingleChildScrollView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          SizedBox(height: contentClearance),
+                          Padding(
+                            padding: AppBottomNavBar.scrollPadding(
+                              context,
+                              const EdgeInsets.fromLTRB(
+                                AppSpacing.xl,
+                                AppSpacing.lg,
+                                AppSpacing.xl,
+                                AppSpacing.xxl,
+                              ),
+                            ),
+                            child: _buildBody(context, snapshot),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
-      bottomNavigationBar: AppBottomNavBar(
-        currentIndex: 0,
-        onTap: (index) {
-          if (index == 0) {
-            Navigator.of(context).popUntil((route) => route.isFirst);
-          } else if (index == 1) {
-            Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const MapScreen()),
-            );
-          } else if (index == 2) {
-            Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const RankingScreen()),
-            );
-          } else if (index == 3) {
-            Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const MyFootprintScreen()),
-            );
-          }
-        },
-      ),
+      extendBody: true,
+      bottomNavigationBar: const AppBottomNavBar(currentIndex: 0),
     );
   }
 
   Widget _buildBody(BuildContext context, AsyncSnapshot<_DexData> snapshot) {
     if (snapshot.connectionState != ConnectionState.done) {
-      return const Padding(
-        padding: EdgeInsets.symmetric(vertical: AppSpacing.huge),
-        child: Center(child: CircularProgressIndicator()),
-      );
+      // The LoadingOverlay above already shows the loading pill.
+      return const SizedBox(height: AppSpacing.huge);
     }
     if (snapshot.hasError) {
       final message = snapshot.error is ApiException
@@ -223,8 +288,9 @@ class _FoodDexScreenState extends State<FoodDexScreen> {
             Text(
               message,
               textAlign: TextAlign.center,
-              style: AppTextStyles.bodyMedium
-                  .copyWith(color: AppColors.textSecondary),
+              style: AppTextStyles.bodyMedium.copyWith(
+                color: AppColors.textSecondary,
+              ),
             ),
             const SizedBox(height: AppSpacing.md),
             OutlinedButton(onPressed: _reload, child: const Text('다시 시도')),
@@ -233,44 +299,64 @@ class _FoodDexScreenState extends State<FoodDexScreen> {
       );
     }
 
-    final entries = _buildEntries(snapshot.data!);
-    final regions = <String>{
-      for (final e in entries)
-        if (e.food.regionName != null && e.food.regionName!.isNotEmpty)
-          e.food.regionName!,
-    }.toList()
-      ..sort();
-    final region = _region ?? (regions.isEmpty ? null : regions.first);
-    final visible = _view == _DexView.all
-        ? entries
-        : entries.where((e) => e.food.regionName == region).toList();
+    final entries = _buildEntries(snapshot.data!)
+        .where(
+          (entry) => _difficulty == null || entry.difficulty == _difficulty,
+        )
+        .toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _DexControls(
-          view: _view,
-          region: region,
-          regions: regions,
-          onViewChanged: (v) => setState(() => _view = v),
-          onRegionChanged: (r) => setState(() => _region = r),
+        const _RegionSectionHeader(region: '기본 · 수도권 재료 음식'),
+        const SizedBox(height: AppSpacing.sm),
+        Text(
+          '가장 획득하기 어려운 재료 기준 · 하: 일반 / 중: 고급 / 상: 희귀 / 최상: 전설',
+          style: AppTextStyles.caption,
         ),
-        const SizedBox(height: AppSpacing.xl),
-        if (_view == _DexView.byRegion && region != null) ...[
-          _RegionSectionHeader(region: region),
-          const SizedBox(height: AppSpacing.md),
-        ],
-        if (visible.isEmpty)
+        Wrap(
+          spacing: AppSpacing.sm,
+          children: [
+            ChoiceChip(
+              label: const Text('전체'),
+              selectedColor: AppColors.primary,
+              checkmarkColor: AppColors.textOnPrimaryButton,
+              labelStyle: TextStyle(
+                color: _difficulty == null
+                    ? AppColors.textOnPrimaryButton
+                    : AppColors.textSecondary,
+              ),
+              selected: _difficulty == null,
+              onSelected: (_) => setState(() => _difficulty = null),
+            ),
+            for (final difficulty in _Difficulty.values)
+              ChoiceChip(
+                label: Text(difficulty.filterLabel),
+                selectedColor: AppColors.primary,
+                checkmarkColor: AppColors.textOnPrimaryButton,
+                labelStyle: TextStyle(
+                  color: _difficulty == difficulty
+                      ? AppColors.textOnPrimaryButton
+                      : AppColors.textSecondary,
+                ),
+                selected: _difficulty == difficulty,
+                onSelected: (_) => setState(() => _difficulty = difficulty),
+              ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.md),
+        if (entries.isEmpty)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: AppSpacing.xl),
             child: Text(
-              '표시할 음식이 없어요.',
-              style: AppTextStyles.bodyMedium
-                  .copyWith(color: AppColors.textSecondary),
+              _difficulty == null ? '표시할 음식이 없어요.' : '이 난이도에 해당하는 음식이 없어요.',
+              style: AppTextStyles.bodyMedium.copyWith(
+                color: AppColors.textSecondary,
+              ),
             ),
           )
         else
-          _DexFoodGrid(entries: visible, onTapEntry: _onTapEntry),
+          _DexFoodGrid(entries: entries, onTapEntry: _onTapEntry),
       ],
     );
   }
@@ -320,128 +406,6 @@ class _HeaderBar extends StatelessWidget {
   }
 }
 
-/// "구분" 드롭다운 + "지역" 드롭다운. 지역 드롭다운은 구분이 "지역별 보기"일
-/// 때만 활성화된다.
-class _DexControls extends StatelessWidget {
-  const _DexControls({
-    required this.view,
-    required this.region,
-    required this.regions,
-    required this.onViewChanged,
-    required this.onRegionChanged,
-  });
-
-  final _DexView view;
-  final String? region;
-  final List<String> regions;
-  final ValueChanged<_DexView> onViewChanged;
-  final ValueChanged<String> onRegionChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: _LabeledDropdown<_DexView>(
-            label: '구분',
-            value: view,
-            items: const {
-              _DexView.all: '전체 보기',
-              _DexView.byRegion: '지역별 보기',
-            },
-            onChanged: (v) => onViewChanged(v!),
-          ),
-        ),
-        const SizedBox(width: AppSpacing.md),
-        Expanded(
-          child: regions.isEmpty
-              ? _LabeledDropdown<String>(
-                  label: '지역',
-                  value: '',
-                  enabled: false,
-                  items: const {'': '지역 정보 없음'},
-                  onChanged: (_) {},
-                )
-              : _LabeledDropdown<String>(
-                  label: '지역',
-                  value: region ?? regions.first,
-                  enabled: view == _DexView.byRegion,
-                  items: {for (final r in regions) r: r},
-                  onChanged: (v) => onRegionChanged(v!),
-                ),
-        ),
-      ],
-    );
-  }
-}
-
-/// 라벨 + 드롭다운 한 세트. 디자인 시스템 입력 필드 스타일(§7)에 맞춘 외형.
-class _LabeledDropdown<T> extends StatelessWidget {
-  const _LabeledDropdown({
-    required this.label,
-    required this.value,
-    required this.items,
-    required this.onChanged,
-    this.enabled = true,
-  });
-
-  final String label;
-  final T value;
-  final Map<T, String> items;
-  final ValueChanged<T?> onChanged;
-  final bool enabled;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: AppTextStyles.caption.copyWith(fontWeight: FontWeight.w600),
-        ),
-        const SizedBox(height: AppSpacing.xs),
-        Container(
-          height: 48,
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-          decoration: BoxDecoration(
-            color: enabled ? AppColors.surface : AppColors.surfaceDisabled,
-            border: Border.all(color: AppColors.border),
-            borderRadius: BorderRadius.circular(AppRadius.inputField),
-          ),
-          child: DropdownButtonHideUnderline(
-            child: DropdownButton<T>(
-              isExpanded: true,
-              isDense: true,
-              value: value,
-              onChanged: enabled ? onChanged : null,
-              icon: Icon(
-                Symbols.expand_more_rounded,
-                size: 20,
-                color: enabled ? AppColors.iconPrimary : AppColors.iconDisabled,
-              ),
-              dropdownColor: AppColors.surface,
-              borderRadius: BorderRadius.circular(AppRadius.inputField),
-              style: AppTextStyles.bodyMedium.copyWith(
-                color: enabled ? AppColors.textPrimary : AppColors.textDisabled,
-                fontWeight: FontWeight.w600,
-              ),
-              items: [
-                for (final entry in items.entries)
-                  DropdownMenuItem<T>(
-                    value: entry.key,
-                    child: Text(entry.value),
-                  ),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
 /// "📍 전주 ————————" 지역 섹션 헤더.
 class _RegionSectionHeader extends StatelessWidget {
   const _RegionSectionHeader({required this.region});
@@ -452,9 +416,13 @@ class _RegionSectionHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        const Icon(Symbols.location_on_rounded, size: 20, color: AppColors.primary),
+        const Icon(
+          Symbols.location_on_rounded,
+          size: 20,
+          color: AppColors.primary,
+        ),
         const SizedBox(width: AppSpacing.xs),
-        Text(region, style: AppTextStyles.h3),
+        Expanded(child: Text(region, style: AppTextStyles.h3)),
         const SizedBox(width: AppSpacing.md),
         const Expanded(child: Divider(height: 1, color: AppColors.border)),
         const SizedBox(width: AppSpacing.xs),
@@ -488,7 +456,7 @@ class _DexFoodGrid extends StatelessWidget {
         crossAxisCount: 2,
         mainAxisSpacing: AppSpacing.md,
         crossAxisSpacing: AppSpacing.md,
-        mainAxisExtent: 184,
+        mainAxisExtent: 204,
       ),
       itemBuilder: (context, index) {
         final entry = entries[index];
@@ -509,6 +477,32 @@ class _DexFoodCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final food = entry.food;
+    return Stack(
+      children: [
+        _buildCard(context, food),
+        // 이미 만든 음식 뱃지 (user_flow §4).
+        if (entry.state == _DexFoodState.made)
+          Positioned(
+            top: 6,
+            right: 6,
+            child: SizedBox(
+              width: 26,
+              height: 26,
+              child: Image.asset(
+                'assets/illustrations/icon/verified.png',
+                errorBuilder: (context, error, stackTrace) => const Icon(
+                  Symbols.verified_rounded,
+                  size: 26,
+                  color: AppColors.success,
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildCard(BuildContext context, Food food) {
     return Material(
       color: AppColors.surface,
       borderRadius: BorderRadius.circular(AppRadius.card),
@@ -533,8 +527,10 @@ class _DexFoodCard extends StatelessWidget {
                     // 미제작 음식은 실루엣처럼 흐리게 (user_flow §4).
                     child: Opacity(
                       opacity: _locked ? 0.3 : 1,
-                      child: _NetOrIcon(
-                        url: food.imageUrl ?? food.illustrationUrl,
+                      child: RewardImage(
+                        name: food.name,
+                        folder: RewardAssetFolder.dish,
+                        networkUrl: food.imageUrl ?? food.illustrationUrl,
                         icon: Symbols.dinner_dining_rounded,
                         color: _locked
                             ? AppColors.iconDisabled
@@ -552,7 +548,7 @@ class _DexFoodCard extends StatelessWidget {
                 children: [
                   if (entry.state == _DexFoodState.almost) ...[
                     const Icon(
-                      Symbols.star_rounded,
+                      Symbols.hourglass_empty_rounded,
                       size: 14,
                       color: AppColors.secondaryAccent,
                     ),
@@ -572,6 +568,13 @@ class _DexFoodCard extends StatelessWidget {
                     ),
                   ),
                 ],
+              ),
+              const SizedBox(height: 4),
+              Text(
+                entry.difficulty == null
+                    ? '난이도 미정'
+                    : '난이도 ${entry.difficulty!.label}',
+                style: AppTextStyles.caption,
               ),
             ],
           ),
@@ -596,37 +599,5 @@ class _Leaf extends StatelessWidget {
       errorBuilder: (context, error, stackTrace) => const SizedBox(width: 18),
     );
     return flip ? Transform.flip(flipX: true, child: img) : img;
-  }
-}
-
-/// 서버 이미지 URL 이 있으면 네트워크 이미지를, 없거나 로드 실패 시 아이콘을
-/// 보여준다 (§6 — placeholder 대신 기존 errorBuilder 패턴 유지).
-class _NetOrIcon extends StatelessWidget {
-  const _NetOrIcon({
-    required this.url,
-    required this.icon,
-    required this.color,
-    this.fit = BoxFit.contain,
-    this.iconSize,
-  });
-
-  final String? url;
-  final IconData icon;
-  final Color color;
-  final BoxFit fit;
-  final double? iconSize;
-
-  @override
-  Widget build(BuildContext context) {
-    final u = url;
-    if (u == null || u.isEmpty) {
-      return Center(child: Icon(icon, size: iconSize, color: color));
-    }
-    return Image.network(
-      u,
-      fit: fit,
-      errorBuilder: (context, error, stackTrace) =>
-          Center(child: Icon(icon, size: iconSize, color: color)),
-    );
   }
 }

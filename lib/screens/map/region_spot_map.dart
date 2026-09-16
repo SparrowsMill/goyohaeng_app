@@ -12,6 +12,7 @@ import '../../data/mock_region_ranking.dart';
 import '../../data/user_location.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_spacing.dart';
+import '../../widgets/loading_overlay.dart';
 import '../../widgets/my_location_button.dart';
 import '../../widgets/spot_pin.dart';
 import '../place/place_info_screen.dart';
@@ -125,38 +126,40 @@ class _RegionSpotMapState extends State<RegionSpotMap> {
       future: _ringsFuture,
       builder: (context, snapshot) {
         final rings = snapshot.data;
-        if (rings == null) {
-          return const ColoredBox(color: AppColors.appBackground);
-        }
-        return Stack(
-          children: [
-            _buildMap(rings),
-            // Bottom-left overlay, same stack as the vector `<지도>`:
-            // 내 위치 (once located) above the 즐겨찾기 toggle.
-            Positioned(
-              left: AppSpacing.sm,
-              bottom: AppSpacing.sm,
-              // IntrinsicWidth + stretch → 내 위치 and 즐겨찾기 buttons match.
-              child: IntrinsicWidth(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
+        return LoadingOverlay(
+          loading: rings == null,
+          child: rings == null
+              ? const ColoredBox(color: AppColors.appBackground)
+              : Stack(
                   children: [
-                    if (UserLocation.position.value != null) ...[
-                      MyLocationButton(onTap: _goToMyLocation),
-                      const SizedBox(height: AppSpacing.sm),
-                    ],
-                    MapToggleButton(
-                      icon: Symbols.star_rounded,
-                      label: '즐겨찾기',
-                      active: _showFavorites,
-                      onTap: () => _favorites.value = !_favorites.value,
+                    _buildMap(rings),
+                    // Bottom-left overlay, same stack as the vector `<지도>`:
+                    // 내 위치 (once located) above the 즐겨찾기 toggle.
+                    Positioned(
+                      left: AppSpacing.sm,
+                      bottom: AppSpacing.sm,
+                      // IntrinsicWidth + stretch → 내 위치 and 즐겨찾기 buttons match.
+                      child: IntrinsicWidth(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            if (UserLocation.position.value != null) ...[
+                              MyLocationButton(onTap: _goToMyLocation),
+                              const SizedBox(height: AppSpacing.sm),
+                            ],
+                            MapToggleButton(
+                              icon: Symbols.star_rounded,
+                              label: '즐겨찾기',
+                              active: _showFavorites,
+                              onTap: () => _favorites.value = !_favorites.value,
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                   ],
                 ),
-              ),
-            ),
-          ],
         );
       },
     );
@@ -244,9 +247,9 @@ class _RegionSpotMapState extends State<RegionSpotMap> {
             markers: [
               Marker(
                 point: UserLocation.position.value!,
-                width: 34,
-                height: 42,
-                alignment: Alignment.topCenter,
+                width: 24,
+                height: 24,
+                alignment: Alignment.center,
                 child: const MyLocationDot(),
               ),
             ],
@@ -281,7 +284,7 @@ class _RegionSpotMapState extends State<RegionSpotMap> {
     return Marker(
       point: LatLng(spot.lat!, spot.lng!),
       width: 170,
-      height: selected ? 68 : 34,
+      height: selected ? 84 : 34,
       // The pin's tip sits on the geo point; name/label grow upward.
       alignment: Alignment.bottomCenter,
       child: SpotPin(

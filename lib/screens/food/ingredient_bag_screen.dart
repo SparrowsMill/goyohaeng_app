@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
 import '../../api/api.dart';
+import '../../data/food_catalog.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_radius.dart';
 import '../../theme/app_shadows.dart';
@@ -9,44 +10,84 @@ import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/app_bottom_nav_bar.dart';
-import '../map/map_screen.dart';
-import '../ranking/ranking_screen.dart';
-import '../record/my_footprint_screen.dart';
+import '../../widgets/loading_overlay.dart';
+import '../../widgets/reward_image.dart';
 import 'food_info_screen.dart';
 import 'ingredient_detail_sheet.dart';
 
-/// `<재료 가방>` (user_flow §5) — 모은 재료를 확인하는 페이지. 기본 재료 /
-/// 지역별 재료 탭으로 구분하고, 미획득 재료는 실루엣 + 이름, 획득 재료는 보유
+/// `<재료 가방>` (user_flow §5) — 모은 재료를 확인하는 페이지. 일반 / 고급 /
+/// 희귀 / 전설 탭으로 구분하고, 미획득 재료는 실루엣 + 이름, 획득 재료는 보유
 /// 개수를 표시한다. 하단에 보유 재료로 만들 수 있는 음식 추천 코너.
 ///
 /// `GET /users/me/ingredients` (스펙 §3.8) + `GET /foods` (스펙 §10.1) 로 실 데이터를
 /// 읽는다. 재료 탭 시 실제 `ingredientId` 로 `<재료 상세 페이지>`
 /// (`ingredient_detail_sheet.dart`) 모달을 띄운다.
-///
-/// * TODO(asset): 이 화면 배경 scene 미납품 —
-///   `assets/illustrations/scenes/ingredient_bag_bg.png` (§9, 불투명 헤더 밴드
-///   PNG). 그 전까지 평면 #FAE7C0 위에 콘텐츠만 표시.
 class IngredientBagScreen extends StatefulWidget {
-  const IngredientBagScreen({super.key});
+  const IngredientBagScreen({super.key, this.initialIngredientName});
+
+  /// 방문 인증 보상 화면 등에서 특정 재료를 확인하러 넘어올 때, 그 재료가
+  /// 속한 등급 탭을 미리 선택해둔다. 목록에서 이름이 일치하는 재료를 찾지
+  /// 못하면(실 방문 세션처럼 지급된 재료명을 아직 모르는 경우 등) 기본 탭
+  /// (일반)을 그대로 유지한다.
+  final String? initialIngredientName;
 
   @override
   State<IngredientBagScreen> createState() => _IngredientBagScreenState();
 }
 
-enum _Category { basic, regional }
+enum _Category {
+  common('COMMON', '일반'),
+  uncommon('UNCOMMON', '고급'),
+  rare('RARE', '희귀'),
+  legendary('LEGENDARY', '전설');
 
-/// 재료 가방 화면이 한 번에 필요로 하는 두 응답 — 보유 재료 + 음식 목록
+  const _Category(this.rarity, this.label);
+
+  final String rarity;
+  final String label;
+}
+
+/// 재료 가방 화면의 전체 재료 + 도감과 동일한 음식 목록
 /// (하단 "이 재료로 만들 수 있어요" 추천용).
 typedef _BagData = ({UserIngredients ingredients, List<Food> foods});
 
 class _IngredientBagScreenState extends State<IngredientBagScreen> {
-  _Category _category = _Category.basic;
+  /// `ingredient_bg.png`'s native aspect ratio (1588×990) — used to size the
+  /// fixed header scene at its full, uncropped height for any screen width,
+  /// and to clear that much space before the scrollable content starts.
+  static const _kBgAspectRatio = 1588 / 990;
+
+  _Category _category = _Category.common;
   late Future<_BagData> _future;
 
   @override
   void initState() {
     super.initState();
     _future = _load();
+    final targetName = widget.initialIngredientName;
+    if (targetName != null) {
+      _future.then((data) {
+        if (!mounted) return;
+        final match = _findByName(data.ingredients.items, targetName);
+        final category = _categoryForRarity(match?.rarity);
+        if (category != null) setState(() => _category = category);
+      }).catchError((_) {});
+    }
+  }
+
+  static UserIngredient? _findByName(List<UserIngredient> items, String name) {
+    for (final item in items) {
+      if (item.name == name) return item;
+    }
+    return null;
+  }
+
+  static _Category? _categoryForRarity(String? rarity) {
+    if (rarity == null) return null;
+    for (final c in _Category.values) {
+      if (c.rarity == rarity) return c;
+    }
+    return null;
   }
 
   Future<_BagData> _load() async {
@@ -65,83 +106,116 @@ class _IngredientBagScreenState extends State<IngredientBagScreen> {
 
   void _reload() => setState(() => _future = _load());
 
-  /// 음식이 "곧 만들 수 있는" 상태인지 판단하는 휴리스틱 — 서버는 `canMake`
-  /// (완전히 충분함) 만 내려주고 "거의 다 됐어요" 같은 중간 단계는 없으므로,
-  /// canMake 는 아니지만 재료 중 하나 이상은 이미 충분히 모은 경우를 "거의"로
-  /// 취급한다.
-  bool _isAlmost(Food food) =>
-      !food.canMake && food.ingredients.any((i) => i.enough);
-
   @override
   Widget build(BuildContext context) {
+    final bgHeight = MediaQuery.sizeOf(context).width / _kBgAspectRatio;
+    final fadeHeight = bgHeight * 0.3;
+    // Pull the content block up slightly into the fade zone (not the crisp
+    // illustration above it) so it sits a bit closer to the scene without
+    // covering more of it.
+    final contentClearance = bgHeight - fadeHeight * 0.6;
     return Scaffold(
       backgroundColor: AppColors.appBackground,
-      body: SafeArea(
-        bottom: false,
-        child: FutureBuilder<_BagData>(
-          future: _future,
-          builder: (context, snapshot) {
-            return SingleChildScrollView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _HeaderBar(onBack: () => Navigator.of(context).maybePop()),
-                  // 상단 헤더 밴드 scene. 납품 전까지 errorBuilder 로 아무것도
-                  // 그리지 않고 #FAE7C0 base 가 그대로 보이게 둔다.
-                  Image.asset(
-                    'assets/illustrations/scenes/ingredient_bag_bg.png',
-                    height: 200,
-                    width: double.infinity,
-                    fit: BoxFit.cover,
-                    alignment: Alignment.topCenter,
-                    errorBuilder: (context, error, stackTrace) =>
-                        const SizedBox(),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(
-                      AppSpacing.xl,
-                      AppSpacing.lg,
-                      AppSpacing.xl,
-                      AppSpacing.xxl,
-                    ),
-                    child: _buildBody(context, snapshot),
-                  ),
-                ],
+      appBar: AppBar(
+        leading: IconButton(
+          onPressed: () => Navigator.of(context).maybePop(),
+          icon: const Icon(Symbols.arrow_back_rounded),
+        ),
+        title: const Text('재료가방'),
+      ),
+      // `SizedBox.expand` guarantees the Stack itself fills the screen via a
+      // tight constraint from *outside* it, regardless of `fit` or how many
+      // children are `Positioned` — needed because every child below is
+      // `Positioned` (including the header, so its `SizedBox(height: 44)`
+      // isn't force-stretched); with zero non-positioned children, a bare
+      // `Stack` with no outer sizing would otherwise collapse to 0×0.
+      body: SizedBox.expand(
+        child: Stack(
+          children: [
+            // Fixed background scene, shown in full (not cropped) — stays put
+            // while the content below scrolls over it, like the account-center
+            // screen's `setting_bg`.
+            Positioned.fill(
+              child: Align(
+                alignment: Alignment.topCenter,
+                child: Image.asset(
+                  'assets/illustrations/scenes/ingredient_bg.png',
+                  width: double.infinity,
+                  fit: BoxFit.fitWidth,
+                  alignment: Alignment.topCenter,
+                  errorBuilder: (context, error, stackTrace) =>
+                      const SizedBox(),
+                ),
               ),
-            );
-          },
+            ),
+            // Soft fade at the scene's bottom edge into the flat app
+            // background, so it doesn't cut off abruptly.
+            Positioned(
+              top: bgHeight - fadeHeight,
+              left: 0,
+              right: 0,
+              height: fadeHeight,
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        AppColors.appBackground.withValues(alpha: 0),
+                        AppColors.appBackground,
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            Positioned.fill(
+              child: SafeArea(
+                bottom: false,
+                child: FutureBuilder<_BagData>(
+                  future: _future,
+                  builder: (context, snapshot) {
+                    return LoadingOverlay(
+                      loading: snapshot.connectionState != ConnectionState.done,
+                      child: SingleChildScrollView(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            SizedBox(height: contentClearance),
+                            Padding(
+                              padding: AppBottomNavBar.scrollPadding(
+                                context,
+                                const EdgeInsets.fromLTRB(
+                                  AppSpacing.xl,
+                                  AppSpacing.lg,
+                                  AppSpacing.xl,
+                                  AppSpacing.xxl,
+                                ),
+                              ),
+                              child: _buildBody(context, snapshot),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+          ],
         ),
       ),
-      bottomNavigationBar: AppBottomNavBar(
-        currentIndex: 0,
-        onTap: (index) {
-          if (index == 0) {
-            Navigator.of(context).popUntil((route) => route.isFirst);
-          } else if (index == 1) {
-            Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const MapScreen()),
-            );
-          } else if (index == 2) {
-            Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const RankingScreen()),
-            );
-          } else if (index == 3) {
-            Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const MyFootprintScreen()),
-            );
-          }
-        },
-      ),
+      extendBody: true,
+      bottomNavigationBar: const AppBottomNavBar(currentIndex: 0),
     );
   }
 
   Widget _buildBody(BuildContext context, AsyncSnapshot<_BagData> snapshot) {
     if (snapshot.connectionState != ConnectionState.done) {
-      return const Padding(
-        padding: EdgeInsets.symmetric(vertical: AppSpacing.huge),
-        child: Center(child: CircularProgressIndicator()),
-      );
+      // The LoadingOverlay above already shows the loading pill.
+      return const SizedBox(height: AppSpacing.huge);
     }
     if (snapshot.hasError) {
       final message = snapshot.error is ApiException
@@ -152,28 +226,28 @@ class _IngredientBagScreenState extends State<IngredientBagScreen> {
 
     final data = snapshot.data!;
     final ingredients = data.ingredients.items
-        .where((i) => _category == _Category.basic ? !i.isRegional : i.isRegional)
+        .where((i) => i.rarity == _category.rarity)
+        .where((i) => isIngredientOpen(i.name))
         .toList();
     final makeable = data.foods
-        .where((f) => f.canMake || _isAlmost(f))
+        .where((food) => food.canMake && FoodCatalog.isOpen(food.name))
         .toList();
-    final recommended = makeable.isEmpty
-        ? null
-        : (makeable.firstWhere((f) => f.canMake, orElse: () => makeable.first));
+    final recommended = makeable.isEmpty ? null : makeable.first;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _CollectedSummaryCard(
           totalQuantity: data.ingredients.totalQuantity,
+          totalTypes: data.ingredients.totalTypes,
           recommended: recommended,
           onTapRecommendation: recommended == null
               ? null
               : () => Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => FoodInfoScreen(foodId: recommended.id),
-                    ),
+                  MaterialPageRoute(
+                    builder: (_) => FoodInfoScreen(foodId: recommended.id),
                   ),
+                ),
         ),
         const SizedBox(height: AppSpacing.lg),
         _CategoryTabs(
@@ -194,11 +268,8 @@ class _IngredientBagScreenState extends State<IngredientBagScreen> {
         const SizedBox(height: AppSpacing.md),
         _MakeableFoodRow(
           foods: makeable,
-          isAlmost: _isAlmost,
           onTapFood: (food) => Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => FoodInfoScreen(foodId: food.id),
-            ),
+            MaterialPageRoute(builder: (_) => FoodInfoScreen(foodId: food.id)),
           ),
         ),
       ],
@@ -227,55 +298,12 @@ class _ErrorState extends StatelessWidget {
           Text(
             message,
             textAlign: TextAlign.center,
-            style: AppTextStyles.bodyMedium
-                .copyWith(color: AppColors.textSecondary),
+            style: AppTextStyles.bodyMedium.copyWith(
+              color: AppColors.textSecondary,
+            ),
           ),
           const SizedBox(height: AppSpacing.md),
           OutlinedButton(onPressed: onRetry, child: const Text('다시 시도')),
-        ],
-      ),
-    );
-  }
-}
-
-/// 뒤로가기 + 가운데 정렬 제목 + 잎 장식.
-class _HeaderBar extends StatelessWidget {
-  const _HeaderBar({required this.onBack});
-
-  final VoidCallback onBack;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: AppSpacing.sm),
-      child: Column(
-        children: [
-          SizedBox(
-            height: 44,
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                Text('재료 가방', style: AppTextStyles.h2),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: IconButton(
-                    onPressed: onBack,
-                    icon: const Icon(Symbols.arrow_back_rounded),
-                    color: AppColors.iconPrimary,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: AppSpacing.xs),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              _Leaf(flip: true),
-              const SizedBox(width: AppSpacing.xs),
-              _Leaf(flip: false),
-            ],
-          ),
         ],
       ),
     );
@@ -286,11 +314,13 @@ class _HeaderBar extends StatelessWidget {
 class _CollectedSummaryCard extends StatelessWidget {
   const _CollectedSummaryCard({
     required this.totalQuantity,
+    required this.totalTypes,
     required this.recommended,
     required this.onTapRecommendation,
   });
 
   final int totalQuantity;
+  final int totalTypes;
   final Food? recommended;
   final VoidCallback? onTapRecommendation;
 
@@ -328,10 +358,18 @@ class _CollectedSummaryCard extends StatelessWidget {
                       TextSpan(text: '$totalQuantity'),
                       TextSpan(
                         text: '개',
-                        style: AppTextStyles.title
-                            .copyWith(color: AppColors.success),
+                        style: AppTextStyles.title.copyWith(
+                          color: AppColors.success,
+                        ),
                       ),
                     ],
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  '$totalTypes종 보유',
+                  style: AppTextStyles.caption.copyWith(
+                    color: AppColors.textSecondary,
                   ),
                 ),
               ],
@@ -348,8 +386,9 @@ class _CollectedSummaryCard extends StatelessWidget {
                     recommended == null
                         ? '재료를 더 모아볼까요?'
                         : '지금 가진 재료로\n만들 수 있는 음식이 있어요',
-                    style: AppTextStyles.bodyMedium
-                        .copyWith(fontWeight: FontWeight.w600),
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                   if (recommended != null) ...[
                     const SizedBox(height: AppSpacing.sm),
@@ -424,7 +463,7 @@ class _RecommendationPill extends StatelessWidget {
   }
 }
 
-/// 기본 재료 / 지역별 재료 세그먼트 토글.
+/// 일반 / 고급 / 희귀 / 전설 등급 선택.
 class _CategoryTabs extends StatelessWidget {
   const _CategoryTabs({required this.selected, required this.onChanged});
 
@@ -445,7 +484,7 @@ class _CategoryTabs extends StatelessWidget {
           for (final c in _Category.values)
             Expanded(
               child: _TabButton(
-                label: c == _Category.basic ? '기본 재료' : '지역별 재료',
+                label: c.label,
                 selected: c == selected,
                 onTap: () => onChanged(c),
               ),
@@ -508,9 +547,10 @@ class _IngredientGrid extends StatelessWidget {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: AppSpacing.xl),
         child: Text(
-          '아직 모은 재료가 없어요.',
-          style: AppTextStyles.bodyMedium
-              .copyWith(color: AppColors.textSecondary),
+          '이 등급에 등록된 재료가 없어요.',
+          style: AppTextStyles.bodyMedium.copyWith(
+            color: AppColors.textSecondary,
+          ),
         ),
       );
     }
@@ -544,7 +584,7 @@ class _IngredientTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final owned = ingredient.quantity > 0;
+    final owned = ingredient.owned;
     return Material(
       color: owned ? AppColors.surface : AppColors.surfaceDisabled,
       borderRadius: BorderRadius.circular(AppRadius.listRow),
@@ -569,8 +609,11 @@ class _IngredientTile extends StatelessWidget {
                 child: SizedBox(
                   width: 40,
                   height: 40,
-                  child: _NetOrIcon(
-                    url: ingredient.imageUrl ?? ingredient.illustrationUrl,
+                  child: RewardImage(
+                    name: ingredient.name,
+                    folder: RewardAssetFolder.ingredient,
+                    networkUrl:
+                        ingredient.imageUrl ?? ingredient.illustrationUrl,
                     icon: Symbols.grocery_rounded,
                     color: owned ? AppColors.primary : AppColors.iconDisabled,
                     iconSize: 28,
@@ -583,9 +626,7 @@ class _IngredientTile extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: AppTextStyles.caption.copyWith(
-                  color: owned
-                      ? AppColors.textPrimary
-                      : AppColors.textDisabled,
+                  color: owned ? AppColors.textPrimary : AppColors.textDisabled,
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -609,12 +650,13 @@ class _CountChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final owned = count > 0;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: 2),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.sm,
+        vertical: 2,
+      ),
       decoration: BoxDecoration(
         color: owned ? AppColors.surface : Colors.transparent,
-        border: Border.all(
-          color: owned ? AppColors.primary : AppColors.border,
-        ),
+        border: Border.all(color: owned ? AppColors.primary : AppColors.border),
         borderRadius: BorderRadius.circular(AppRadius.pill),
       ),
       child: Text(
@@ -650,12 +692,10 @@ class _SectionLabel extends StatelessWidget {
 class _MakeableFoodRow extends StatelessWidget {
   const _MakeableFoodRow({
     required this.foods,
-    required this.isAlmost,
     required this.onTapFood,
   });
 
   final List<Food> foods;
-  final bool Function(Food) isAlmost;
   final ValueChanged<Food> onTapFood;
 
   @override
@@ -663,8 +703,9 @@ class _MakeableFoodRow extends StatelessWidget {
     if (foods.isEmpty) {
       return Text(
         '아직 만들 수 있는 음식이 없어요.',
-        style: AppTextStyles.bodyMedium
-            .copyWith(color: AppColors.textSecondary),
+        style: AppTextStyles.bodyMedium.copyWith(
+          color: AppColors.textSecondary,
+        ),
       );
     }
     return SizedBox(
@@ -678,7 +719,6 @@ class _MakeableFoodRow extends StatelessWidget {
           final food = foods[index];
           return _MakeableFoodCard(
             food: food,
-            almost: isAlmost(food),
             onTap: () => onTapFood(food),
           );
         },
@@ -690,12 +730,10 @@ class _MakeableFoodRow extends StatelessWidget {
 class _MakeableFoodCard extends StatelessWidget {
   const _MakeableFoodCard({
     required this.food,
-    required this.almost,
     required this.onTap,
   });
 
   final Food food;
-  final bool almost;
   final VoidCallback onTap;
 
   @override
@@ -724,8 +762,10 @@ class _MakeableFoodCard extends StatelessWidget {
                     borderRadius: BorderRadius.circular(AppRadius.smallButton),
                     child: Container(
                       color: AppColors.surfaceSelected,
-                      child: _NetOrIcon(
-                        url: food.imageUrl ?? food.illustrationUrl,
+                      child: RewardImage(
+                        name: food.name,
+                        folder: RewardAssetFolder.dish,
+                        networkUrl: food.imageUrl ?? food.illustrationUrl,
                         icon: Symbols.dinner_dining_rounded,
                         color: AppColors.iconInactive,
                         fit: BoxFit.cover,
@@ -742,24 +782,21 @@ class _MakeableFoodCard extends StatelessWidget {
                         food.name,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: AppTextStyles.bodyMedium
-                            .copyWith(fontWeight: FontWeight.w600),
+                        style: AppTextStyles.bodyMedium.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
-                    Icon(
-                      almost ? Symbols.star_rounded : Symbols.check_circle_rounded,
+                    const Icon(
+                      Symbols.check_circle_rounded,
                       size: 16,
-                      color: almost
-                          ? AppColors.secondaryAccent
-                          : AppColors.success,
+                      color: AppColors.success,
                     ),
                   ],
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  almost
-                      ? '조금만 보충하면\n만들 수 있어요'
-                      : '보유 재료로\n충분히 만들 수 있어요',
+                  '보유 재료로\n충분히 만들 수 있어요',
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: AppTextStyles.caption,
@@ -788,37 +825,5 @@ class _Leaf extends StatelessWidget {
       errorBuilder: (context, error, stackTrace) => const SizedBox(width: 16),
     );
     return flip ? Transform.flip(flipX: true, child: img) : img;
-  }
-}
-
-/// 서버 이미지 URL 이 있으면 네트워크 이미지를, 없거나 로드 실패 시 아이콘을
-/// 보여준다 (§6 — placeholder 대신 기존 errorBuilder 패턴 유지).
-class _NetOrIcon extends StatelessWidget {
-  const _NetOrIcon({
-    required this.url,
-    required this.icon,
-    required this.color,
-    this.fit = BoxFit.contain,
-    this.iconSize,
-  });
-
-  final String? url;
-  final IconData icon;
-  final Color color;
-  final BoxFit fit;
-  final double? iconSize;
-
-  @override
-  Widget build(BuildContext context) {
-    final u = url;
-    if (u == null || u.isEmpty) {
-      return Center(child: Icon(icon, size: iconSize, color: color));
-    }
-    return Image.network(
-      u,
-      fit: fit,
-      errorBuilder: (context, error, stackTrace) =>
-          Center(child: Icon(icon, size: iconSize, color: color)),
-    );
   }
 }

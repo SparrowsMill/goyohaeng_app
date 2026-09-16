@@ -9,12 +9,11 @@ import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/app_bottom_nav_bar.dart';
+import '../../widgets/fading_scene_background.dart';
+import '../../widgets/loading_overlay.dart';
 import '../../widgets/app_password_field.dart';
 import '../../widgets/app_text_field.dart';
 import '../auth/login_screen.dart';
-import '../map/map_screen.dart';
-import '../ranking/ranking_screen.dart';
-import '../record/my_footprint_screen.dart';
 
 const _labelWidth = 88.0;
 
@@ -235,6 +234,13 @@ class _AccountCenterScreenState extends State<AccountCenterScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.appBackground,
+      appBar: AppBar(
+        leading: IconButton(
+          onPressed: () => Navigator.of(context).maybePop(),
+          icon: const Icon(Symbols.arrow_back_rounded),
+        ),
+        title: const Text('계정센터'),
+      ),
       body: Stack(
         fit: StackFit.expand,
         children: [
@@ -243,99 +249,47 @@ class _AccountCenterScreenState extends State<AccountCenterScreen> {
           // below it. Not full-bleed `cover` (which crops the sides).
           Align(
             alignment: Alignment.topCenter,
-            child: Image.asset(
-              'assets/illustrations/scenes/setting_bg.png',
-              width: double.infinity,
-              fit: BoxFit.fitWidth,
-              alignment: Alignment.topCenter,
-              errorBuilder: (context, error, stackTrace) => const SizedBox(),
+            child: FadingSceneBackground(
+              asset: 'assets/illustrations/scenes/setting_bg.png',
+              height: MediaQuery.sizeOf(context).width * 1070 / 1470,
             ),
           ),
           SafeArea(
             bottom: false,
-            child: _loading
-                ? const Center(
-                    child: CircularProgressIndicator(color: AppColors.primary),
-                  )
-                : _loadError != null
-                    ? _ErrorState(message: _loadError!, onRetry: _load)
-                    : _buildContent(),
-          ),
-          // Fixed back button (does not scroll), same circular chip as the
-          // auth screens — pinned to the top-left corner.
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(
-                AppSpacing.xl,
-                AppSpacing.sm,
-                AppSpacing.xl,
-                0,
-              ),
-              child: Align(
-                alignment: Alignment.topLeft,
-                child: Material(
-                  color: AppColors.surface,
-                  shape: const CircleBorder(
-                    side: BorderSide(color: AppColors.border),
-                  ),
-                  child: InkWell(
-                    customBorder: const CircleBorder(),
-                    onTap: () => Navigator.of(context).maybePop(),
-                    child: const Padding(
-                      padding: EdgeInsets.all(AppSpacing.sm),
-                      child: Icon(
-                        Symbols.arrow_back_rounded,
-                        size: 24,
-                        color: AppColors.iconPrimary,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
+            child: LoadingOverlay(
+              loading: _loading,
+              child: _loading
+                  ? const SizedBox.expand()
+                  : _loadError != null
+                  ? _ErrorState(message: _loadError!, onRetry: _load)
+                  : _buildContent(),
             ),
           ),
         ],
       ),
-      bottomNavigationBar: AppBottomNavBar(
-        currentIndex: 3,
-        onTap: (index) {
-          if (index == 0) {
-            Navigator.of(context).popUntil((route) => route.isFirst);
-          } else if (index == 1) {
-            Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const MapScreen()),
-            );
-          } else if (index == 2) {
-            Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const RankingScreen()),
-            );
-          } else if (index == 3) {
-            Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const MyFootprintScreen()),
-            );
-          }
-        },
-      ),
+      extendBody: true,
+      bottomNavigationBar: const AppBottomNavBar(currentIndex: 3),
     );
   }
 
   Widget _buildContent() {
     final me = _me!;
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.xl,
-        AppSpacing.lg,
-        AppSpacing.xl,
-        AppSpacing.xxl,
+      padding: AppBottomNavBar.scrollPadding(
+        context,
+        const EdgeInsets.fromLTRB(
+          AppSpacing.xl,
+          AppSpacing.lg,
+          AppSpacing.xl,
+          AppSpacing.xxl,
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Pushes past the watercolor illustration baked into the top of
-          // setting_bg.png so the heading + first card start below the band.
+          // setting_bg.png so the first card starts below the band.
           const SizedBox(height: 238),
-          Text('계정 센터', style: AppTextStyles.h1),
-          const SizedBox(height: AppSpacing.md),
 
           // ---------- 프로필 관리 ----------
           Container(
@@ -381,8 +335,9 @@ class _AccountCenterScreenState extends State<AccountCenterScreen> {
                           const SizedBox(height: AppSpacing.xs),
                           Text(
                             '여행을 기록하고 추억을 남겨보세요.',
-                            style: AppTextStyles.bodySmall
-                                .copyWith(color: AppColors.textSecondary),
+                            style: AppTextStyles.bodySmall.copyWith(
+                              color: AppColors.textSecondary,
+                            ),
                           ),
                         ],
                       ),
@@ -445,25 +400,49 @@ class _AccountCenterScreenState extends State<AccountCenterScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const _CardHeader(
-                  icon: Symbols.shield_rounded,
-                  label: '계정 정보',
-                ),
+                const _CardHeader(icon: Symbols.shield_rounded, label: '계정 정보'),
                 const SizedBox(height: AppSpacing.xl),
                 _LabeledRow(
                   label: '아이디 확인',
+                  labelAbove: true,
                   child: _ValueBox(
                     value: me.username,
                     trailingIcon: Symbols.content_copy_rounded,
                     onTrailingTap: () => _copyId(me.username),
                   ),
                 ),
+                if (me.email != null) ...[
+                  const SizedBox(height: AppSpacing.lg),
+                  _LabeledRow(
+                    label: '이메일',
+                    labelAbove: true,
+                    child: _ValueBox(value: me.email!),
+                  ),
+                ],
+                if (me.phone != null) ...[
+                  const SizedBox(height: AppSpacing.lg),
+                  _LabeledRow(
+                    label: '전화번호',
+                    labelAbove: true,
+                    child: _ValueBox(value: me.phone!),
+                  ),
+                ],
                 const SizedBox(height: AppSpacing.lg),
                 _LabeledRow(
                   label: '비밀번호 변경',
-                  alignTop: true,
+                  labelAbove: true,
                   child: Column(
                     children: [
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          '기존 비밀번호 대조를 위해 입력하세요',
+                          style: AppTextStyles.caption.copyWith(
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.xs),
                       AppPasswordField(
                         controller: _currentPasswordController,
                         hintText: '현재 비밀번호',
@@ -488,39 +467,28 @@ class _AccountCenterScreenState extends State<AccountCenterScreen> {
                   ),
                 ),
                 const SizedBox(height: AppSpacing.lg),
-                _LabeledRow(
-                  label: '회원 탈퇴',
-                  labelColor: AppColors.error,
-                  onLabelTap: _confirmWithdraw,
-                  child: InkWell(
-                    onTap: _confirmWithdraw,
-                    borderRadius: BorderRadius.circular(AppRadius.inputField),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: AppSpacing.md,
-                        vertical: AppSpacing.sm,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.errorBackground,
-                        borderRadius:
-                            BorderRadius.circular(AppRadius.inputField),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(
-                            Symbols.warning_rounded,
-                            size: 16,
-                            color: AppColors.error,
-                          ),
-                          const SizedBox(width: AppSpacing.xs),
-                          Expanded(
-                            child: Text(
-                              '회원 탈퇴 시 모든 데이터가 삭제됩니다.',
-                              style: AppTextStyles.caption
-                                  .copyWith(color: AppColors.error),
-                            ),
-                          ),
-                        ],
+                Text(
+                  '회원 탈퇴 시 모든 데이터가 삭제됩니다.',
+                  style: AppTextStyles.caption.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                SizedBox(
+                  height: 44,
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: _confirmWithdraw,
+                    icon: const Icon(Symbols.person_remove_rounded, size: 18),
+                    label: const Text('회원 탈퇴'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.error,
+                      side: const BorderSide(color: AppColors.error),
+                      textStyle: AppTextStyles.buttonMedium,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(
+                          AppRadius.secondaryButton,
+                        ),
                       ),
                     ),
                   ),
@@ -548,8 +516,9 @@ class _AccountCenterScreenState extends State<AccountCenterScreen> {
                   const SizedBox(width: AppSpacing.sm),
                   Text(
                     '로그아웃',
-                    style: AppTextStyles.bodyLarge
-                        .copyWith(fontWeight: FontWeight.w600),
+                    style: AppTextStyles.bodyLarge.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                   const Spacer(),
                   const Icon(
@@ -622,14 +591,18 @@ class _ErrorState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Symbols.cloud_off_rounded,
-                size: 40, color: AppColors.iconInactive),
+            const Icon(
+              Symbols.cloud_off_rounded,
+              size: 40,
+              color: AppColors.iconInactive,
+            ),
             const SizedBox(height: AppSpacing.md),
             Text(
               message,
               textAlign: TextAlign.center,
-              style: AppTextStyles.bodyMedium
-                  .copyWith(color: AppColors.textSecondary),
+              style: AppTextStyles.bodyMedium.copyWith(
+                color: AppColors.textSecondary,
+              ),
             ),
             const SizedBox(height: AppSpacing.lg),
             OutlinedButton(onPressed: onRetry, child: const Text('다시 시도')),
@@ -673,38 +646,40 @@ class _LabeledRow extends StatelessWidget {
   const _LabeledRow({
     required this.label,
     required this.child,
-    this.labelColor = AppColors.textPrimary,
-    this.alignTop = false,
-    this.onLabelTap,
+    this.labelAbove = false,
   });
 
   final String label;
   final Widget child;
-  final Color labelColor;
-  final bool alignTop;
-  final VoidCallback? onLabelTap;
+
+  /// `true`면 라벨을 입력칸 옆이 아니라 위에 쌓는다(계정 정보란 전용 —
+  /// 프로필 관리 쪽은 기존 좌우 배치를 유지한다).
+  final bool labelAbove;
 
   @override
   Widget build(BuildContext context) {
     final labelText = Text(
       label,
-      style: AppTextStyles.bodyLarge
-          .copyWith(color: labelColor, fontWeight: FontWeight.w600),
+      style: AppTextStyles.bodyLarge.copyWith(
+        color: AppColors.textPrimary,
+        fontWeight: FontWeight.w600,
+      ),
     );
 
+    if (labelAbove) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          labelText,
+          const SizedBox(height: AppSpacing.xs),
+          child,
+        ],
+      );
+    }
+
     return Row(
-      crossAxisAlignment:
-          alignTop ? CrossAxisAlignment.start : CrossAxisAlignment.center,
       children: [
-        Padding(
-          padding: EdgeInsets.only(top: alignTop ? 14.0 : 0),
-          child: SizedBox(
-            width: _labelWidth,
-            child: onLabelTap == null
-                ? labelText
-                : GestureDetector(onTap: onLabelTap, child: labelText),
-          ),
-        ),
+        SizedBox(width: _labelWidth, child: labelText),
         Expanded(child: child),
       ],
     );
@@ -742,9 +717,7 @@ class _ValueBox extends StatelessWidget {
         ),
         child: Row(
           children: [
-            Expanded(
-              child: Text(value, style: AppTextStyles.bodyLarge),
-            ),
+            Expanded(child: Text(value, style: AppTextStyles.bodyLarge)),
             if (trailingIcon != null)
               InkWell(
                 onTap: onTrailingTap,

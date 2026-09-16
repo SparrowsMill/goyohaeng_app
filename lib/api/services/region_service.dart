@@ -15,10 +15,4 @@ class RegionService {
         .map((e) => Region.fromJson(e.cast<String, dynamic>()))
         .toList();
   }
-
-  /// `GET /regions/{regionId}/spot-counts` — 본인 + 하위 지역 스팟 수.
-  Future<RegionSpotCounts> spotCounts(int regionId) async {
-    final res = await _client.get('/regions/$regionId/spot-counts');
-    return RegionSpotCounts.fromJson((res as Map).cast<String, dynamic>());
-  }
 }

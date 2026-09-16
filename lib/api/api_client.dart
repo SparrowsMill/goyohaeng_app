@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart' show MediaType;
 
 import 'api_config.dart';
 import 'api_exception.dart';
@@ -67,6 +68,31 @@ class ApiClient {
           body: body == null ? null : jsonEncode(body),
         ),
       );
+
+  /// `multipart/form-data` 업로드 — 이미지 업로드(`/uploads/images`) 등 파일을
+  /// 보내는 요청에 쓴다. JSON 본문 요청과 달리 `Content-Type` 헤더는 요청
+  /// 자체가 각 파트의 경계(boundary)를 포함해 정한다.
+  Future<dynamic> postMultipart(
+    String path, {
+    required String fieldName,
+    required List<int> bytes,
+    required String filename,
+    String? contentType,
+  }) =>
+      _send(() async {
+        final request = http.MultipartRequest('POST', _uri(path))
+          ..headers.addAll(_headers())
+          ..files.add(
+            http.MultipartFile.fromBytes(
+              fieldName,
+              bytes,
+              filename: filename,
+              contentType:
+                  contentType == null ? null : MediaType.parse(contentType),
+            ),
+          );
+        return http.Response.fromStream(await _http.send(request));
+      });
 
   Future<dynamic> delete(String path, {Object? body}) => _send(
         () => _http.delete(

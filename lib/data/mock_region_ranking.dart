@@ -21,11 +21,48 @@ enum SpotCategory {
 
 enum BusinessStatus {
   open('영업 중'),
+  beforeOpen('영업 전'),
+  breakTime('브레이크타임'),
   closed('영업 종료'),
-  holiday('휴무');
+  holiday('휴무일');
 
   const BusinessStatus(this.label);
   final String label;
+}
+
+/// 서버 `operatingStatus`(2026-09-16 백엔드 추가 — 장소 상세/GAP 랭킹·지도·추천
+/// 공통 필드, `OPEN`/`BEFORE_OPEN`/`BREAK_TIME`/`CLOSED`/`DAY_OFF`/`UNKNOWN`)
+/// 원시값 → [BusinessStatus]. `UNKNOWN`이거나 못 알아보는 값이면 `null` —
+/// 화면은 이 경우 상태 칩 자체를 생략한다(운영시간 정보가 없을 때 애매한
+/// "알 수 없음" 칩을 보여주지 않기로 한 기존 결정, [businessStatusChip] 참고).
+BusinessStatus? businessStatusFromOperatingStatus(String? raw) => switch (raw) {
+      'OPEN' => BusinessStatus.open,
+      'BEFORE_OPEN' => BusinessStatus.beforeOpen,
+      'BREAK_TIME' => BusinessStatus.breakTime,
+      'CLOSED' => BusinessStatus.closed,
+      'DAY_OFF' => BusinessStatus.holiday,
+      _ => null,
+    };
+
+/// `operatingStatus` 필드 자체가 없는(옛 캐시 등) 경우에만 하위 호환
+/// `isOpenNow`(불(bool)|null 2단, 영업 종료·휴무·브레이크타임을 구분하지
+/// 못함)로 폴백한다. `operatingStatus`가 있으면 값이 `UNKNOWN`이라
+/// [businessStatusFromOperatingStatus]가 `null`을 돌려주더라도 그대로
+/// 따른다 — `UNKNOWN`일 때 서버 `isOpenNow`는 `false`로 내려오므로(2026-09-16
+/// 계약, "OPEN이 아니면 전부 false"), 여기서 `??`로 `isOpenNow`를 다시
+/// 봐버리면 "정보 없음"이 "영업 종료"로 잘못 뒤바뀐다.
+BusinessStatus? businessStatusFromApi({
+  String? operatingStatus,
+  bool? isOpenNow,
+}) {
+  if (operatingStatus != null) {
+    return businessStatusFromOperatingStatus(operatingStatus);
+  }
+  return switch (isOpenNow) {
+    true => BusinessStatus.open,
+    false => BusinessStatus.closed,
+    null => null,
+  };
 }
 
 /// Whether the current user has completed 방문 인증 for this spot — drives the
@@ -83,8 +120,10 @@ class MockTouristSpot {
   /// 마커를 찍을 수 있는지 — [lat], [lng]가 모두 있는 경우.
   bool get hasLocation => lat != null && lng != null;
 
-  /// 방문 인증 가능 여부 (admin 토글에 의존 — user_flow §6).
-  final bool visitVerifiable;
+  /// 방문 인증 가능 여부 (admin 토글에 의존 — user_flow §6). `null`이면 아직
+  /// 알 수 없음(GAP 랭킹/지도 API가 `verificationAvailable`을 안 줬고, 상세
+  /// 조회 캐시에도 없는 경우) — 화면엔 "알 수 없음"으로 표시한다.
+  final bool? visitVerifiable;
 
   /// 획득 가능한 재료 이름. `null`이면 "획득 재료 없음".
   final String? ingredient;
@@ -92,7 +131,11 @@ class MockTouristSpot {
   /// 방문 인증 1회로 지급되는 재료 개수.
   final int ingredientCount;
 
-  final BusinessStatus businessStatus;
+  /// 실 영업 여부 (`Place.isOpenNow` 기반, [[PlaceBusinessStatusCache]] 경유).
+  /// `null`이면 아직 알 수 없음(GAP 랭킹/지도 API엔 이 값이 없어, 그 장소를
+  /// 상세 조회한 적이 있어야만 채워진다) — 화면엔 "영업 여부 알 수 없음"으로
+  /// 표시한다.
+  final BusinessStatus? businessStatus;
 
   /// 넓은 분류 라벨 (예: 자연관광). `<장소 정보 페이지>`의 카테고리 줄에서
   /// "$spotType · ${category.label}" 형태로 함께 노출된다.

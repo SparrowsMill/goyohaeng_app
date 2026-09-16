@@ -33,12 +33,21 @@ class Favorites extends ChangeNotifier {
   List<GapSpotHit> _realHits = const [];
   Future<void>? _realHitsLoading;
 
+  /// `loadFromServer()`가 진행 중인 동안 true — 목업(시드) 목록이 서버 응답으로
+  /// 예고 없이 통째로 바뀌는 순간을 [FavoritesList]가 `LoadingOverlay`로 가릴 수
+  /// 있게 노출한다.
+  bool loading = false;
+
   Future<void> _ensureRealHitsLoaded() {
-    return _realHitsLoading ??=
-        GapSpots.instance.allSpotsWithRegion().then((hits) {
-      _realHits = hits;
-      notifyListeners();
-    }).catchError((_) {/* 목업만으로 계속 진행 */});
+    return _realHitsLoading ??= GapSpots.instance
+        .allSpotsWithRegion()
+        .then((hits) {
+          _realHits = hits;
+          notifyListeners();
+        })
+        .catchError((_) {
+          /* 목업만으로 계속 진행 */
+        });
   }
 
   /// Whether the "즐겨찾기" map overlay (star pins) is toggled on. Shared across
@@ -61,12 +70,13 @@ class Favorites extends ChangeNotifier {
   /// 직후에 호출 — 인증 필요 API라 실패(미로그인·네트워크 오류)하면 조용히
   /// 현재 상태(시드 또는 이전 세션 값)를 유지한다.
   Future<void> loadFromServer() async {
+    loading = true;
+    notifyListeners();
     try {
       final names = <String>{};
       var page = 1;
       while (true) {
-        final result =
-            await UserService().getFavorites(page: page, limit: 100);
+        final result = await UserService().getFavorites(page: page, limit: 100);
         names.addAll(result.items.map((f) => f.name));
         if (!result.hasMore) break;
         page++;
@@ -74,9 +84,11 @@ class Favorites extends ChangeNotifier {
       _names
         ..clear()
         ..addAll(names);
-      notifyListeners();
     } on ApiException {
       // 로그인 전이거나 네트워크 오류 — 현재 상태 유지.
+    } finally {
+      loading = false;
+      notifyListeners();
     }
   }
 
@@ -97,6 +109,15 @@ class Favorites extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Sets (not toggles) the favorite state for [name] to match a value the
+  /// server already gave us (e.g. `Place.isFavorite` from `GET /places/{id}`)
+  /// — for reconciling this local, name-keyed store with server truth when a
+  /// place's own detail happens to disagree with it.
+  void setKnown(String name, bool isFavorite) {
+    final changed = isFavorite ? _names.add(name) : _names.remove(name);
+    if (changed) notifyListeners();
+  }
+
   /// Every favorited spot (실 GAP 스팟이 있으면 그걸 우선, 없으면 목업), with
   /// the 행정구역 코드 of the list it lives in.
   List<({String regionCode, MockTouristSpot spot})> spots() {
@@ -104,7 +125,8 @@ class Favorites extends ChangeNotifier {
     final byName = <String, ({String regionCode, MockTouristSpot spot})>{
       for (final entry in mockRegionRankings.entries)
         for (final spot in entry.value)
-          if (_names.contains(spot.name)) spot.name: (regionCode: entry.key, spot: spot),
+          if (_names.contains(spot.name))
+            spot.name: (regionCode: entry.key, spot: spot),
     };
     for (final h in _realHits) {
       if (_names.contains(h.spot.name)) {
@@ -115,8 +137,10 @@ class Favorites extends ChangeNotifier {
   }
 
   /// …only the ones with coordinates (map markers).
-  List<({String regionCode, MockTouristSpot spot})> locatedSpots() =>
-      [for (final f in spots()) if (f.spot.hasLocation) f];
+  List<({String regionCode, MockTouristSpot spot})> locatedSpots() => [
+    for (final f in spots())
+      if (f.spot.hasLocation) f,
+  ];
 
   /// How many favorites fall under a 행정구역 코드 (2자리 시도 or 5자리 시군구).
   int countForRegion(String regionCode) =>

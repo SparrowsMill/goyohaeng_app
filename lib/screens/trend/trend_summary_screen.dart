@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../api/api.dart';
+import '../../data/makeable_food_watcher.dart';
 import '../../data/mock_region_ranking.dart';
 import '../../data/mock_trend_summary.dart';
 import '../../theme/app_colors.dart';
@@ -10,7 +12,6 @@ import '../../theme/app_shadows.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
 import '../../widgets/app_bottom_nav_bar.dart';
-import '../record/my_footprint_screen.dart';
 
 /// `<트렌드요약 페이지>` (user_flow §6) — reached from the "트렌드 요약" button
 /// (or a keyword chip) on `<장소 정보 페이지>`. Shows the rising keywords, the
@@ -23,13 +24,26 @@ import '../record/my_footprint_screen.dart';
 /// 실제로 지급됐을 때만(스펙 §6.5) 스낵바로 알린다. `placeId`가 없으면(목업 스팟)
 /// 항상 "처음 확인" 상태로 보여주는 기존 목업 동작을 그대로 유지한다.
 ///
-/// * TODO: 원문 보기 / SNS 검색 / 더 찾아보기 — 외부 브라우저·앱 연동
+/// * "블로그 원문 보기"(실 데이터만), "네이버 블로그에서 더 찾아보기", "다른
+///   곳에서도 찾아보기"(Instagram/YouTube/TikTok)는 모두 서버 호출 없이
+///   `_searchQuery`(실 `searchTerm`+`keywords` 조합 또는 목업 검색어)로 검색
+///   URL을 만들어
+///   `url_launcher`로 실제 브라우저를 연다. Instagram은 키워드 검색 URL이
+///   없어 해시태그 페이지로 대체한다(`docs/backend_requirements_pending.md`
+///   §9-C).
 /// * `contents`(외부 게시글)·`searchTerm`은 실 데이터가 있으면 사용하고, 없으면
-///   (파이프라인 미가동 등) 스팟 목업으로 대체한다(백엔드 실측 2026-09-13,
-///   `docs/backend_requirements_pending.md` §5-1).
+///   (파이프라인 미가동 등) 스팟 목업으로 대체한다. 게시글 발췌문(각 글 소개
+///   텍스트)은 API가 아직 내려주지 않는다 — 백엔드 요청사항 정리함
+///   (`docs/backend_requirements_pending.md` §9-A/B).
 /// * TODO(backend): `searchInterest`(검색어 트렌드 구간 값)는 항목 필드 구조가
-///   아직 문서화되지 않아 화면에 반영하지 않는다 — "함께 검색하는 키워드"/SNS
-///   섹션은 당분간 스팟 목업 데이터를 계속 사용한다.
+///   아직 문서화되지 않아 화면에 반영하지 않는다 — SNS 섹션은 당분간 스팟
+///   목업 데이터를 계속 사용한다.
+/// * TODO(backend): "함께 검색하는 키워드"는 백엔드에 전용 연관 검색어 필드가
+///   없다(스펙 §6.4엔 `keywords`/`searchTerm`/`searchInterest`뿐). "지금 뜨는
+///   키워드"(`trends.keywords`) 재사용은 같은 목록 중복 노출이라 하지 않고,
+///   전용 필드가 생기기 전까진 `widget.placeId == null`(목업 스팟)일 때만
+///   `mock_trend_summary.dart`의 별도 목업 값으로 이 섹션을 보여준다 — 실
+///   장소는 섹션 자체를 숨긴다.
 /// * TODO(asset): 이 화면 배경 scenes/{name}.png 미납품 — 지금은 평면 #FAE7C0.
 class TrendSummaryScreen extends StatefulWidget {
   const TrendSummaryScreen({
@@ -64,25 +78,48 @@ class _TrendSummaryScreenState extends State<TrendSummaryScreen> {
     final id = widget.placeId;
     if (id == null) return;
 
-    PlaceService().trends(id).then((t) {
-      if (mounted) setState(() => _trends = t);
-    }).catchError((_) {/* keep the mock fallback */});
+    PlaceService()
+        .trends(id)
+        .then((t) {
+          if (mounted) setState(() => _trends = t);
+        })
+        .catchError((_) {
+          /* keep the mock fallback */
+        });
 
     if (AuthStore.instance.isSignedIn) {
       // 최초 1회만 실지급되므로(스펙 §6.5) 여기서 한 번만 호출한다.
-      PlaceService().claimTrendFirstView(id).then((result) {
-        if (!mounted || !result.rewarded) return;
-        final name = result.ingredientName ?? '재료';
-        final qty = result.ingredientQuantity ?? 1;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('트렌드 요약을 처음 확인했어요! 기본 재료 · $name $qty개 획득')),
-        );
-      }).catchError((_) {/* best-effort — 지급 실패해도 화면은 그대로 */});
+      PlaceService()
+          .claimTrendFirstView(id)
+          .then((result) {
+            if (!result.rewarded) return;
+            MakeableFoodWatcher.instance.check();
+            if (!mounted) return;
+            final name = result.ingredientName ?? '재료';
+            final qty = result.ingredientQuantity ?? 1;
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('트렌드 요약을 처음 확인했어요! 기본 재료 · $name $qty개 획득'),
+              ),
+            );
+          })
+          .catchError((_) {
+            /* best-effort — 지급 실패해도 화면은 그대로 */
+          });
     }
   }
 
+  /// SNS "더 찾아보기"에 쓰일 검색어 — 실 `searchTerm`(+실 `keywords` 첫 값)이
+  /// 있으면 그것을, 없으면(목업 스팟이거나 파이프라인 미가동)
+  /// `_mockSummary.naverSearchQuery`를 쓴다. `_PostsSection`의 네이버 블로그
+  /// "더 찾아보기"와 같은 값을 쓴다.
+  String get _searchQuery =>
+      _realSearchQuery(_trends, widget.spot) ?? _mockSummary.naverSearchQuery;
+
   void _todo(BuildContext context, String message) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   List<TrendInsight> _insightsFor(PlaceTrends t) {
@@ -107,9 +144,11 @@ class _TrendSummaryScreenState extends State<TrendSummaryScreen> {
     final hasRealData = trends != null && trends.hasData;
     final showEmptyState = trends != null && !trends.hasData;
 
-    final keywords = hasRealData ? trends.keywords : _mockSummary.risingKeywords;
-    final highlight = widget.focusKeyword ??
-        (keywords.isNotEmpty ? keywords.first : null);
+    final keywords = hasRealData
+        ? trends.keywords
+        : _mockSummary.risingKeywords;
+    final highlight =
+        widget.focusKeyword ?? (keywords.isNotEmpty ? keywords.first : null);
 
     return Scaffold(
       backgroundColor: AppColors.appBackground,
@@ -121,11 +160,14 @@ class _TrendSummaryScreenState extends State<TrendSummaryScreen> {
         title: const Text('트렌드 요약'),
       ),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(
-          AppSpacing.xl,
-          AppSpacing.lg,
-          AppSpacing.xl,
-          AppSpacing.xxl,
+        padding: AppBottomNavBar.scrollPadding(
+          context,
+          const EdgeInsets.fromLTRB(
+            AppSpacing.xl,
+            AppSpacing.lg,
+            AppSpacing.xl,
+            AppSpacing.xxl,
+          ),
         ),
         children: [
           _TitleBlock(spot: spot),
@@ -148,45 +190,51 @@ class _TrendSummaryScreenState extends State<TrendSummaryScreen> {
             ),
             const SizedBox(height: AppSpacing.lg),
             _InsightCard(
-              insights: hasRealData ? _insightsFor(trends) : _mockSummary.insights,
+              insights: hasRealData
+                  ? _insightsFor(trends)
+                  : _mockSummary.insights,
             ),
           ],
           const SizedBox(height: AppSpacing.xl),
           _PostsSection(
             summary: _mockSummary,
-            realContents: hasRealData ? trends.contents : const [],
-            realSearchQuery: hasRealData ? trends.searchTerm : null,
+            // `contents`/`searchTerm`은 AI 요약·키워드(`hasData`)와 별개로
+            // 채워지는 필드라 — 지금 실 장소는 대부분 keywords/summaryText는
+            // 비어 있어도 contents/searchTerm은 이미 채워져 있다 —
+            // `hasRealData`가 아니라 `trends` 응답 자체(도착했는지)만 본다.
+            realContents: trends?.contents ?? const [],
+            realSearchQuery: _realSearchQuery(trends, spot),
             onOpenPost: (title) =>
                 _todo(context, '"$title" 원문은 브라우저 연동 후 열 수 있어요.'),
-            onSearchMore: () =>
-                _todo(context, '네이버 블로그 검색은 브라우저 연동 후 이용할 수 있어요.'),
+            onSearchMore: (query) => _openNaverBlogSearch(
+              context,
+              query,
+              () => _todo(context, '네이버 블로그 검색은 브라우저 연동 후 이용할 수 있어요.'),
+            ),
           ),
-          const SizedBox(height: AppSpacing.xl),
-          _RelatedQueriesSection(
-            queries: _mockSummary.relatedQueries,
-            onQuery: (query) => _todo(context, '#$query 검색은 준비 중이에요.'),
-          ),
-          const SizedBox(height: AppSpacing.xl),
+          // 실 장소는 "함께 검색하는 키워드" 전용 데이터가 없다(스펙 §6.4엔
+          // keywords/searchTerm/searchInterest뿐) — "지금 뜨는 키워드"
+          // (trends.keywords) 재사용은 같은 값 중복 노출이라 하지 않고, 전용
+          // 필드가 생기기 전까진 목업 스팟에서만 이 섹션을 보여준다.
+          if (widget.placeId == null) ...[
+            _RelatedQueriesSection(
+              queries: _mockSummary.relatedQueries,
+              onQuery: (query) => _todo(context, '#$query 검색은 준비 중이에요.'),
+            ),
+            const SizedBox(height: AppSpacing.xl),
+          ],
           _SnsSection(
-            onSearch: (platform) =>
-                _todo(context, '$platform 검색은 앱 연동 후 이용할 수 있어요.'),
+            onSearch: (platform) => _openSnsSearch(
+              context,
+              platform,
+              _searchQuery,
+              () => _todo(context, '$platform 검색을 여는 데 실패했어요.'),
+            ),
           ),
         ],
       ),
-      bottomNavigationBar: AppBottomNavBar(
-        currentIndex: 2,
-        onTap: (index) {
-          if (index == 0) {
-            Navigator.of(context).popUntil((route) => route.isFirst);
-          } else if (index == 1 || index == 2) {
-            Navigator.of(context).maybePop();
-          } else if (index == 3) {
-            Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const MyFootprintScreen()),
-            );
-          }
-        },
-      ),
+      extendBody: true,
+      bottomNavigationBar: const AppBottomNavBar(currentIndex: 2),
     );
   }
 }
@@ -222,7 +270,8 @@ class _TitleBlock extends StatelessWidget {
           'assets/branding/leaf_ornament_3.png',
           width: 76,
           height: 76,
-          errorBuilder: (context, error, stackTrace) => const SizedBox(width: 76),
+          errorBuilder: (context, error, stackTrace) =>
+              const SizedBox(width: 76),
         ),
       ],
     );
@@ -322,8 +371,9 @@ class _RewardCard extends StatelessWidget {
               children: [
                 Text(
                   '트렌드 요약을 처음 확인했어요!',
-                  style: AppTextStyles.bodyMedium
-                      .copyWith(fontWeight: FontWeight.w600),
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
                 const SizedBox(height: 2),
                 Text(
@@ -506,12 +556,125 @@ class _InsightCard extends StatelessWidget {
 
 /// `contentType` → 플랫폼 표시 라벨.
 String _contentTypeLabel(String? contentType) => switch (contentType) {
-      'BLOG' => '네이버 블로그',
-      'NEWS' => '뉴스',
-      'CAFE' => '네이버 카페',
-      null => '외부 게시글',
-      _ => contentType,
-    };
+  'BLOG' => '네이버 블로그',
+  'NEWS' => '뉴스',
+  'CAFE' => '네이버 카페',
+  null => '외부 게시글',
+  _ => contentType,
+};
+
+/// [url]이 있으면 실제로 열고, 없거나 열기 실패하면 [onFallback](기존
+/// "브라우저 연동 후" 안내)으로 대체한다. 실 API 게시글(`PlaceExternalContent`)과
+/// 목업 게시글(`TrendPost`) 둘 다 이 함수 하나로 처리한다 — 목업도 `url`
+/// 필드가 있으면 그대로 열고, 없을 때만(대부분의 목업) 안내로 대체된다.
+Future<void> _openPostUrl(
+  BuildContext context,
+  String? url,
+  String title,
+  ValueChanged<String> onFallback,
+) async {
+  final uri = url == null || url.isEmpty ? null : Uri.tryParse(url);
+  if (uri == null) {
+    onFallback(title);
+    return;
+  }
+  bool opened;
+  try {
+    opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+  } catch (_) {
+    opened = false;
+  }
+  if (!opened && context.mounted) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(const SnackBar(content: Text('원문을 여는 데 실패했어요.')));
+  }
+}
+
+/// 실 `searchTerm`에 실 `keywords`의 첫 값을 붙인 검색어(목업 폴백과 같은
+/// "장소명/검색어 + 대표 키워드" 방식). `searchTerm`이 없으면 `null` —
+/// 호출부가 목업 `naverSearchQuery`로 대체한다. `keywords`가 비어 있으면
+/// (searchTerm은 있지만 AI 키워드가 아직 없는 장소) 대신 "카테고리 + 장소명"을
+/// 붙인다 — `searchTerm` 단독으로는 장소명과 다르지 않아 검색이 너무
+/// 포괄적이라서다.
+String? _realSearchQuery(PlaceTrends? trends, MockTouristSpot spot) {
+  final raw = trends?.searchTerm?.trim();
+  if (raw == null || raw.isEmpty) return null;
+  final keywords = trends?.keywords ?? const <String>[];
+  if (keywords.isNotEmpty) return '$raw ${keywords.first}';
+  final category = spot.categoryName ?? spot.category.label;
+  return '$category ${spot.name}';
+}
+
+/// [query]로 네이버 블로그 검색 결과 URL을 만들어 연다(`where=post` — 네이버
+/// 검색의 블로그 탭). [query]가 비어 있으면(실 검색어도 목업도 없는 극단적
+/// 경우) [onFallback](기존 "브라우저 연동 후" 안내)으로 대체한다.
+Future<void> _openNaverBlogSearch(
+  BuildContext context,
+  String query,
+  VoidCallback onFallback,
+) async {
+  final trimmed = query.trim();
+  if (trimmed.isEmpty) {
+    onFallback();
+    return;
+  }
+  final uri = Uri.https('search.naver.com', '/search.naver', {
+    'where': 'post',
+    'query': trimmed,
+  });
+  bool opened;
+  try {
+    opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+  } catch (_) {
+    opened = false;
+  }
+  if (!opened && context.mounted) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(const SnackBar(content: Text('네이버 블로그 검색을 여는 데 실패했어요.')));
+  }
+}
+
+/// [platform]("Instagram"/"YouTube"/"TikTok")의 [query] 검색 결과를 연다.
+/// Instagram은 키워드 검색 URL이 없어 해시태그 페이지로 대체한다(공백 제거) —
+/// 비로그인 상태에선 결과가 제한되거나 로그인 유도가 뜰 수 있다. [query]가
+/// 비어 있으면(실 검색어도 목업도 없는 극단적 경우) [onFallback]으로 대체한다.
+Future<void> _openSnsSearch(
+  BuildContext context,
+  String platform,
+  String query,
+  VoidCallback onFallback,
+) async {
+  final trimmed = query.trim();
+  if (trimmed.isEmpty) {
+    onFallback();
+    return;
+  }
+  final Uri uri;
+  if (platform == 'Instagram') {
+    final hashtag = trimmed.replaceAll(RegExp(r'\s+'), '');
+    uri = Uri.https('www.instagram.com', '/explore/tags/$hashtag/');
+  } else if (platform == 'YouTube') {
+    uri = Uri.https('www.youtube.com', '/results', {'search_query': trimmed});
+  } else if (platform == 'TikTok') {
+    uri = Uri.https('www.tiktok.com', '/search', {'q': trimmed});
+  } else {
+    onFallback();
+    return;
+  }
+  bool opened;
+  try {
+    opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+  } catch (_) {
+    opened = false;
+  }
+  if (!opened && context.mounted) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text('$platform 검색을 여는 데 실패했어요.')));
+  }
+}
 
 /// "이런 글에서 이야기하고 있어요" — the outside posts + a "더 찾아보기" row.
 /// [realContents]가 있으면 실 API(`PlaceTrends.contents`) 데이터를, 없으면
@@ -529,12 +692,18 @@ class _PostsSection extends StatelessWidget {
   final List<PlaceExternalContent> realContents;
   final String? realSearchQuery;
   final ValueChanged<String> onOpenPost;
-  final VoidCallback onSearchMore;
+
+  /// 실제로 검색할 검색어(실 `searchTerm` 또는 목업 `naverSearchQuery`)를
+  /// 함께 넘긴다 — 표시용 문구와 실제로 여는 URL이 항상 같은 값이 되도록.
+  final ValueChanged<String> onSearchMore;
 
   @override
   Widget build(BuildContext context) {
     final useReal = realContents.isNotEmpty;
     final query = realSearchQuery?.trim();
+    final searchQuery = query != null && query.isNotEmpty
+        ? query
+        : summary.naverSearchQuery;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -542,27 +711,36 @@ class _PostsSection extends StatelessWidget {
         const SizedBox(height: AppSpacing.xs),
         Text(
           '트렌드 요약에 활용된 외부 게시글이에요.',
-          style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
+          style: AppTextStyles.bodySmall.copyWith(
+            color: AppColors.textSecondary,
+          ),
         ),
         const SizedBox(height: AppSpacing.md),
         if (useReal)
           for (final content in realContents) ...[
             _RealPostCard(
               content: content,
-              onOpen: () => onOpenPost(content.title ?? '게시글'),
+              onOpen: () => _openPostUrl(
+                context,
+                content.url,
+                content.title ?? '게시글',
+                onOpenPost,
+              ),
             ),
             const SizedBox(height: AppSpacing.sm),
           ]
         else
           for (final post in summary.posts) ...[
-            _PostCard(post: post, onOpen: () => onOpenPost(post.title)),
+            _PostCard(
+              post: post,
+              onOpen: () =>
+                  _openPostUrl(context, post.url, post.title, onOpenPost),
+            ),
             const SizedBox(height: AppSpacing.sm),
           ],
         _SearchMoreCard(
-          query: query != null && query.isNotEmpty
-              ? query
-              : summary.naverSearchQuery,
-          onTap: onSearchMore,
+          query: searchQuery,
+          onTap: () => onSearchMore(searchQuery),
         ),
       ],
     );
@@ -607,22 +785,31 @@ class _RealPostCard extends StatelessWidget {
                         const SizedBox(width: AppSpacing.xs),
                         Text(
                           _contentTypeLabel(content.contentType),
-                          style: AppTextStyles.caption
-                              .copyWith(fontWeight: FontWeight.w600),
+                          style: AppTextStyles.caption.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                         if (content.author != null) ...[
                           const SizedBox(width: AppSpacing.xs),
-                          Text('· ${content.author}',
-                              style: AppTextStyles.caption
-                                  .copyWith(color: AppColors.textSecondary)),
+                          Expanded(
+                            child: Text(
+                              '· ${content.author}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppTextStyles.caption.copyWith(
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                          ),
                         ],
                       ],
                     ),
                     const SizedBox(height: AppSpacing.sm),
                     Text(
                       content.title ?? '제목 없는 게시글',
-                      style: AppTextStyles.bodyLarge
-                          .copyWith(fontWeight: FontWeight.w600),
+                      style: AppTextStyles.bodyLarge.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ],
                 ),
@@ -685,22 +872,26 @@ class _PostCard extends StatelessWidget {
                         const SizedBox(width: AppSpacing.xs),
                         Text(
                           post.platform,
-                          style: AppTextStyles.caption
-                              .copyWith(fontWeight: FontWeight.w600),
+                          style: AppTextStyles.caption.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ],
                     ),
                     const SizedBox(height: AppSpacing.sm),
                     Text(
                       post.title,
-                      style: AppTextStyles.bodyLarge
-                          .copyWith(fontWeight: FontWeight.w600),
+                      style: AppTextStyles.bodyLarge.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                     const SizedBox(height: 2),
                     Text(
                       post.snippet,
-                      style: AppTextStyles.bodySmall
-                          .copyWith(color: AppColors.textSecondary, height: 1.45),
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: AppColors.textSecondary,
+                        height: 1.45,
+                      ),
                     ),
                   ],
                 ),
@@ -762,8 +953,9 @@ class _SearchMoreCard extends StatelessWidget {
                   children: [
                     Text(
                       '네이버 블로그에서 더 찾아보기',
-                      style: AppTextStyles.bodyMedium
-                          .copyWith(fontWeight: FontWeight.w600),
+                      style: AppTextStyles.bodyMedium.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                     const SizedBox(height: 2),
                     Text(query, style: AppTextStyles.caption),

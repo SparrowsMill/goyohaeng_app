@@ -12,6 +12,8 @@ import '../../widgets/app_password_field.dart';
 import '../../widgets/app_text_field.dart';
 import '../../widgets/leaf_section_header.dart';
 import 'auth_page_background.dart';
+import 'terms_content.dart';
+import 'terms_detail_screen.dart';
 
 final _idPattern = RegExp(r'^[a-zA-Z0-9]{4,20}$');
 final _passwordPattern = RegExp(r'^(?=.*[A-Za-z])(?=.*\d).{8,20}$');
@@ -39,7 +41,6 @@ class _SignupScreenState extends State<SignupScreen> {
   DateTime? _birthDate;
   bool _agreeTerms = false;
   bool _agreePrivacy = false;
-  bool _agreeMarketing = false;
 
   bool _idChecking = false;
   String? _idCheckedValue;
@@ -203,7 +204,7 @@ class _SignupScreenState extends State<SignupScreen> {
 
     setState(() => _submitting = true);
     try {
-      await _authService.signup(
+      final result = await _authService.signup(
         username: username,
         password: password,
         realName: _nameController.text.trim(),
@@ -213,9 +214,9 @@ class _SignupScreenState extends State<SignupScreen> {
         gender: _gender == 'male' ? 'MALE' : 'FEMALE',
       );
       // 가입 성공 → 자동 로그인하지 않고 로그인 화면으로 돌아가 직접 입력하게 한다.
-      // 방금 만든 아이디는 채워서 넘긴다.
+      // 방금 만든 아이디 + 서버 안내 메시지를 채워서 넘긴다.
       if (!mounted) return;
-      Navigator.of(context).pop(username);
+      Navigator.of(context).pop((username: username, message: result.message));
     } on ApiException catch (e) {
       if (!mounted) return;
       if (e.isConflict) {
@@ -372,22 +373,34 @@ class _SignupScreenState extends State<SignupScreen> {
                   requiredTag: true,
                   value: _agreeTerms,
                   onChanged: (value) => setState(() => _agreeTerms = value),
+                  onViewPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const TermsDetailScreen(
+                        title: '이용약관',
+                        body: termsOfServiceText,
+                      ),
+                    ),
+                  ),
                 ),
                 _ConsentRow(
                   label: '개인정보 수집 및 이용에 동의합니다.',
                   requiredTag: true,
                   value: _agreePrivacy,
                   onChanged: (value) => setState(() => _agreePrivacy = value),
-                ),
-                _ConsentRow(
-                  label: '마케팅 정보 수신에 동의합니다.',
-                  requiredTag: false,
-                  value: _agreeMarketing,
-                  onChanged: (value) => setState(() => _agreeMarketing = value),
+                  onViewPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const TermsDetailScreen(
+                        title: '개인정보 수집 및 이용 동의',
+                        body: privacyConsentText,
+                      ),
+                    ),
+                  ),
                 ),
                 const SizedBox(height: AppSpacing.xl),
                 ElevatedButton(
-                  onPressed: _submitting ? null : _handleSignup,
+                  onPressed: (_submitting || !_agreeTerms || !_agreePrivacy)
+                      ? null
+                      : _handleSignup,
                   child: _submitting
                       ? const SizedBox(
                           width: 20,
@@ -533,12 +546,14 @@ class _ConsentRow extends StatelessWidget {
     required this.requiredTag,
     required this.value,
     required this.onChanged,
+    required this.onViewPressed,
   });
 
   final String label;
   final bool requiredTag;
   final bool value;
   final ValueChanged<bool> onChanged;
+  final VoidCallback onViewPressed;
 
   @override
   Widget build(BuildContext context) {
@@ -575,10 +590,7 @@ class _ConsentRow extends StatelessWidget {
             ),
           ),
           TextButton(
-            // * TODO(backend): 실제 약관/개인정보 문서 연결 필요 — 현재는 안내 스낵바만 표시.
-            onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('준비 중입니다.')),
-            ),
+            onPressed: onViewPressed,
             child: Text(
               '보기',
               style: AppTextStyles.bodySmall.copyWith(

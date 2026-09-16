@@ -1,8 +1,8 @@
 /// 참새(프로필) 화면 placeholder 데이터 — user_flow §3. 참새 캐릭터 이름·레벨,
-/// 함께한 날수, 활동 요약(방문 지역/방문 인증/완성 음식/모은 재료), 최근 일기.
+/// 함께한 날수, 활동 요약(방문 장소/방문 인증/완성 음식/모은 재료), 최근 일기.
 ///
 /// * TODO(backend): 참새 프로필 조회 API 연동 (닉네임·레벨·경험치·함께한 날수).
-/// * TODO(backend): 활동 요약(누적) 조회 — 방문 지역 수 / 방문 인증 횟수 /
+/// * TODO(backend): 활동 요약(누적) 조회 — 방문 장소 수 / 방문 인증 횟수 /
 ///   완성한 음식 수 / 모은 재료 수. `mock_user` 의 이번 달 수치와는 별개(누적).
 /// * TODO(backend): 최근 기록(일기) 1건 조회 — `<기록 플랫폼>` (§8) 연동 시.
 class SparrowProfile {
@@ -12,7 +12,7 @@ class SparrowProfile {
     required this.xp,
     required this.xpForNextLevel,
     required this.daysTogether,
-    required this.visitedRegionCount,
+    required this.visitedPlaceCount,
     required this.verifiedStampCount,
     required this.completedFoodCount,
     required this.collectedIngredientCount,
@@ -25,7 +25,7 @@ class SparrowProfile {
   final int xpForNextLevel;
   final int daysTogether;
 
-  final int visitedRegionCount;
+  final int visitedPlaceCount;
   final int verifiedStampCount;
   final int completedFoodCount;
   final int collectedIngredientCount;
@@ -43,7 +43,7 @@ const mockSparrowProfile = SparrowProfile(
   xp: 350,
   xpForNextLevel: 700,
   daysTogether: 32,
-  visitedRegionCount: 23,
+  visitedPlaceCount: 23,
   verifiedStampCount: 56,
   completedFoodCount: 18,
   collectedIngredientCount: 128,

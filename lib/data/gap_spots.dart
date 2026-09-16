@@ -4,6 +4,8 @@ import '../api/api.dart';
 import 'korea_crs.dart' show Epsg5179, LatLng;
 import 'korea_map_geo.dart';
 import 'mock_region_ranking.dart';
+import 'place_business_status_cache.dart';
+import 'place_verification_cache.dart';
 
 /// GAP Score 기반 관광지 데이터 소스 — `<지역별 랭킹>`이 목업(`mockRegionRankings`)
 /// 대신 여기서 스팟을 읽는다.
@@ -18,12 +20,17 @@ import 'mock_region_ranking.dart';
 /// **단, 서울 자치구는 예외**다. 백엔드 `Region` 테이블에 서울(시도 1 +
 /// 자치구 25)이 이미 등록돼 있고, 그 `regionId`는 SGIS 코드와 무관하게 지금
 /// 바로 쓸 수 있다(2026-09-13 확인, `docs/backend_requirements_pending.md`
-/// §5-2). `_GapMeta.regionIdByDistrictName`이 GeoJSON 시군구 이름과 내부
+/// §4). `_GapMeta.regionIdByDistrictName`이 GeoJSON 시군구 이름과 내부
 /// `Region.name`을 대조해(서울 자치구는 이름이 고유해 안전) regionId를 찾으면, `GET
 /// /places/gap/rankings?regionId=`를 직접 호출한다 — 좌표가 없는 장소도
 /// 포함된 완전한 랭킹을 서버가 주므로, 좌표 있는 장소만 내려주는
 /// `/places/gap/map` + 폴리곤 필터보다 더 정확하다. 매칭 실패/응답 실패 시
 /// 기존 폴리곤 경로로 폴백한다.
+///
+/// `GET /regions`에 `sgisCode` 필드가 추가됐지만(2026-09-14, `Region.sgisCode`)
+/// 서울 자치구는 이름 매칭으로 이미 충분해 그대로 두었다 — `Region` 테이블이
+/// 전국으로 확장되면 그때 이름 매칭 대신 `sgisCode` 매칭으로 바꾸는 게 더
+/// 안전하다(전국 단위로는 시군구 이름이 중복될 수 있어서).
 ///
 /// 카테고리 필터는 `GET /categories`의 level 1(음식·숙박·관광지 …)로 구성하고
 /// (앱의 식당/카페/액티비티 enum은 실 택소노미와 안 맞음), 실제 필터링은
@@ -207,8 +214,25 @@ class GapSpots {
       if (regionId != null) {
         final ranked = await _loadRegionRankings(regionId, categoryId);
         if (ranked != null && ranked.isNotEmpty) {
-          return <MockTouristSpot>[for (final p in ranked) _toSpot(p, meta)]
-            ..sort((a, b) => b.gapIndex.compareTo(a.gapIndex));
+          // `GET /places/gap/rankings`는 좌표를 안 준다(`GapPlace.latitude`
+          // 문서 참고, 지도 응답 전용 필드) — 이 경로로 온 스팟은 그대로 두면
+          // 전부 `hasLocation == false`라 지도에 핀이 하나도 안 찍히고, 카드를
+          // 눌러도 실제 위치로 이동을 못 한다. `/places/gap/map`(좌표 포함)
+          // 응답을 placeId로 대조해 좌표만 보충한다.
+          var coordsById = const <int, GapPlace>{};
+          try {
+            final located = await _loadPlaces(categoryId);
+            coordsById = {for (final p in located) p.placeId: p};
+          } catch (_) {/* 좌표 보충 실패 — 좌표 없는 카드로만 표시 */}
+          return <MockTouristSpot>[
+            for (final p in ranked)
+              _toSpot(
+                p,
+                meta,
+                lat: coordsById[p.placeId]?.latitude,
+                lng: coordsById[p.placeId]?.longitude,
+              ),
+          ]..sort((a, b) => b.gapIndex.compareTo(a.gapIndex));
         }
       }
     }
@@ -238,8 +262,13 @@ class GapSpots {
     return spots.isEmpty ? rankingForRegion(regionCode) : spots;
   }
 
-  MockTouristSpot _toSpot(GapPlace p, _GapMeta meta) =>
-      gapPlaceToSpot(p, categoryName: meta.level1Of(p.categoryId)?.name);
+  MockTouristSpot _toSpot(GapPlace p, _GapMeta meta, {double? lat, double? lng}) =>
+      gapPlaceToSpot(
+        p,
+        categoryName: meta.level1Of(p.categoryId)?.name,
+        lat: lat,
+        lng: lng,
+      );
 
   static bool _inAny(List<GeoRegion> regions, Offset pt) {
     for (final r in regions) {
@@ -268,19 +297,50 @@ class GapSpots {
 /// `GapPlace`(랭킹·지도·추천 공용) → 화면 뷰모델 `MockTouristSpot`. GAP API가
 /// 안 주는 필드(운영시간·주인 소개·트렌드 키워드·혜택 등)는 목업 기본값으로
 /// 두고, placeId 진입 후 `<장소 정보>`가 `GET /places/{id}`로 채운다.
-MockTouristSpot gapPlaceToSpot(GapPlace p, {String? categoryName}) =>
+///
+/// `visitVerifiable`은 2026-09-14부터 랭킹/지도 응답 각 장소에 `verificationAvailable`로
+/// 직접 내려온다 — 있으면 그 값을 그대로 쓴다. 추천 응답처럼 아직 이 필드가
+/// 없는 경우엔, 이 장소를 이미 한 번이라도 열어봤다면(`GET /places/{id}` 상세
+/// 조회 결과가 [PlaceVerificationCache]에 남아 있다면) 새 호출 없이 그 값을
+/// 재사용한다. 그마저도 없으면 `null`(알 수 없음)로 남겨 화면이 낙관적으로
+/// 가능하다고 잘못 표시하지 않게 한다.
+///
+/// `businessStatus`(실 영업 여부)는 2026-09-16부터 랭킹/지도/추천 응답
+/// 각 장소에 세분화된 `operatingStatus`(`OPEN`/`BEFORE_OPEN`/`BREAK_TIME`/
+/// `CLOSED`/`DAY_OFF`/`UNKNOWN`)로 직접 내려온다(상세 `Place.operatingStatus`와
+/// 같은 계산 기준, Asia/Seoul) — [businessStatusFromApi]가 있으면 그 값을
+/// 우선 쓴다. 아직 그 필드가 없는 옛 캐시된 응답 등을 대비해, 없을 때만
+/// 예전 불(bool)|null 2단 `isOpenNow` → 그마저 없으면 상세 조회 캐시
+/// ([PlaceBusinessStatusCache])로 순서대로 폴백하고, 전부 없으면 `null`(영업
+/// 여부 알 수 없음)로 둔다. "영업 중이 아니면 인증 불가"처럼 둘을 엮지
+/// 않는다 — `verificationAvailable`은 그 장소에 인증 기능 자체가 설정돼
+/// 있는지고, 영업 여부와는 무관한 별개 값이다.
+/// [lat]/[lng] override [p]'s own (e.g. a `/places/gap/rankings?regionId=`
+/// result, which never carries coordinates — see [GapPlace.latitude] — has
+/// them looked up from a `/places/gap/map` fetch by placeId and passed in
+/// here instead).
+MockTouristSpot gapPlaceToSpot(
+  GapPlace p, {
+  String? categoryName,
+  double? lat,
+  double? lng,
+}) =>
     MockTouristSpot(
       placeId: p.placeId,
       name: p.placeName ?? '이름 미상',
       category: SpotCategory.activity,
       categoryName: categoryName,
       gapIndex: p.gapIndex,
-      visitVerifiable: true,
+      visitVerifiable:
+          p.verificationAvailable ?? PlaceVerificationCache.get(p.placeId),
       ingredient: null,
-      businessStatus: BusinessStatus.open,
+      businessStatus: businessStatusFromApi(
+        operatingStatus: p.operatingStatus,
+        isOpenNow: p.isOpenNow ?? PlaceBusinessStatusCache.get(p.placeId),
+      ),
       address: p.roadAddress ?? '주소 정보를 준비하고 있어요',
-      lat: p.latitude,
-      lng: p.longitude,
+      lat: lat ?? p.latitude,
+      lng: lng ?? p.longitude,
     );
 
 /// One [allSpotsWithRegion] result: a GAP spot plus the 시군구 its coordinates

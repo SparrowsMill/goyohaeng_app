@@ -7,6 +7,8 @@ import '../../theme/app_colors.dart';
 import '../../theme/app_radius.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
+import '../../widgets/loading_overlay.dart';
+import '../../widgets/ranking_card.dart' show businessStatusChip;
 import '../ranking/region_ranking_screen.dart';
 
 /// * TODO(asset): 이 화면 배경 scenes/{name}.png 미납품 — 지금은 평면 #FAE7C0.
@@ -49,7 +51,7 @@ class _PlaceSearchScreenState extends State<PlaceSearchScreen> {
         builder: (_) => RegionRankingScreen(
           regionKey: result.regionCode,
           regionName: result.regionName,
-          initialSpotName: result.spot?.name,
+          initialSpot: result.spot,
         ),
       ),
     );
@@ -124,15 +126,16 @@ class _PlaceSearchScreenState extends State<PlaceSearchScreen> {
           ),
         ),
       ),
-      body: _body(index, results),
+      body: LoadingOverlay(
+        loading: index == null,
+        child: _body(index, results),
+      ),
     );
   }
 
   Widget _body(PlaceSearchIndex? index, List<PlaceSearchResult> results) {
     if (index == null) {
-      return const Center(
-        child: CircularProgressIndicator(color: AppColors.primary),
-      );
+      return const SizedBox.expand();
     }
     if (_query.trim().isEmpty) {
       return _hint('가고 싶은 지역이나 장소를 검색해 보세요');
@@ -220,12 +223,17 @@ class _ResultTile extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: AppTextStyles.caption,
                     ),
+                    if (businessStatusChip(result.spot?.businessStatus)
+                        case final chip?) ...[
+                      const SizedBox(height: AppSpacing.xs),
+                      chip,
+                    ],
                   ],
                 ),
               ),
               const SizedBox(width: AppSpacing.sm),
               Text(
-                isPlace ? '갭지수 ${result.gapIndex}' : '평균 ${result.gapIndex}',
+                isPlace ? '고요 지수 ${result.gapIndex}' : '평균 ${result.gapIndex}',
                 style: AppTextStyles.caption,
               ),
             ],

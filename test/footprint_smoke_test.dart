@@ -280,7 +280,7 @@ void main() {
     await tester.tap(find.text('글을 눌러 수정').first);
     await tester.pumpAndSettle();
 
-    expect(find.text('발자국 다듬기'), findsOneWidget);
+    expect(find.text('발자국 수정하기'), findsOneWidget);
     expect(find.text('전주 한옥마을'), findsOneWidget); // 기존 장소가 채워짐
 
     await tester.enterText(find.byType(TextField).last, '해질녘 다시 찾은 골목.');

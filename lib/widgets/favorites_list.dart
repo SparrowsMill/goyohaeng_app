@@ -1,73 +1,141 @@
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
+import '../api/api.dart' show Category;
 import '../data/favorites.dart';
+import '../data/gap_spots.dart';
 import '../data/mock_map_regions.dart' show gapIndexAccent;
 import '../data/mock_region_ranking.dart';
 import '../theme/app_colors.dart';
-import '../theme/app_radius.dart';
+import '../theme/app_motion.dart';
 import '../theme/app_spacing.dart';
 import '../theme/app_text_styles.dart';
 import 'favorite_star_button.dart';
+import 'app_bottom_nav_bar.dart';
+import 'loading_overlay.dart';
+import 'ranking_card.dart'
+    show PillDropdown, VisitVerifiableFilterChip, businessStatusChip;
 
-/// The favorites list body — a "즐겨찾기 N곳" header, a 시/군/구 filter, then a
+/// The favorites list body — a "즐겨찾기 N곳" header, a filter icon, then a
 /// row per favorited place (each keeps its star for in-place removal). Sized by
 /// its parent; used as the slide-up panel over the `<지도>` vector map.
 ///
-/// Tapping a row **selects** it — the parent pans/zooms the map behind the panel
-/// to that spot at the current drill stage (no navigation). The selected row
-/// grows a "자세히 보기" button that opens `<장소 정보>`.
+/// Tapping a row opens `<지역별 랭킹>` (the real tile map) for that spot's
+/// region with it pre-selected — the same `initialSpot` flow the map search
+/// bar uses, so the spot lands highlighted (pin + "자세히 보기") there.
 class FavoritesList extends StatefulWidget {
-  const FavoritesList({
-    super.key,
-    required this.onFocusSpot,
-    required this.onOpenDetail,
-  });
+  const FavoritesList({super.key, required this.onOpenPlace});
 
-  /// A row was tapped (freshly selected) — move the map to this spot. The parent
-  /// ignores spots with no coordinates.
-  final ValueChanged<MockTouristSpot> onFocusSpot;
-
-  /// "자세히 보기" on the selected row — open `<장소 정보>`.
-  final ValueChanged<MockTouristSpot> onOpenDetail;
+  /// A row was tapped — open `<지역별 랭킹>` for [regionCode]/[regionName]
+  /// with the spot pre-selected.
+  final void Function(
+    String regionCode,
+    String regionName,
+    MockTouristSpot spot,
+  )
+  onOpenPlace;
 
   @override
   State<FavoritesList> createState() => _FavoritesListState();
 }
 
-/// 시/군/구 name a spot belongs to — the 2nd address token ("담양군",
-/// "전주시"), used both as the filter chip label and its key.
-String _sigunguOf(MockTouristSpot spot) {
-  final parts = spot.address.split(' ');
-  return parts.length > 1 ? parts[1] : parts.first;
-}
-
 class _FavoritesListState extends State<FavoritesList> {
-  /// `null` == 전체.
-  String? _sigungu;
+  /// `<지역별 랭킹>`/`<전체 랭킹>`과 같은 필터 세트 — 카테고리·정렬·방문 인증
+  /// 가능만. `null` == 전체 카테고리. 카테고리는 로컬 [SpotCategory](3종)가
+  /// 아니라 실 백엔드 level-1 카테고리(`GapSpots.level1Categories`, 7종
+  /// 안팎)를 그대로 써서 랭킹 화면들과 목록이 일치한다.
+  int? _category;
+  bool _descending = true;
+  bool _visitVerifiableOnly = false;
 
-  /// Name of the selected row, or `null`. Re-tapping it deselects.
-  String? _selectedName;
+  /// 필터 시트의 카테고리 드롭다운 옵션.
+  List<Category> _categories = const [];
+
+  /// 세 필터 모두 순수 클라이언트 처리(서버 재조회 없음)라 실제 지연은
+  /// 없지만, [Favorites.loading](서버 동기화)과 같은 로딩 피드백을 줘서 필터를
+  /// 바꿀 때도 렉처럼 느껴지지 않게 짧게 [LoadingOverlay]를 보여준 뒤 적용한다.
+  bool _filterLoading = false;
+
+  Future<void> _flashLoading(VoidCallback apply) async {
+    setState(() => _filterLoading = true);
+    await Future.delayed(AppMotion.standard);
+    if (!mounted) return;
+    setState(() {
+      apply();
+      _filterLoading = false;
+    });
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    GapSpots.instance
+        .level1Categories()
+        .then((cats) {
+          if (mounted) setState(() => _categories = cats);
+        })
+        .catchError((_) {
+          /* 필터엔 "전체"만 노출 */
+        });
+  }
+
+  /// "{카테고리}/{정렬}" 형태의 현재 필터 한 줄 요약 — 방문 인증 가능만이
+  /// 켜져 있으면 뒤에 덧붙인다.
+  String _filterSummary(String? selectedCategoryName) {
+    final categoryLabel = _category == null
+        ? '전체'
+        : (selectedCategoryName ?? '전체');
+    final sortLabel = _descending ? '고요 지수 높은순' : '고요 지수 낮은순';
+    final summary = '$categoryLabel/$sortLabel';
+    return _visitVerifiableOnly ? '$summary · 방문 인증 가능만' : summary;
+  }
+
+  void _openFilterSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => _FavoritesFilterSheet(
+        categories: _categories,
+        initialCategory: _category,
+        initialDescending: _descending,
+        initialVisitVerifiableOnly: _visitVerifiableOnly,
+        onCategoryChanged: (value) => _flashLoading(() => _category = value),
+        onSortChanged: (value) => _flashLoading(() => _descending = value),
+        onVisitVerifiableOnlyChanged: (value) =>
+            _flashLoading(() => _visitVerifiableOnly = value),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
       animation: Favorites.instance,
       builder: (context, _) {
-          final all = [for (final f in Favorites.instance.spots()) f.spot];
-          final regions = <String>{for (final s in all) _sigunguOf(s)}.toList()
-            ..sort();
-          // A removal may have emptied the chosen region — fall back to 전체.
-          final active =
-              _sigungu != null && regions.contains(_sigungu) ? _sigungu : null;
-          final spots = active == null
-              ? all
-              : [for (final s in all) if (_sigunguOf(s) == active) s];
-          // Selection may have been un-favorited or filtered out.
-          final selectedName =
-              spots.any((s) => s.name == _selectedName) ? _selectedName : null;
+        final all = Favorites.instance.spots();
+        String? selectedCategoryName;
+        for (final c in _categories) {
+          if (c.id == _category) {
+            selectedCategoryName = c.name;
+            break;
+          }
+        }
+        final entries =
+            [
+              for (final f in all)
+                if ((_category == null ||
+                        f.spot.categoryName == selectedCategoryName) &&
+                    (!_visitVerifiableOnly || f.spot.visitVerifiable == true))
+                  f,
+            ]..sort(
+              (a, b) => _descending
+                  ? b.spot.gapIndex.compareTo(a.spot.gapIndex)
+                  : a.spot.gapIndex.compareTo(b.spot.gapIndex),
+            );
 
-          return Column(
+        return LoadingOverlay(
+          loading: Favorites.instance.loading || _filterLoading,
+          child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Padding(
@@ -86,29 +154,53 @@ class _FavoritesListState extends State<FavoritesList> {
                       color: AppColors.secondaryAccent,
                     ),
                     const SizedBox(width: AppSpacing.sm),
-                    Text('즐겨찾기 ${all.length}곳', style: AppTextStyles.title),
+                    Expanded(
+                      child: Text(
+                        '즐겨찾기 ${all.length}곳',
+                        style: AppTextStyles.title,
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: _openFilterSheet,
+                      icon: const Icon(Symbols.tune_rounded, size: 20),
+                      color: AppColors.iconPrimary,
+                      visualDensity: VisualDensity.compact,
+                      tooltip: '필터',
+                    ),
                   ],
                 ),
               ),
-              if (regions.length > 1)
-                _SigunguFilter(
-                  regions: regions,
-                  selected: active,
-                  onChanged: (value) => setState(() => _sigungu = value),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.xl,
+                  0,
+                  AppSpacing.xl,
+                  AppSpacing.sm,
                 ),
+                child: Text(
+                  _filterSummary(selectedCategoryName),
+                  style: AppTextStyles.caption,
+                ),
+              ),
               const Divider(height: 1, color: AppColors.border),
               Expanded(
-                child: spots.isEmpty
+                child: entries.isEmpty
                     ? Center(
                         child: Text(
-                          '아직 즐겨찾기한 장소가 없어요.',
-                          style: AppTextStyles.bodyMedium
-                              .copyWith(color: AppColors.textSecondary),
+                          all.isEmpty
+                              ? '아직 즐겨찾기한 장소가 없어요.'
+                              : '조건에 맞는 즐겨찾기 장소가 없어요.',
+                          style: AppTextStyles.bodyMedium.copyWith(
+                            color: AppColors.textSecondary,
+                          ),
                         ),
                       )
                     : ListView.separated(
-                        padding: const EdgeInsets.only(bottom: AppSpacing.xl),
-                        itemCount: spots.length,
+                        padding: AppBottomNavBar.scrollPadding(
+                          context,
+                          const EdgeInsets.only(bottom: AppSpacing.xl),
+                        ),
+                        itemCount: entries.length,
                         separatorBuilder: (_, _) => const Divider(
                           height: 1,
                           indent: AppSpacing.xl,
@@ -116,104 +208,133 @@ class _FavoritesListState extends State<FavoritesList> {
                           color: AppColors.divider,
                         ),
                         itemBuilder: (_, i) {
-                          final spot = spots[i];
+                          final entry = entries[i];
                           return _FavoriteRow(
-                            spot: spot,
-                            selected: spot.name == selectedName,
+                            spot: entry.spot,
                             onTap: () {
-                              final select = _selectedName != spot.name;
-                              setState(() =>
-                                  _selectedName = select ? spot.name : null);
-                              if (select) widget.onFocusSpot(spot);
+                              // "전라남도 담양군" — first two address tokens.
+                              final regionName = entry.spot.address
+                                  .split(' ')
+                                  .take(2)
+                                  .join(' ');
+                              widget.onOpenPlace(
+                                entry.regionCode,
+                                regionName,
+                                entry.spot,
+                              );
                             },
-                            onDetail: () => widget.onOpenDetail(spot),
                           );
                         },
                       ),
               ),
             ],
-          );
+          ),
+        );
       },
     );
   }
 }
 
-/// Horizontally scrolling "전체 · 담양군 · 전주시 …" filter chips.
-class _SigunguFilter extends StatelessWidget {
-  const _SigunguFilter({
-    required this.regions,
-    required this.selected,
-    required this.onChanged,
+/// 즐겨찾기 목록의 필터 바텀시트 — `<지역별 랭킹>`(`_RegionFilterSheet`)과
+/// 완전히 같은 카테고리·정렬·방문인증 필터 세트를 그대로 재사용한다(카테고리도
+/// 같은 `GapSpots.level1Categories` 목록).
+class _FavoritesFilterSheet extends StatefulWidget {
+  const _FavoritesFilterSheet({
+    required this.categories,
+    required this.initialCategory,
+    required this.initialDescending,
+    required this.initialVisitVerifiableOnly,
+    required this.onCategoryChanged,
+    required this.onSortChanged,
+    required this.onVisitVerifiableOnlyChanged,
   });
 
-  final List<String> regions;
-  final String? selected;
-  final ValueChanged<String?> onChanged;
+  final List<Category> categories;
+  final int? initialCategory;
+  final bool initialDescending;
+  final bool initialVisitVerifiableOnly;
+  final ValueChanged<int?> onCategoryChanged;
+  final ValueChanged<bool> onSortChanged;
+  final ValueChanged<bool> onVisitVerifiableOnlyChanged;
+
+  @override
+  State<_FavoritesFilterSheet> createState() => _FavoritesFilterSheetState();
+}
+
+class _FavoritesFilterSheetState extends State<_FavoritesFilterSheet> {
+  late int? _category = widget.initialCategory;
+  late bool _descending = widget.initialDescending;
+  late bool _visitVerifiableOnly = widget.initialVisitVerifiableOnly;
 
   @override
   Widget build(BuildContext context) {
-    final items = <({String label, String? value})>[
-      (label: '전체', value: null),
-      for (final r in regions) (label: r, value: r),
-    ];
-    return SizedBox(
-      height: 48,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.fromLTRB(
-          AppSpacing.xl,
-          AppSpacing.xs,
-          AppSpacing.xl,
-          AppSpacing.md,
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(
+          AppSpacing.xxl,
+          AppSpacing.lg,
+          AppSpacing.xxl,
+          AppSpacing.xxl + MediaQuery.viewInsetsOf(context).bottom,
         ),
-        itemCount: items.length,
-        separatorBuilder: (_, _) => const SizedBox(width: AppSpacing.sm),
-        itemBuilder: (_, i) {
-          final on = selected == items[i].value;
-          return Material(
-            color: on ? AppColors.primary : AppColors.surface,
-            borderRadius: BorderRadius.circular(AppRadius.pill),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(AppRadius.pill),
-              onTap: () => onChanged(items[i].value),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14),
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(AppRadius.pill),
-                  border: Border.all(
-                    color: on ? AppColors.primary : AppColors.border,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('필터', style: AppTextStyles.title),
+            const SizedBox(height: AppSpacing.lg),
+            Row(
+              children: [
+                Expanded(
+                  child: PillDropdown<int?>(
+                    value: _category,
+                    onChanged: (v) {
+                      setState(() => _category = v);
+                      widget.onCategoryChanged(v);
+                    },
+                    items: [
+                      const DropdownMenuItem(value: null, child: Text('전체')),
+                      for (final c in widget.categories)
+                        DropdownMenuItem(value: c.id, child: Text(c.name)),
+                    ],
                   ),
                 ),
-                child: Text(
-                  items[i].label,
-                  style: AppTextStyles.buttonMedium.copyWith(
-                    color: on
-                        ? AppColors.textOnPrimaryButton
-                        : AppColors.primaryPressed,
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: PillDropdown<bool>(
+                    value: _descending,
+                    onChanged: (v) {
+                      setState(() => _descending = v ?? true);
+                      widget.onSortChanged(v ?? true);
+                    },
+                    items: const [
+                      DropdownMenuItem(value: true, child: Text('고요 지수 높은순')),
+                      DropdownMenuItem(value: false, child: Text('고요 지수 낮은순')),
+                    ],
                   ),
                 ),
-              ),
+              ],
             ),
-          );
-        },
+            const SizedBox(height: AppSpacing.md),
+            VisitVerifiableFilterChip(
+              active: _visitVerifiableOnly,
+              onTap: () {
+                setState(() => _visitVerifiableOnly = !_visitVerifiableOnly);
+                widget.onVisitVerifiableOnlyChanged(_visitVerifiableOnly);
+              },
+            ),
+          ],
+        ),
       ),
     );
   }
 }
 
 class _FavoriteRow extends StatelessWidget {
-  const _FavoriteRow({
-    required this.spot,
-    required this.selected,
-    required this.onTap,
-    required this.onDetail,
-  });
+  const _FavoriteRow({required this.spot, required this.onTap});
 
   final MockTouristSpot spot;
-  final bool selected;
   final VoidCallback onTap;
-  final VoidCallback onDetail;
 
   @override
   Widget build(BuildContext context) {
@@ -221,7 +342,7 @@ class _FavoriteRow extends StatelessWidget {
     final region = spot.address.split(' ').take(2).join(' ');
     final accent = gapIndexAccent(spot.gapIndex);
     return Material(
-      color: selected ? AppColors.surfaceSelected : AppColors.surface,
+      color: AppColors.surface,
       child: InkWell(
         onTap: onTap,
         child: Padding(
@@ -229,93 +350,57 @@ class _FavoriteRow extends StatelessWidget {
             horizontal: AppSpacing.xl,
             vertical: AppSpacing.md,
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: Row(
             children: [
-              Row(
-                children: [
-                  Icon(Symbols.location_on_rounded,
-                      size: 22, fill: 1, color: accent),
-                  const SizedBox(width: AppSpacing.sm),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          spot.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: AppTextStyles.bodyLarge
-                              .copyWith(fontWeight: FontWeight.w600),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          '$region · ${spot.category.label}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: AppTextStyles.caption,
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: AppSpacing.sm),
-                  Text(
-                    '갭지수 ${spot.gapIndex}',
-                    style: AppTextStyles.bodyMedium.copyWith(
-                      color: accent,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(width: AppSpacing.sm),
-                  FavoriteStarButton(spotName: spot.name, size: 22),
-                ],
+              Icon(
+                Symbols.location_on_rounded,
+                size: 22,
+                fill: 1,
+                color: accent,
               ),
-              if (selected) ...[
-                const SizedBox(height: AppSpacing.md),
-                _DetailButton(onTap: onDetail),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// "자세히 보기" — shown on the selected favorite row, opens `<장소 정보>`.
-class _DetailButton extends StatelessWidget {
-  const _DetailButton({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: double.infinity,
-      child: Material(
-        color: AppColors.primary,
-        borderRadius: BorderRadius.circular(AppRadius.smallButton),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(AppRadius.smallButton),
-          onTap: onTap,
-          child: const Padding(
-            padding: EdgeInsets.symmetric(vertical: 10),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  '자세히 보기',
-                  style: TextStyle(
-                    color: AppColors.textOnPrimaryButton,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 14,
-                  ),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      spot.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTextStyles.bodyLarge.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '$region · ${spot.categoryName ?? spot.category.label}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTextStyles.caption,
+                    ),
+                    if (businessStatusChip(spot.businessStatus)
+                        case final chip?) ...[
+                      const SizedBox(height: AppSpacing.xs),
+                      Align(alignment: Alignment.centerLeft, child: chip),
+                    ],
+                  ],
                 ),
-                SizedBox(width: 4),
-                Icon(Symbols.arrow_forward_rounded,
-                    size: 18, color: AppColors.textOnPrimaryButton),
-              ],
-            ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Text(
+                '고요 지수 ${spot.gapIndex}',
+                style: AppTextStyles.bodyMedium.copyWith(
+                  color: accent,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              FavoriteStarButton(
+                spotName: spot.name,
+                size: 22,
+                placeId: spot.placeId,
+              ),
+            ],
           ),
         ),
       ),

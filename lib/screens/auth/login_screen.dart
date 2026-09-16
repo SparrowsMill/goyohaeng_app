@@ -38,17 +38,16 @@ class _LoginScreenState extends State<LoginScreen> {
   /// 회원가입 화면으로. 가입에 성공하면 방금 만든 아이디를 받아 채우고,
   /// 비밀번호는 사용자가 직접 입력하도록 둔다.
   Future<void> _openSignup() async {
-    final username = await Navigator.of(context).push<String>(
+    final result = await Navigator.of(context)
+        .push<({String username, String message})>(
       MaterialPageRoute(builder: (_) => const SignupScreen()),
     );
-    if (!mounted || username == null) return;
-    setState(() => _usernameController.text = username);
+    if (!mounted || result == null) return;
+    setState(() => _usernameController.text = result.username);
     _passwordController.clear();
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(
-        const SnackBar(content: Text('회원가입이 완료됐어요. 비밀번호를 입력해 로그인해 주세요.')),
-      );
+      ..showSnackBar(SnackBar(content: Text(result.message)));
   }
 
   Future<void> _login() async {

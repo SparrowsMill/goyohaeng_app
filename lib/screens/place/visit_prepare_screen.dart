@@ -3,13 +3,15 @@ import 'package:material_symbols_icons/symbols.dart';
 
 import '../../api/api.dart';
 import '../../data/mock_region_ranking.dart';
+import '../../data/place_business_status_cache.dart';
+import '../../data/place_verification_cache.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_radius.dart';
 import '../../theme/app_shadows.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
 import '../../widgets/app_bottom_nav_bar.dart';
-import '../record/my_footprint_screen.dart';
+import '../../widgets/category_illustration.dart';
 import 'visit_verification_screen.dart';
 
 /// `<방문 인증 페이지>` (user_flow §6) — the step between `<장소 정보 페이지>`'s
@@ -42,8 +44,36 @@ class _VisitPrepareScreenState extends State<VisitPrepareScreen> {
 
   int _selected = 1;
   bool _submitting = false;
+  String? _liveBenefit;
 
   final _service = VisitVerificationService();
+
+  @override
+  void initState() {
+    super.initState();
+    final id = widget.placeId;
+    if (id != null) {
+      PlaceService()
+          .detail(id)
+          .then((place) {
+            PlaceVerificationCache.set(
+              id,
+              place.verification?.enabled ?? false,
+            );
+            PlaceBusinessStatusCache.set(id, place.isOpenNow);
+            if (mounted) setState(() => _liveBenefit = place.benefitLabel);
+          })
+          .catchError((_) {
+            /* 목업 값 유지 */
+          });
+      // 화면 최초 진입 1회만, fire-and-forget — 실패해도 화면엔 영향 없음.
+      AnalyticsService()
+          .logEvent(placeId: id, eventType: 'VISIT_AUTH_PAGE_ENTER')
+          .catchError((_) {});
+    }
+  }
+
+  String? get _benefit => _liveBenefit ?? widget.spot.storeBenefit;
 
   Future<void> _confirm() async {
     final option = _options[_selected];
@@ -54,6 +84,7 @@ class _VisitPrepareScreenState extends State<VisitPrepareScreen> {
           builder: (_) => VisitVerificationScreen(
             spot: widget.spot,
             window: option.window,
+            benefit: _benefit,
           ),
         ),
       );
@@ -73,6 +104,7 @@ class _VisitPrepareScreenState extends State<VisitPrepareScreen> {
             spot: widget.spot,
             window: option.window,
             session: session,
+            benefit: _benefit,
           ),
         ),
       );
@@ -100,11 +132,14 @@ class _VisitPrepareScreenState extends State<VisitPrepareScreen> {
         title: const Text('방문 인증'),
       ),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(
-          AppSpacing.xl,
-          AppSpacing.lg,
-          AppSpacing.xl,
-          AppSpacing.xxl,
+        padding: AppBottomNavBar.scrollPadding(
+          context,
+          const EdgeInsets.fromLTRB(
+            AppSpacing.xl,
+            AppSpacing.lg,
+            AppSpacing.xl,
+            AppSpacing.xxl,
+          ),
         ),
         children: [
           _Header(spot: spot),
@@ -114,21 +149,9 @@ class _VisitPrepareScreenState extends State<VisitPrepareScreen> {
             fallbackIcon: Symbols.redeem_rounded,
             iconColor: AppColors.secondaryAccent,
             label: '방문 혜택',
-            value: spot.storeBenefit ?? '방문 혜택 없음',
+            value: _benefit ?? '방문 혜택 없음',
             note: '방문 인증 완료 후 현장에서 혜택을\n확인할 수 있어요.',
-            muted: spot.storeBenefit == null,
-          ),
-          const SizedBox(height: AppSpacing.lg),
-          _RewardCard(
-            assetPath: 'assets/illustrations/icon/ingredient_4.png',
-            fallbackIcon: Symbols.eco_rounded,
-            iconColor: AppColors.primary,
-            label: '획득 가능한 재료',
-            value: spot.ingredient == null
-                ? '획득 재료 없음'
-                : '${spot.ingredient} ${spot.ingredientCount}개',
-            note: '방문 인증을 완료하면 재료가\n자동으로 지급돼요.',
-            muted: spot.ingredient == null,
+            muted: _benefit == null,
           ),
           const SizedBox(height: AppSpacing.xl),
           _ArrivalCard(
@@ -173,20 +196,8 @@ class _VisitPrepareScreenState extends State<VisitPrepareScreen> {
           ),
         ],
       ),
-      bottomNavigationBar: AppBottomNavBar(
-        currentIndex: 2,
-        onTap: (index) {
-          if (index == 0) {
-            Navigator.of(context).popUntil((route) => route.isFirst);
-          } else if (index == 1 || index == 2) {
-            Navigator.of(context).maybePop();
-          } else if (index == 3) {
-            Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const MyFootprintScreen()),
-            );
-          }
-        },
-      ),
+      extendBody: true,
+      bottomNavigationBar: const AppBottomNavBar(currentIndex: 2),
     );
   }
 
@@ -211,7 +222,6 @@ class _Header extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // 장소 대표 이미지 — 실사진 준비 전까지 자연/역사문화 2종 일러스트로 대체
         Container(
           width: 72,
           height: 72,
@@ -220,15 +230,7 @@ class _Header extends StatelessWidget {
             color: AppColors.surfaceSelected,
             borderRadius: BorderRadius.circular(AppRadius.card),
           ),
-          child: Image.asset(
-            'assets/illustrations/icon/spot.png',
-            fit: BoxFit.contain,
-            errorBuilder: (context, error, stackTrace) => const Icon(
-              Symbols.location_on_rounded,
-              size: 36,
-              color: AppColors.primary,
-            ),
-          ),
+          child: CategoryIllustration(spot: spot, size: 72),
         ),
         const SizedBox(width: AppSpacing.md),
         Expanded(

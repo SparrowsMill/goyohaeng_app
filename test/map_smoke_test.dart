@@ -113,6 +113,12 @@ void main() {
     final controller = tester
         .widget<InteractiveViewer>(find.byType(InteractiveViewer))
         .transformationController!;
+    // The map now opens already focused on kInitialFocusSidoId (서울) rather
+    // than the nationwide view — back out once to reach the scale-1 baseline.
+    await tester.ensureVisible(find.text('전국 보기'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('전국 보기'));
+    await tester.pumpAndSettle();
     // Home transform: scale 1 (the oversized map just centred, not identity).
     expect(
       controller.value.getMaxScaleOnAxis(),
@@ -172,6 +178,13 @@ void main() {
         .transformationController!;
     Offset screenFor(Offset raw) =>
         MatrixUtils.transformPoint(tc().value, proj(raw)) + box.topLeft;
+
+    // The map opens already focused on kInitialFocusSidoId (서울) — back out
+    // to the nationwide 시도 view before drilling into 전남/담양군.
+    await tester.ensureVisible(find.text('전국 보기'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('전국 보기'));
+    await tester.pumpAndSettle();
 
     // 담양군 (36310)의 라벨 지점은 그 안에 있다.
     final damyang = geo.sigunguLabels.firstWhere((l) => l.id == '36310').point;
@@ -262,7 +275,7 @@ void main() {
 
     // 컨트롤은 화면에 있지만 스크롤 ListView의 자식이 아니다 → 고정 헤더.
     expect(find.text('전체'), findsWidgets); // 카테고리 드롭다운
-    expect(find.text('갭지수 높은순'), findsWidgets); // 정렬 드롭다운
+    expect(find.text('고요 지수 높은순'), findsWidgets); // 정렬 드롭다운
     expect(
       find.descendant(of: find.byType(ListView), matching: find.text('전체')),
       findsNothing,
@@ -270,7 +283,7 @@ void main() {
     expect(
       find.descendant(
         of: find.byType(ListView),
-        matching: find.text('갭지수 높은순'),
+        matching: find.text('고요 지수 높은순'),
       ),
       findsNothing,
     );
@@ -604,6 +617,12 @@ void main() {
       final tc = tester
           .widget<InteractiveViewer>(find.byType(InteractiveViewer))
           .transformationController!;
+      // The map opens already focused on kInitialFocusSidoId (서울) — back
+      // out to the nationwide baseline before measuring the zoom delta.
+      await tester.ensureVisible(find.text('전국 보기'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('전국 보기'));
+      await tester.pumpAndSettle();
       final zoomBefore = tc.value.getMaxScaleOnAxis();
 
       await tester.tap(find.text('내 위치'));
@@ -946,31 +965,36 @@ void main() {
       expect(open.bottom, greaterThan(closed.bottom + 100)); // 아래로 더 드래그
     });
 
-    testWidgets('즐겨찾기 목록: 항목 탭 → 지도 집중, "자세히 보기" → <장소 정보>', (tester) async {
-      tester.view.physicalSize = const Size(390, 900);
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.reset);
+    testWidgets(
+      '즐겨찾기 목록: 항목 탭 → <지역별 랭킹>(실제 맵)으로 진입, 그 장소가 선택된 채',
+      (tester) async {
+        tester.view.physicalSize = const Size(390, 900);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
 
-      await pumpMapScreen(tester);
-      await tester.tap(find.text('즐겨찾기'));
-      await tester.pumpAndSettle();
+        await tester.runAsync(() async {
+          final g = await KoreaGeo.load();
+          await g.ensureSigungu();
+        });
+        await pumpMapScreen(tester);
+        await tester.tap(find.text('즐겨찾기'));
+        await tester.pumpAndSettle();
 
-      final tc = tester
-          .widget<InteractiveViewer>(find.byType(InteractiveViewer))
-          .transformationController!;
-      final zoomBefore = tc.value.getMaxScaleOnAxis();
+        // 항목 탭 → 그 장소의 지역 <지역별 랭킹>(실제 타일 지도)으로 진입,
+        // 검색 결과 탭과 같은 흐름(initialSpot)이라 핀+카드가 이미 선택돼 있다.
+        await tester.tap(find.text('전주 경기전'));
+        await tester.runAsync(() async {});
+        await tester.pumpAndSettle();
 
-      // 항목만 탭 → 정보 페이지로 가지 않고 지도만 그 위치로 확대·이동.
-      await tester.tap(find.text('전주 경기전'));
-      await tester.pumpAndSettle();
-      expect(find.byType(PlaceInfoScreen), findsNothing);
-      expect(tc.value.getMaxScaleOnAxis(), greaterThan(zoomBefore + 0.5));
-      expect(find.text('자세히 보기'), findsOneWidget); // 선택 행에 버튼 등장
+        expect(find.byType(RegionRankingScreen), findsOneWidget);
+        expect(find.byType(RegionSpotMap), findsOneWidget);
+        expect(find.text('자세히 보기'), findsOneWidget); // 이미 선택된 채 진입
 
-      await tester.tap(find.text('자세히 보기'));
-      await tester.pumpAndSettle();
-      expect(find.byType(PlaceInfoScreen), findsOneWidget);
-    });
+        await tester.tap(find.text('자세히 보기'));
+        await tester.pumpAndSettle();
+        expect(find.byType(PlaceInfoScreen), findsOneWidget);
+      },
+    );
 
     testWidgets('즐겨찾기 토글이 벡터 지도 ↔ 실제 지도 전환에도 유지된다', (tester) async {
       tester.view.physicalSize = const Size(390, 800);

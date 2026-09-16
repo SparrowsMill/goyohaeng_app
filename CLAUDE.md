@@ -336,8 +336,8 @@ background, exported at 3x the largest on-screen display size (Flutter
 downsamples cleanly; no `2.0x`/`3.0x` variant folders needed).
 
 - `assets/branding/`
-  - `app_icon.png` — app icon source (1024x1024)
-  - `app_logo.png` — in-app logo lockup (wordmark + decorative flourish + tagline,
+  - `app_icon_2.png` — app icon source (1024x1024)
+  - `app_logo_2.png` — in-app logo lockup (wordmark + decorative flourish + tagline,
     baked in as a single image); shown small, centered just below the `start_bg`
     scene band on the login screen (signup omits it)
   - `splash.png` — splash screen image
@@ -355,6 +355,25 @@ downsamples cleanly; no `2.0x`/`3.0x` variant folders needed).
 - `assets/illustrations/rewards/`
   - `ingredient_{name}.png` — mill ingredient reward images (e.g. `ingredient_rice.png`)
   - `travel_{name}.png` — travel reward scene images (e.g. `travel_beach.png`)
+  - `dish/dish_{english_slug}.png` — per-item watercolor illustration for
+    `Food`/`UserFood`. Real places (`Place.imageUrl`) can't use this pattern —
+    there are 1,700+ of them, each a real business photo, so those stay
+    backend-provided.
+  - `ingredient/ingredient_{english_slug}.png` — per-item watercolor
+    illustration for `Ingredient`.
+
+  Both folders are English-named (ASCII, no spaces) so they're S3/CDN-
+  upload-safe. Since the server `name` for a dish/ingredient is Korean, each
+  folder has a Korean-name → filename map in `lib/widgets/reward_image.dart`
+  (`_dishAssetOverrides`, `_ingredientAssetOverrides`) — add a new entry there
+  whenever a new dish/ingredient asset is dropped in; a name with no entry (and
+  no exact-match file) just falls through to the server URL. All 39 foods and
+  all 27 ingredients in the content master (재료/음식 seed data — IDs
+  I01–I27, D01–D39) are mapped this way.
+
+  Both folders are read through `lib/widgets/reward_image.dart` (`RewardImage`):
+  local asset first, then server `imageUrl`/`illustrationUrl`, then an icon —
+  so a missing local file just falls through instead of erroring.
 - `assets/maps/` — GeoJSON, not art. The `<지도>` screen
   (`lib/screens/map/map_screen.dart`) renders a live vector map from
   `sido_boundary` / `sigungu_boundary` (+ `*_labels` inner points); parsed by
@@ -377,7 +396,7 @@ downsamples cleanly; no `2.0x`/`3.0x` variant folders needed).
     own aspect ratio sets the height) sitting over the `#FAE7C0` base fill
     that shows through everything below it — not a full-bleed image (e.g.
     `start_bg.png` behind both the login and signup screens (login shows a
-    small centered `app_logo.png` just below the band; signup does not);
+    small centered `app_logo_2.png` just below the band; signup does not);
     `account_bg.png` behind the account center;
     `mill_bg.png` behind the mill-home screen, with the standalone
     `sparrow/sparrow_default.png` character composited on top in code rather

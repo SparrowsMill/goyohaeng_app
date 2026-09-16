@@ -6,13 +6,17 @@
 /// flutter run --dart-define=API_BASE_URL=http://192.168.0.10:3000/api/v1
 /// ```
 ///
-/// 주입하지 않으면 Android 에뮬레이터에서 호스트 PC의 `localhost:3000`을
-/// 가리키는 `10.0.2.2`를 기본값으로 쓴다. iOS 시뮬레이터/웹/데스크톱에서
-/// 로컬 서버를 붙일 때는 `--dart-define=API_BASE_URL=http://localhost:3000/api/v1`.
+/// 주입하지 않으면 Railway에 배포된 실제 서버
+/// (`https://goyohaengappbackend-production.up.railway.app/api/v1`)를
+/// 기본값으로 쓴다. 로컬 서버를 붙일 때는 Android 에뮬레이터에서
+/// `--dart-define=API_BASE_URL=http://10.0.2.2:3000/api/v1`, iOS
+/// 시뮬레이터/웹/데스크톱에서는
+/// `--dart-define=API_BASE_URL=http://localhost:3000/api/v1`.
 abstract final class ApiConfig {
   static const String baseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'http://10.0.2.2:3000/api/v1',
+    defaultValue:
+        'https://goyohaengappbackend-production.up.railway.app/api/v1',
   );
 
   /// 네트워크 요청 타임아웃.
