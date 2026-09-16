@@ -120,6 +120,9 @@ class _AccountCenterScreenState extends State<AccountCenterScreen> {
       initialDate: _birthDate ?? DateTime(now.year - 20),
       firstDate: DateTime(1900),
       lastDate: now,
+      // 키보드 직접 입력 모드는 로케일 설정이 안 돼 있어 "mm/dd/yyyy" 같은
+      // 낯선 형식 + 숫자 키패드만 뜨는 문제가 있다 — 달력 선택만 쓰게 한다.
+      initialEntryMode: DatePickerEntryMode.calendarOnly,
     );
     if (picked != null) setState(() => _birthDate = picked);
   }

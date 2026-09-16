@@ -156,6 +156,9 @@ class _SignupScreenState extends State<SignupScreen> {
       initialDate: DateTime(now.year - 20),
       firstDate: DateTime(1900),
       lastDate: now,
+      // 키보드 직접 입력 모드는 로케일 설정이 안 돼 있어 "mm/dd/yyyy" 같은
+      // 낯선 형식 + 숫자 키패드만 뜨는 문제가 있다 — 달력 선택만 쓰게 한다.
+      initialEntryMode: DatePickerEntryMode.calendarOnly,
     );
     if (picked != null) {
       setState(() => _birthDate = picked);
@@ -233,7 +236,7 @@ class _SignupScreenState extends State<SignupScreen> {
   Widget build(BuildContext context) {
     return AuthPageBackground(
       showLogo: false,
-      child: SingleChildScrollView(
+      child: Padding(
         padding: const EdgeInsets.fromLTRB(
           AppSpacing.xl,
           AppSpacing.xl,
@@ -251,6 +254,7 @@ class _SignupScreenState extends State<SignupScreen> {
               children: [
                 const LeafSectionHeader(label: '회원가입'),
                 const SizedBox(height: AppSpacing.xxl),
+                const _RequiredLabel('아이디'),
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
@@ -298,18 +302,21 @@ class _SignupScreenState extends State<SignupScreen> {
                     ),
                   ),
                 const SizedBox(height: AppSpacing.lg),
+                const _RequiredLabel('비밀번호'),
                 AppPasswordField(
                   controller: _passwordController,
                   hintText: '비밀번호',
                   validator: _validatePassword,
                 ),
                 const SizedBox(height: AppSpacing.lg),
+                const _RequiredLabel('비밀번호 확인'),
                 AppPasswordField(
                   controller: _confirmPasswordController,
                   hintText: '비밀번호 확인',
                   validator: _validateConfirmPassword,
                 ),
                 const SizedBox(height: AppSpacing.lg),
+                const _RequiredLabel('이름'),
                 AppTextField(
                   controller: _nameController,
                   hintText: '이름',
@@ -317,6 +324,7 @@ class _SignupScreenState extends State<SignupScreen> {
                   validator: _validateName,
                 ),
                 const SizedBox(height: AppSpacing.lg),
+                const _RequiredLabel('이메일'),
                 AppTextField(
                   controller: _emailController,
                   hintText: '이메일',
@@ -325,6 +333,7 @@ class _SignupScreenState extends State<SignupScreen> {
                   validator: _validateEmail,
                 ),
                 const SizedBox(height: AppSpacing.lg),
+                const _RequiredLabel('전화번호'),
                 AppTextField(
                   controller: _phoneController,
                   hintText: '전화번호',
@@ -334,6 +343,7 @@ class _SignupScreenState extends State<SignupScreen> {
                   validator: _validatePhone,
                 ),
                 const SizedBox(height: AppSpacing.lg),
+                const _RequiredLabel('생년월일'),
                 _BirthDateField(
                   label: _birthDateText,
                   isSet: _birthDate != null,
@@ -348,10 +358,18 @@ class _SignupScreenState extends State<SignupScreen> {
                       color: AppColors.iconInactive,
                     ),
                     const SizedBox(width: AppSpacing.sm),
-                    Text(
-                      '성별',
-                      style: AppTextStyles.bodyLarge
-                          .copyWith(color: AppColors.textSecondary),
+                    Text.rich(
+                      TextSpan(
+                        style: AppTextStyles.bodyLarge
+                            .copyWith(color: AppColors.textSecondary),
+                        children: const [
+                          TextSpan(text: '성별'),
+                          TextSpan(
+                            text: ' *',
+                            style: TextStyle(color: AppColors.error),
+                          ),
+                        ],
+                      ),
                     ),
                     const Spacer(),
                     _GenderChip(
@@ -415,6 +433,33 @@ class _SignupScreenState extends State<SignupScreen> {
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Field label with a red "*" marking it required — every field on this
+/// form is required, so this sits above each one.
+class _RequiredLabel extends StatelessWidget {
+  const _RequiredLabel(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+      child: Text.rich(
+        TextSpan(
+          style: AppTextStyles.bodyMedium.copyWith(
+            color: AppColors.textPrimary,
+            fontWeight: FontWeight.w600,
+          ),
+          children: [
+            TextSpan(text: text),
+            const TextSpan(text: ' *', style: TextStyle(color: AppColors.error)),
+          ],
         ),
       ),
     );

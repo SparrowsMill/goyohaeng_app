@@ -292,7 +292,7 @@ class _HeroCard extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    Flexible(child: Text(food.name, style: AppTextStyles.h2)),
+                    Flexible(child: Text(food.name, style: AppTextStyles.h3)),
                     const SizedBox(width: AppSpacing.xs),
                     _Leaf(flip: false),
                   ],

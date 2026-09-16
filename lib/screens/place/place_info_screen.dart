@@ -30,7 +30,7 @@ import 'visit_unavailable_screen.dart';
 /// Shows the visit state (미방문 / 방문 인증 완료), name + photo, 갭지수 + a
 /// short plain-language reading of it, the big 방문 인증 CTA (with the
 /// obtainable ingredient + store benefit beneath it), then the category /
-/// 주소(+ small 길찾기 button beside it) / 운영시간 / 주인의 소개 block,
+/// 주소(+ small 길찾기 button beside it) / 운영시간 / 장소 소개 block,
 /// optional 문의처, and the 트렌드 요약 keywords.
 ///
 /// [placeId]가 있으면 (실 장소 목록에서 진입) `GET /places/{placeId}/visit-status`로
@@ -873,7 +873,7 @@ bool _hasNoFixedHours(List<Map<String, dynamic>> operatingHours) {
   return true;
 }
 
-/// The 카테고리 / 주소 / 운영시간 / 주인의 소개 block. [placeId]가 있으면
+/// The 카테고리 / 주소 / 운영시간 / 장소 소개 block. [placeId]가 있으면
 /// `GET /places/{id}`로 실제 소개(`overview`)·주소(`roadAddress`)·영업 상태
 /// (`operatingStatus`, 영업 중/영업 전/브레이크타임/영업 종료/휴무일 5단)를
 /// 덮어쓴다. `operatingHours`는 스펙 문서에 항목 구조가 아직 확정돼 있지
@@ -1047,7 +1047,7 @@ class _DetailCardState extends State<_DetailCard> {
           const _RowDivider(),
           _DetailRow(
             icon: Symbols.person_rounded,
-            label: '주인의 소개',
+            label: '장소 소개',
             stacked: true,
             child: Text(
               ownerIntro,
@@ -1073,7 +1073,7 @@ class _DetailRow extends StatelessWidget {
   final String label;
   final Widget child;
 
-  /// `true`면 내용을 라벨 옆이 아니라 그 밑에 쌓는다(운영시간/주인의 소개/주소
+  /// `true`면 내용을 라벨 옆이 아니라 그 밑에 쌓는다(운영시간/장소 소개/주소
   /// 전용 — 카테고리는 기존 좌우 배치를 유지한다).
   final bool stacked;
 

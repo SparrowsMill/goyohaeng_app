@@ -279,7 +279,7 @@ class _HeroCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(food.name, style: AppTextStyles.h2),
+                Text(food.name, style: AppTextStyles.h3),
                 const SizedBox(height: AppSpacing.sm),
                 const Divider(height: 1, color: AppColors.divider),
                 const SizedBox(height: AppSpacing.sm),

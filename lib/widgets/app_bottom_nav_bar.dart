@@ -12,6 +12,19 @@ import '../theme/app_text_styles.dart';
 /// here directly — never on whatever screen happened to be underneath it on
 /// the stack — so navigation clears the stack down to a fresh instance of
 /// the target tab instead of pushing/popping relative to the current route.
+///
+/// Each one sits at the very bottom of the navigation stack (see
+/// `_onDestinationSelected` below), so the device's system back button would
+/// otherwise exit the app on a single press with nothing left to pop —
+/// [RankingScreen]/[MyFootprintScreen] are wrapped in [_BackToMillHome] here
+/// so that press returns to the 방앗간 tab instead. [MillHomeScreen] wraps
+/// itself in `ExitOnDoubleBack` instead, since it's also reached directly
+/// outside this switch (app launch, post-login, `<방문 실패>`'s "메인으로")
+/// and is the one tab where "nothing left to pop" should actually offer to
+/// exit. [MapScreen] handles it internally too (`_KoreaMap`'s own
+/// `PopScope` already owns back-press meaning there — see its combined
+/// handler — so it calls [AppBottomNavBar.goToMillHomeTab] directly rather
+/// than getting a second, independent `PopScope` wrapped around it here).
 Widget _tabRootScreen(int index) {
   switch (index) {
     case 0:
@@ -19,10 +32,33 @@ Widget _tabRootScreen(int index) {
     case 1:
       return const MapScreen();
     case 2:
-      return const RankingScreen();
+      return const _BackToMillHome(child: RankingScreen());
     case 3:
     default:
-      return const MyFootprintScreen();
+      return const _BackToMillHome(child: MyFootprintScreen());
+  }
+}
+
+/// Wrap a non-방앗간 bottom-nav tab's root [Scaffold] with this so the
+/// device's system back (Android hardware/gesture back) returns to the
+/// 방앗간 tab first, instead of exiting immediately or showing the
+/// double-back-to-exit hint — that hint only applies once already on
+/// 방앗간 (see [_tabRootScreen]'s doc comment).
+class _BackToMillHome extends StatelessWidget {
+  const _BackToMillHome({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        AppBottomNavBar.goToMillHomeTab(context);
+      },
+      child: child,
+    );
   }
 }
 
@@ -89,6 +125,17 @@ class AppBottomNavBar extends StatelessWidget {
   void _onDestinationSelected(BuildContext context, int index) {
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(builder: (_) => _tabRootScreen(index)),
+      (route) => false,
+    );
+  }
+
+  /// Navigates to the 방앗간 tab (index 0), clearing the stack — same as
+  /// tapping that nav destination. Used by the other three tabs' back-press
+  /// handling (see [_BackToMillHome] and `map_screen.dart`) so system back
+  /// returns to 방앗간 first instead of exiting straight away.
+  static void goToMillHomeTab(BuildContext context) {
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => _tabRootScreen(0)),
       (route) => false,
     );
   }

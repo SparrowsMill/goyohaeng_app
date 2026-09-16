@@ -9,6 +9,7 @@ import '../../theme/app_shadows.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
 import '../../widgets/app_bottom_nav_bar.dart';
+import '../../widgets/exit_on_double_back.dart';
 import '../../widgets/fading_scene_background.dart';
 import '../../widgets/mini_korea_map.dart';
 import '../food/my_food_screen.dart';
@@ -37,114 +38,120 @@ class _MillHomeScreenState extends State<MillHomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.appBackground,
-      body: Column(
-        children: [
-          const _TopBar(),
-          Expanded(
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      const _MillHeader(),
-                      // Overlaps up into the header banner instead of
-                      // sitting flush below it.
-                      const Positioned(
-                        left: AppSpacing.xl,
-                        right: AppSpacing.xl,
-                        bottom: -40,
-                        child: _StatBar(),
-                      ),
-                    ],
-                  ),
-                  Padding(
-                    padding: AppBottomNavBar.scrollPadding(
-                      context,
-                      const EdgeInsets.fromLTRB(
-                        AppSpacing.xl,
-                        100,
-                        AppSpacing.xl,
-                        AppSpacing.xxl,
-                      ),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+    // 방앗간은 로그인 직후/앱 시작/방문 실패 화면의 "메인으로" 등 여러 곳에서
+    // 스택을 비우고 도달하는 실질적인 앱 루트라, 시스템 뒤로가기 두 번으로
+    // 종료되게 자체적으로 감싼다(`AppBottomNavBar`의 다른 세 탭과 달리 —
+    // 그쪽은 `_tabRootScreen`에서 감싼다).
+    return ExitOnDoubleBack(
+      child: Scaffold(
+        backgroundColor: AppColors.appBackground,
+        body: Column(
+          children: [
+            const _TopBar(),
+            Expanded(
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Stack(
+                      clipBehavior: Clip.none,
                       children: [
-                        Text('어디로 떠나볼까요?', style: AppTextStyles.h2),
-                        const SizedBox(height: AppSpacing.xs),
-                        Text(
-                          '내 위치 주변의 고요 지수와 다녀온 곳을 한눈에',
-                          style: AppTextStyles.bodyMedium.copyWith(
-                            color: AppColors.textSecondary,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(height: AppSpacing.lg),
-                        const _HomeMapCard(),
-                        const SizedBox(height: AppSpacing.xxl),
-                        SizedBox(
-                          width: double.infinity,
-                          height: 56,
-                          child: Material(
-                            color: AppColors.primary,
-                            borderRadius: BorderRadius.circular(
-                              AppRadius.primaryButton,
-                            ),
-                            child: InkWell(
-                              borderRadius: BorderRadius.circular(
-                                AppRadius.primaryButton,
-                              ),
-                              onTap: () => Navigator.of(context).push(
-                                MaterialPageRoute(
-                                  settings: const RouteSettings(
-                                    name: MyFoodScreen.routeName,
-                                  ),
-                                  builder: (_) => const MyFoodScreen(),
-                                ),
-                              ),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Image.asset(
-                                    'assets/illustrations/icon/dish.png',
-                                    width: 40,
-                                    height: 40,
-                                    errorBuilder:
-                                        (context, error, stackTrace) =>
-                                            const Icon(
-                                              Symbols.soup_kitchen_rounded,
-                                              size: 24,
-                                              color:
-                                                  AppColors.textOnPrimaryButton,
-                                            ),
-                                  ),
-                                  const SizedBox(width: AppSpacing.sm),
-                                  Text(
-                                    '내 음식 보기',
-                                    style: AppTextStyles.buttonLarge.copyWith(
-                                      color: AppColors.textOnPrimaryButton,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
+                        const _MillHeader(),
+                        // Overlaps up into the header banner instead of
+                        // sitting flush below it.
+                        const Positioned(
+                          left: AppSpacing.xl,
+                          right: AppSpacing.xl,
+                          bottom: -40,
+                          child: _StatBar(),
                         ),
                       ],
                     ),
-                  ),
-                ],
+                    Padding(
+                      padding: AppBottomNavBar.scrollPadding(
+                        context,
+                        const EdgeInsets.fromLTRB(
+                          AppSpacing.xl,
+                          100,
+                          AppSpacing.xl,
+                          AppSpacing.xxl,
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('어디로 떠나볼까요?', style: AppTextStyles.h2),
+                          const SizedBox(height: AppSpacing.xs),
+                          Text(
+                            '내 위치 주변의 고요 지수와 다녀온 곳을 한눈에',
+                            style: AppTextStyles.bodyMedium.copyWith(
+                              color: AppColors.textSecondary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: AppSpacing.lg),
+                          const _HomeMapCard(),
+                          const SizedBox(height: AppSpacing.xxl),
+                          SizedBox(
+                            width: double.infinity,
+                            height: 56,
+                            child: Material(
+                              color: AppColors.primary,
+                              borderRadius: BorderRadius.circular(
+                                AppRadius.primaryButton,
+                              ),
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(
+                                  AppRadius.primaryButton,
+                                ),
+                                onTap: () => Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    settings: const RouteSettings(
+                                      name: MyFoodScreen.routeName,
+                                    ),
+                                    builder: (_) => const MyFoodScreen(),
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Image.asset(
+                                      'assets/illustrations/icon/dish.png',
+                                      width: 40,
+                                      height: 40,
+                                      errorBuilder:
+                                          (context, error, stackTrace) =>
+                                              const Icon(
+                                                Symbols.soup_kitchen_rounded,
+                                                size: 24,
+                                                color: AppColors
+                                                    .textOnPrimaryButton,
+                                              ),
+                                    ),
+                                    const SizedBox(width: AppSpacing.sm),
+                                    Text(
+                                      '내 음식 보기',
+                                      style: AppTextStyles.buttonLarge.copyWith(
+                                        color: AppColors.textOnPrimaryButton,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
+        extendBody: true,
+        bottomNavigationBar: const AppBottomNavBar(currentIndex: 0),
       ),
-      extendBody: true,
-      bottomNavigationBar: const AppBottomNavBar(currentIndex: 0),
     );
   }
 }
@@ -160,9 +167,11 @@ class _TopBar extends StatelessWidget {
     return SafeArea(
       bottom: false,
       child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.xl,
-          vertical: AppSpacing.sm,
+        padding: const EdgeInsets.fromLTRB(
+          AppSpacing.xl,
+          AppSpacing.sm,
+          AppSpacing.xl,
+          AppSpacing.xs,
         ),
         child: Row(
           children: [
@@ -174,13 +183,13 @@ class _TopBar extends StatelessWidget {
             ),
             const Spacer(),
             IconButton(
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const SparrowScreen()),
-              ),
+              onPressed: () => Navigator.of(
+                context,
+              ).push(MaterialPageRoute(builder: (_) => const SparrowScreen())),
               icon: const Icon(
                 Symbols.account_circle_rounded,
                 size: 28,
-                color: AppColors.iconPrimary,
+                color: AppColors.iconActive,
               ),
             ),
           ],

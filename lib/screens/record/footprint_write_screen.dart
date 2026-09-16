@@ -189,6 +189,9 @@ class _FootprintWriteScreenState extends State<FootprintWriteScreen> {
       firstDate: DateTime(now.year - 5),
       lastDate: now,
       helpText: '기록한 날짜',
+      // 키보드 직접 입력 모드는 로케일 설정이 안 돼 있어 "mm/dd/yyyy" 같은
+      // 낯선 형식 + 숫자 키패드만 뜨는 문제가 있다 — 달력 선택만 쓰게 한다.
+      initialEntryMode: DatePickerEntryMode.calendarOnly,
     );
     if (picked != null) setState(() => _date = picked);
   }
@@ -798,15 +801,11 @@ class _SubmitButton extends StatelessWidget {
                 children: [
                   Text(label, style: AppTextStyles.buttonLarge),
                   const SizedBox(width: AppSpacing.sm),
-                  Image.asset(
-                    'assets/branding/leaf_ornament.png',
-                    width: 20,
-                    height: 20,
-                    errorBuilder: (context, error, stackTrace) => const Icon(
-                      Symbols.eco_rounded,
-                      size: 18,
-                      color: AppColors.textOnPrimaryButton,
-                    ),
+                  const Icon(
+                    Symbols.check_circle_rounded,
+                    size: 20,
+                    weight: 600,
+                    color: AppColors.textOnPrimaryButton,
                   ),
                 ],
               ),

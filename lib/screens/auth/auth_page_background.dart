@@ -14,7 +14,7 @@ class AuthPageBackground extends StatelessWidget {
     this.showBackButton = true,
     this.showSceneImage = true,
     this.showLogo = true,
-    this.logoWidth = 250,
+    this.logoWidth = 140,
   });
 
   final Widget child;
@@ -43,6 +43,22 @@ class AuthPageBackground extends StatelessWidget {
         errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
       );
 
+  /// The `start_bg.png` watercolor scene, sized by its own aspect ratio at
+  /// full screen width. When [visible] is false it still occupies the same
+  /// layout space but paints nothing — used as a spacer inside the
+  /// scrollable content column so that column lines up with the real scene
+  /// (painted once, separately, as a fixed background layer below it) while
+  /// still being free to scroll up over it.
+  Widget _scene({bool visible = true}) {
+    final image = Image.asset(
+      'assets/illustrations/scenes/start_bg.png',
+      fit: BoxFit.fitWidth,
+      alignment: Alignment.topCenter,
+      errorBuilder: (context, error, stackTrace) => const SizedBox(),
+    );
+    return visible ? image : Opacity(opacity: 0, child: image);
+  }
+
   @override
   Widget build(BuildContext context) {
     final hasBand = showSceneImage || showLogo;
@@ -52,37 +68,45 @@ class AuthPageBackground extends StatelessWidget {
       body: Stack(
         fit: StackFit.expand,
         children: [
+          // Fixed background layer — painted once here, outside the
+          // scrollable content below, so it stays put on screen instead of
+          // scrolling away with the logo/form (that's why the content column
+          // below reserves matching space with an invisible `_scene(visible:
+          // false)` spacer rather than including this same image inline).
+          if (showSceneImage)
+            Positioned(top: 0, left: 0, right: 0, child: _scene()),
           SafeArea(
             // The scene runs full-bleed to the very top (behind the status
             // bar); only pad the top when there's no scene to fill it.
             top: !showSceneImage,
-            child: Column(
-              children: [
-                // Header-style band (scene) then the logo below it — normal
-                // column children, so the content flows underneath. The scene
-                // asset's own aspect ratio sets the band height.
-                if (showSceneImage)
-                  Image.asset(
-                    'assets/illustrations/scenes/start_bg.png',
-                    fit: BoxFit.fitWidth,
-                    alignment: Alignment.topCenter,
-                    errorBuilder: (context, error, stackTrace) =>
-                        const SizedBox(),
-                  ),
-                if (showLogo) ...[
-                  const SizedBox(height: _logoTopGap),
-                  _logo(),
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Reserves the same height as the fixed scene band above
+                  // so content starts just below it, but scrolls freely
+                  // (including up over the fixed scene) once the logo/form
+                  // below don't fit the screen — e.g. with the keyboard open.
+                  if (showSceneImage) _scene(visible: false),
+                  if (showLogo) ...[
+                    const SizedBox(height: _logoTopGap),
+                    // `Center` opts back out of the Column's `stretch`
+                    // (needed below so `child` fills the full width) so the
+                    // logo keeps its own fixed [logoWidth] instead of being
+                    // stretched to the screen width.
+                    Center(child: _logo()),
+                  ],
+                  if (hasBand)
+                    const SizedBox(height: _contentGap)
+                  else
+                    SizedBox(
+                      height: showBackButton
+                          ? AppSpacing.massive + 80
+                          : AppSpacing.lg,
+                    ),
+                  child,
                 ],
-                if (hasBand)
-                  const SizedBox(height: _contentGap)
-                else
-                  SizedBox(
-                    height: showBackButton
-                        ? AppSpacing.massive + 80
-                        : AppSpacing.lg,
-                  ),
-                Expanded(child: child),
-              ],
+              ),
             ),
           ),
           if (showBackButton)

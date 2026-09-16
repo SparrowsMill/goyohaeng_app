@@ -71,20 +71,7 @@ class _MapScreenState extends State<MapScreen> {
     return Scaffold(
       backgroundColor: AppColors.appBackground,
       appBar: AppBar(
-        leading: IconButton(
-          // Plain `pop()` (not `maybePop()`) so this always leaves the screen
-          // immediately — `maybePop` would defer to `_KoreaMap`'s PopScope,
-          // which treats a pop attempt while drilled into a 시도 (e.g. the
-          // 서울 auto-focus on open) as "step out one zoom level" instead of
-          // leaving. `canPop()` here is unrelated to that guard — it just
-          // checks whether there's a previous route to return to.
-          onPressed: () {
-            if (Navigator.of(context).canPop()) {
-              Navigator.of(context).pop();
-            }
-          },
-          icon: const Icon(Symbols.arrow_back_rounded),
-        ),
+        automaticallyImplyLeading: false,
         title: const Text('지도'),
       ),
       body: _buildVectorBody(context),
@@ -879,11 +866,36 @@ class _KoreaMapState extends State<_KoreaMap>
   @override
   Widget build(BuildContext context) {
     return PopScope(
-      // Back steps out one drill level at a time; only leaves the screen once
-      // we're at the nationwide view.
-      canPop: _focusedSido.value == null,
+      // Always intercept (rather than `canPop: _focusedSido.value == null`)
+      // so this one `PopScope` can also own the tab-root back-to-방앗간 case
+      // below — Flutter only lets a route pop once *every* `PopScope`
+      // registered on it reports `canPop: true`, so a second, independent
+      // `PopScope` here (e.g. wrapping the whole screen in
+      // `_BackToMillHome`) would fire its own handler on every drill-level
+      // step-out too, not just when actually leaving the screen.
+      canPop: false,
       onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) _popFocus();
+        if (didPop) return;
+        if (_focusedSido.value != null) {
+          // Drilled into a 시도 (or further) — step out one level instead of
+          // leaving the screen.
+          _popFocus();
+          return;
+        }
+        if (Navigator.of(context).canPop()) {
+          // Reached via a normal push (e.g. 방앗간's "지도 열기" mini-map
+          // button) with something below to return to — pop normally. A
+          // plain `pop()` is required here, not `maybePop()`, since this
+          // `PopScope`'s own `canPop: false` would make `maybePop()` defer
+          // straight back to this same handler.
+          Navigator.of(context).pop();
+          return;
+        }
+        // Nationwide view, reached as the `<지도>` tab's root (nothing below
+        // to pop to) — back returns to 방앗간 first, same as 랭킹/기록
+        // (`app_bottom_nav_bar.dart`'s `_BackToMillHome`). The
+        // double-back-to-exit hint only applies once already on 방앗간.
+        AppBottomNavBar.goToMillHomeTab(context);
       },
       child: _buildMap(context, _geo),
     );
