@@ -36,9 +36,9 @@ class _SignupScreenState extends State<SignupScreen> {
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   final _phoneController = TextEditingController();
+  final _birthDateController = TextEditingController();
 
   String? _gender;
-  DateTime? _birthDate;
   bool _agreeTerms = false;
   bool _agreePrivacy = false;
 
@@ -68,6 +68,7 @@ class _SignupScreenState extends State<SignupScreen> {
     _nameController.dispose();
     _emailController.dispose();
     _phoneController.dispose();
+    _birthDateController.dispose();
     super.dispose();
   }
 
@@ -149,29 +150,25 @@ class _SignupScreenState extends State<SignupScreen> {
       ..showSnackBar(SnackBar(content: Text(message)));
   }
 
-  Future<void> _pickBirthDate() async {
-    final now = DateTime.now();
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: DateTime(now.year - 20),
-      firstDate: DateTime(1900),
-      lastDate: now,
-      // 키보드 직접 입력 모드는 로케일 설정이 안 돼 있어 "mm/dd/yyyy" 같은
-      // 낯선 형식 + 숫자 키패드만 뜨는 문제가 있다 — 달력 선택만 쓰게 한다.
-      initialEntryMode: DatePickerEntryMode.calendarOnly,
-    );
-    if (picked != null) {
-      setState(() => _birthDate = picked);
-    }
-  }
+  // 기기별로 날짜 선택 다이얼로그의 직접 입력 모드가 로케일 설정과 어긋나
+  // "mm/dd/yyyy" 형식을 요구하면서 숫자 키패드만 띄워 "/"를 입력할 수 없는
+  // 경우가 있어(달력 모드로 고정해도 일부 기기에서 재현), 달력 다이얼로그
+  // 대신 자동 하이픈 포맷팅되는 일반 텍스트 입력으로 받는다.
+  String? _validateBirthDate(String? value) {
+    final digits = (value ?? '').replaceAll('-', '');
+    if (digits.isEmpty) return '생년월일을 입력해주세요';
+    if (digits.length != 8) return '생년월일 8자리를 입력해주세요 (예: 19990101)';
 
-  String get _birthDateText {
-    final date = _birthDate;
-    if (date == null) return '생년월일';
-    final y = date.year.toString().padLeft(4, '0');
-    final m = date.month.toString().padLeft(2, '0');
-    final d = date.day.toString().padLeft(2, '0');
-    return '$y.$m.$d';
+    final year = int.parse(digits.substring(0, 4));
+    final month = int.parse(digits.substring(4, 6));
+    final day = int.parse(digits.substring(6, 8));
+    final date = DateTime(year, month, day);
+    final isRealCalendarDate =
+        date.year == year && date.month == month && date.day == day;
+    if (!isRealCalendarDate || year < 1900 || date.isAfter(DateTime.now())) {
+      return '올바른 생년월일을 입력해주세요';
+    }
+    return null;
   }
 
   void _snack(String message) {
@@ -180,19 +177,10 @@ class _SignupScreenState extends State<SignupScreen> {
       ..showSnackBar(SnackBar(content: Text(message)));
   }
 
-  String _formatDate(DateTime d) =>
-      '${d.year.toString().padLeft(4, '0')}-'
-      '${d.month.toString().padLeft(2, '0')}-'
-      '${d.day.toString().padLeft(2, '0')}';
-
   Future<void> _handleSignup() async {
     FocusScope.of(context).unfocus();
     final isValid = _formKey.currentState?.validate() ?? false;
     if (!isValid) return;
-    if (_birthDate == null) {
-      _snack('생년월일을 선택해주세요');
-      return;
-    }
     if (_gender == null) {
       _snack('성별을 선택해주세요');
       return;
@@ -213,7 +201,7 @@ class _SignupScreenState extends State<SignupScreen> {
         realName: _nameController.text.trim(),
         email: _emailController.text.trim(),
         phone: _phoneController.text.trim(),
-        birthDate: _formatDate(_birthDate!),
+        birthDate: _birthDateController.text,
         gender: _gender == 'male' ? 'MALE' : 'FEMALE',
       );
       // 가입 성공 → 자동 로그인하지 않고 로그인 화면으로 돌아가 직접 입력하게 한다.
@@ -344,10 +332,13 @@ class _SignupScreenState extends State<SignupScreen> {
                 ),
                 const SizedBox(height: AppSpacing.lg),
                 const _RequiredLabel('생년월일'),
-                _BirthDateField(
-                  label: _birthDateText,
-                  isSet: _birthDate != null,
-                  onTap: _pickBirthDate,
+                AppTextField(
+                  controller: _birthDateController,
+                  hintText: '생년월일 (예: 19990101)',
+                  prefixIcon: Symbols.calendar_month_rounded,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [_BirthDateFormatter()],
+                  validator: _validateBirthDate,
                 ),
                 const SizedBox(height: AppSpacing.lg),
                 Row(
@@ -494,54 +485,33 @@ class _PhoneNumberFormatter extends TextInputFormatter {
   }
 }
 
-class _BirthDateField extends StatelessWidget {
-  const _BirthDateField({
-    required this.label,
-    required this.isSet,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool isSet;
-  final VoidCallback onTap;
-
+/// Formats digits into `YYYY-MM-DD` grouping as the user types, and discards
+/// any non-digit input — same approach as [_PhoneNumberFormatter], used here
+/// instead of a date-picker dialog since some devices' keyboard-entry mode
+/// demands a locale-specific separator (e.g. "/") the numeric keypad can't
+/// type.
+class _BirthDateFormatter extends TextInputFormatter {
   @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(AppRadius.inputField),
-      child: Container(
-        height: 52,
-        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          border: Border.all(color: AppColors.border),
-          borderRadius: BorderRadius.circular(AppRadius.inputField),
-        ),
-        child: Row(
-          children: [
-            const Icon(
-              Symbols.calendar_month_rounded,
-              size: 20,
-              color: AppColors.iconInactive,
-            ),
-            const SizedBox(width: AppSpacing.sm),
-            Expanded(
-              child: Text(
-                label,
-                style: AppTextStyles.bodyLarge.copyWith(
-                  color: isSet ? AppColors.textPrimary : AppColors.textDisabled,
-                ),
-              ),
-            ),
-            const Icon(
-              Symbols.calendar_month_rounded,
-              size: 20,
-              color: AppColors.iconInactive,
-            ),
-          ],
-        ),
-      ),
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final digits = newValue.text.replaceAll(RegExp(r'\D'), '');
+    final limited = digits.length > 8 ? digits.substring(0, 8) : digits;
+
+    final buffer = StringBuffer();
+    for (var i = 0; i < limited.length; i++) {
+      buffer.write(limited[i]);
+      final isGroupBoundary = i == 3 || i == 5;
+      if (isGroupBoundary && i != limited.length - 1) {
+        buffer.write('-');
+      }
+    }
+
+    final formatted = buffer.toString();
+    return TextEditingValue(
+      text: formatted,
+      selection: TextSelection.collapsed(offset: formatted.length),
     );
   }
 }

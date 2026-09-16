@@ -156,9 +156,10 @@ class _MillHomeScreenState extends State<MillHomeScreen> {
   }
 }
 
-/// Persistent top bar (logo + 마이 페이지 profile icon) — stays on screen at
-/// all times, like the bottom navigation, unlike `_MillHeader` below it which
-/// scrolls away with the page.
+/// Persistent top bar (logo only) — stays on screen at all times, like the
+/// bottom navigation, unlike `_MillHeader` below it which scrolls away with
+/// the page. Navigation to the sparrow profile is via the button in
+/// `_MillHeader` further down, not from here.
 class _TopBar extends StatelessWidget {
   const _TopBar();
 
@@ -180,17 +181,6 @@ class _TopBar extends StatelessWidget {
               height: 50,
               errorBuilder: (context, error, stackTrace) =>
                   Text('고요행', style: AppTextStyles.h3),
-            ),
-            const Spacer(),
-            IconButton(
-              onPressed: () => Navigator.of(
-                context,
-              ).push(MaterialPageRoute(builder: (_) => const SparrowScreen())),
-              icon: const Icon(
-                Symbols.account_circle_rounded,
-                size: 28,
-                color: AppColors.iconActive,
-              ),
             ),
           ],
         ),
@@ -500,83 +490,52 @@ class _BubbleTailPainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
+/// Three independent oval stat pills instead of one wide divided bar — each
+/// pill sizes to its own content, so a narrow/tall screen (e.g. 19.5:9) that
+/// can't fit all three on one line wraps the last one onto a second line
+/// below rather than shrinking/eliding any of their text.
 class _StatBar extends StatelessWidget {
   const _StatBar();
 
-  static const _opacity = 0.85;
-
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.lg,
-        vertical: AppSpacing.md,
-      ),
-      decoration: BoxDecoration(
-        // Between appBackground (warm cream) and surface (near-white) —
-        // brighter than the page background instead of blending flush into
-        // it, but without going back to a stark white card.
-        color: Color.lerp(
-          AppColors.appBackground,
-          AppColors.surface,
-          1.0,
-        )!.withValues(alpha: _opacity),
-        border: Border.all(color: AppColors.border),
-        borderRadius: BorderRadius.circular(28),
-        boxShadow: AppShadows.card,
-      ),
-      child: ListenableBuilder(
-        listenable: DashboardStore.instance,
-        builder: (context, _) {
-          final d = DashboardStore.instance.data;
-          String v(int? n) => n == null ? '–' : '$n';
-          return Row(
-            children: [
-              Expanded(
-                child: _StatItem(
-                  iconAsset: 'assets/illustrations/icon/calendar.png',
-                  fallbackIcon: Symbols.calendar_month_rounded,
-                  label: '이번 달 방문',
-                  value: '${v(d?.monthlyVisitCount)}곳',
-                ),
-              ),
-              const _StatDivider(),
-              Expanded(
-                child: _StatItem(
-                  iconAsset: 'assets/illustrations/icon/ingredient.png',
-                  fallbackIcon: Symbols.shopping_bag_rounded,
-                  label: '모은 재료',
-                  value: '${v(d?.ingredientCount)}개',
-                ),
-              ),
-              const _StatDivider(),
-              Expanded(
-                child: _StatItem(
-                  iconAsset: 'assets/illustrations/icon/verified.png',
-                  fallbackIcon: Symbols.verified_rounded,
-                  label: '인증 완료',
-                  value: '${v(d?.verifiedVisitCount)}회',
-                ),
-              ),
-            ],
-          );
-        },
-      ),
+    return ListenableBuilder(
+      listenable: DashboardStore.instance,
+      builder: (context, _) {
+        final d = DashboardStore.instance.data;
+        String v(int? n) => n == null ? '–' : '$n';
+        return Wrap(
+          alignment: WrapAlignment.center,
+          spacing: AppSpacing.sm,
+          runSpacing: AppSpacing.sm,
+          children: [
+            _StatPill(
+              iconAsset: 'assets/illustrations/icon/calendar.png',
+              fallbackIcon: Symbols.calendar_month_rounded,
+              label: '이번 달 방문',
+              value: '${v(d?.monthlyVisitCount)}곳',
+            ),
+            _StatPill(
+              iconAsset: 'assets/illustrations/icon/ingredient.png',
+              fallbackIcon: Symbols.shopping_bag_rounded,
+              label: '모은 재료',
+              value: '${v(d?.ingredientCount)}개',
+            ),
+            _StatPill(
+              iconAsset: 'assets/illustrations/icon/verified.png',
+              fallbackIcon: Symbols.verified_rounded,
+              label: '인증 완료',
+              value: '${v(d?.verifiedVisitCount)}회',
+            ),
+          ],
+        );
+      },
     );
   }
 }
 
-class _StatDivider extends StatelessWidget {
-  const _StatDivider();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(width: 1, height: 36, color: AppColors.divider);
-  }
-}
-
-class _StatItem extends StatelessWidget {
-  const _StatItem({
+class _StatPill extends StatelessWidget {
+  const _StatPill({
     required this.iconAsset,
     required this.fallbackIcon,
     required this.label,
@@ -588,37 +547,51 @@ class _StatItem extends StatelessWidget {
   final String label;
   final String value;
 
+  static const _opacity = 0.85;
+
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Image.asset(
-          iconAsset,
-          width: 32,
-          height: 32,
-          errorBuilder: (context, error, stackTrace) =>
-              Icon(fallbackIcon, size: 24, color: AppColors.primary),
-        ),
-        const SizedBox(width: AppSpacing.xs),
-        Flexible(
-          child: Column(
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.sm,
+      ),
+      decoration: BoxDecoration(
+        // Between appBackground (warm cream) and surface (near-white) —
+        // brighter than the page background instead of blending flush into
+        // it, but without going back to a stark white card.
+        color: Color.lerp(
+          AppColors.appBackground,
+          AppColors.surface,
+          1.0,
+        )!.withValues(alpha: _opacity),
+        border: Border.all(color: AppColors.border),
+        borderRadius: BorderRadius.circular(AppRadius.card),
+        boxShadow: AppShadows.card,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Image.asset(
+            iconAsset,
+            width: 28,
+            height: 28,
+            errorBuilder: (context, error, stackTrace) =>
+                Icon(fallbackIcon, size: 22, color: AppColors.primary),
+          ),
+          const SizedBox(width: AppSpacing.xs),
+          Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
                 label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
                 style: AppTextStyles.caption.copyWith(
                   fontWeight: FontWeight.w600,
                 ),
               ),
               Text(
                 value,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
                 style: AppTextStyles.bodyMedium.copyWith(
                   color: AppColors.success,
                   fontWeight: FontWeight.w600,
@@ -626,8 +599,8 @@ class _StatItem extends StatelessWidget {
               ),
             ],
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }

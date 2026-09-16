@@ -84,7 +84,18 @@ class _MapScreenState extends State<MapScreen> {
   /// body; the chrome (검색 바 + 갭지수 범례/설명) is a **translucent overlay**
   /// on its top, so the map stays visible behind it when dragged. "즐겨찾기"
   /// slides a favorites list up over the map's lower half.
-  Widget _buildVectorBody(BuildContext context) {
+  ///
+  /// [screenContext] — deliberately *not* named `context`: the `LayoutBuilder`/
+  /// `ValueListenableBuilder` builders below each introduce their own (shadowing)
+  /// `context`, which is a descendant of this `Scaffold`'s `extendBody: true`
+  /// body. Flutter zeroes `MediaQuery.viewPaddingOf` for that subtree (folding
+  /// the real bottom inset into `MediaQuery.paddingOf` instead), so
+  /// `AppBottomNavBar.scrollPadding` — which reads `viewPaddingOf` — silently
+  /// falls back to its 12px floor there instead of the device's real inset,
+  /// undercounting on phones with a large home-indicator/gesture-nav inset and
+  /// letting the 즐겨찾기/내 위치 buttons sink into the floating nav bar. Using
+  /// this outer, pre-`Scaffold` context for that one call sidesteps the override.
+  Widget _buildVectorBody(BuildContext screenContext) {
     return LayoutBuilder(
       builder: (context, constraints) {
         final bodyHeight = constraints.maxHeight;
@@ -104,7 +115,7 @@ class _MapScreenState extends State<MapScreen> {
                   overlayBottomInset: favoritesOpen
                       ? panelHeight
                       : AppBottomNavBar.scrollPadding(
-                          context,
+                          screenContext,
                           EdgeInsets.zero,
                         ).bottom,
                   topInset: kMapChromeInset,

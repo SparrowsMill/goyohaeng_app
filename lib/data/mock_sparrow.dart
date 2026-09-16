@@ -1,5 +1,6 @@
-/// 참새(프로필) 화면 placeholder 데이터 — user_flow §3. 참새 캐릭터 이름·레벨,
-/// 함께한 날수, 활동 요약(방문 장소/방문 인증/완성 음식/모은 재료), 최근 일기.
+/// 참새(프로필) 화면 데이터 로드 실패/전 fallback — user_flow §3. 참새 캐릭터
+/// 이름·레벨, 함께한 날수, 활동 요약(방문 장소/방문 인증/완성 음식/모은 재료),
+/// 최근 일기.
 ///
 /// * TODO(backend): 참새 프로필 조회 API 연동 (닉네임·레벨·경험치·함께한 날수).
 /// * TODO(backend): 활동 요약(누적) 조회 — 방문 장소 수 / 방문 인증 횟수 /
@@ -37,17 +38,21 @@ class SparrowProfile {
       xpForNextLevel == 0 ? 0 : (xp / xpForNextLevel).clamp(0, 1);
 }
 
+/// Fallback shown only while the real `/users/me/sparrow` (and dashboard
+/// count) data hasn't loaded yet or failed to load — every stat defaults to
+/// its neutral zero value rather than a demo number, so a not-yet-loaded
+/// state can never be mistaken for real progress. Only [name] keeps a
+/// non-empty placeholder, since it's a display label (shown before the
+/// user's real account name loads), not a stat.
 const mockSparrowProfile = SparrowProfile(
   name: '고요참새',
-  level: 8,
-  xp: 350,
-  xpForNextLevel: 700,
-  daysTogether: 32,
-  visitedPlaceCount: 23,
-  verifiedStampCount: 56,
-  completedFoodCount: 18,
-  collectedIngredientCount: 128,
-  latestDiary: '오늘은 고요한 산골마을을 천천히 걸었어.\n'
-      '햇살 아래 반짝이던 들꽃과\n바람 끝에 스치던 풀내음이\n마음 한켠에 오래 머물렀지.\n'
-      '작은 발걸음마다 여행의 온기가 남아\n이 순간을 조용히 간직하고 싶어.',
+  level: 0,
+  xp: 0,
+  xpForNextLevel: 0,
+  daysTogether: 0,
+  visitedPlaceCount: 0,
+  verifiedStampCount: 0,
+  completedFoodCount: 0,
+  collectedIngredientCount: 0,
+  latestDiary: '',
 );
