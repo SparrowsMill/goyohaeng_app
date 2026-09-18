@@ -83,7 +83,9 @@ class GapSpots {
       return cur;
     }
 
-    final level1s = cats.where((c) => c.parentId == null && c.isActive).toList();
+    final level1s = cats
+        .where((c) => c.parentId == null && c.isActive)
+        .toList();
 
     // 서울 자치구 이름 → 내부 regionId. 이름이 서울 안에서 고유해 코드 매핑
     // 없이도 안전하게 대응된다([[gap-score-api]]와 같은 방식).
@@ -104,8 +106,10 @@ class GapSpots {
   /// `null`을 반환해 폴리곤 폴백을 쓰게 한다. 자치구 하나의 스팟 수는 많지
   /// 않다고 보고 첫 페이지(limit 100)만 받는다.
   Future<List<GapPlace>?> _loadRegionRankings(int regionId, int? categoryId) =>
-      _regionRankings[(regionId, categoryId)] ??=
-          _fetchRegionRankings(regionId, categoryId);
+      _regionRankings[(regionId, categoryId)] ??= _fetchRegionRankings(
+        regionId,
+        categoryId,
+      );
 
   Future<List<GapPlace>?> _fetchRegionRankings(
     int regionId,
@@ -169,11 +173,13 @@ class GapSpots {
         final pt = Epsg5179.fromLatLng(LatLng(p.latitude!, p.longitude!));
         for (final r in meta.geo.sigungu) {
           if (r.bounds.contains(pt) && _pointInRings(r.rings, pt)) {
-            hits.add(GapSpotHit(
-              spot: _toSpot(p, meta),
-              regionCode: r.id,
-              regionName: r.title,
-            ));
+            hits.add(
+              GapSpotHit(
+                spot: _toSpot(p, meta),
+                regionCode: r.id,
+                regionName: r.title,
+              ),
+            );
             break;
           }
         }
@@ -209,8 +215,9 @@ class GapSpots {
           break;
         }
       }
-      final regionId =
-          district == null ? null : meta.regionIdByDistrictName[district.title];
+      final regionId = district == null
+          ? null
+          : meta.regionIdByDistrictName[district.title];
       if (regionId != null) {
         final ranked = await _loadRegionRankings(regionId, categoryId);
         if (ranked != null && ranked.isNotEmpty) {
@@ -223,7 +230,9 @@ class GapSpots {
           try {
             final located = await _loadPlaces(categoryId);
             coordsById = {for (final p in located) p.placeId: p};
-          } catch (_) {/* 좌표 보충 실패 — 좌표 없는 카드로만 표시 */}
+          } catch (_) {
+            /* 좌표 보충 실패 — 좌표 없는 카드로만 표시 */
+          }
           return <MockTouristSpot>[
             for (final p in ranked)
               _toSpot(
@@ -255,20 +264,27 @@ class GapSpots {
 
     final spots = <MockTouristSpot>[
       for (final p in places)
-        if (_inAny(regions, Epsg5179.fromLatLng(LatLng(p.latitude!, p.longitude!))))
+        if (_inAny(
+          regions,
+          Epsg5179.fromLatLng(LatLng(p.latitude!, p.longitude!)),
+        ))
           _toSpot(p, meta),
     ]..sort((a, b) => b.gapIndex.compareTo(a.gapIndex));
 
     return spots.isEmpty ? rankingForRegion(regionCode) : spots;
   }
 
-  MockTouristSpot _toSpot(GapPlace p, _GapMeta meta, {double? lat, double? lng}) =>
-      gapPlaceToSpot(
-        p,
-        categoryName: meta.level1Of(p.categoryId)?.name,
-        lat: lat,
-        lng: lng,
-      );
+  MockTouristSpot _toSpot(
+    GapPlace p,
+    _GapMeta meta, {
+    double? lat,
+    double? lng,
+  }) => gapPlaceToSpot(
+    p,
+    categoryName: meta.level1Of(p.categoryId)?.name,
+    lat: lat,
+    lng: lng,
+  );
 
   static bool _inAny(List<GeoRegion> regions, Offset pt) {
     for (final r in regions) {
@@ -319,29 +335,59 @@ class GapSpots {
 /// result, which never carries coordinates — see [GapPlace.latitude] — has
 /// them looked up from a `/places/gap/map` fetch by placeId and passed in
 /// here instead).
+///
+/// A handful of `Place` rows carry a shared bad-geocode sentinel coordinate
+/// (`19.6944275, 117.9925663` — the South China Sea, confirmed 2026-09-17
+/// against the live DB across 10+ places in several 서울 자치구). Every other
+/// region silently filters these out via `GapSpots.spotsInRegion`'s
+/// point-in-polygon check ([GapSpots._inAny]), but 서울 자치구 take the
+/// `regionId`-direct ranking path, which has no such geo sanity check — so a
+/// spot like this reaches `RegionSpotMap` with a "valid-looking" but
+/// wildly-wrong location, and its `CameraFit.bounds` then spans from Seoul to
+/// China, landing the camera somewhere with no VWorld tile coverage
+/// ("focuses on China, doesn't render"). [_isKoreaCoord] catches this at the
+/// one place every `GapPlace` funnels through, regardless of source.
 MockTouristSpot gapPlaceToSpot(
   GapPlace p, {
   String? categoryName,
   double? lat,
   double? lng,
-}) =>
-    MockTouristSpot(
-      placeId: p.placeId,
-      name: p.placeName ?? '이름 미상',
-      category: SpotCategory.activity,
-      categoryName: categoryName,
-      gapIndex: p.gapIndex,
-      visitVerifiable:
-          p.verificationAvailable ?? PlaceVerificationCache.get(p.placeId),
-      ingredient: null,
-      businessStatus: businessStatusFromApi(
-        operatingStatus: p.operatingStatus,
-        isOpenNow: p.isOpenNow ?? PlaceBusinessStatusCache.get(p.placeId),
-      ),
-      address: p.roadAddress ?? '주소 정보를 준비하고 있어요',
-      lat: lat ?? p.latitude,
-      lng: lng ?? p.longitude,
-    );
+}) {
+  var effLat = lat ?? p.latitude;
+  var effLng = lng ?? p.longitude;
+  if (!_isKoreaCoord(effLat, effLng)) {
+    effLat = null;
+    effLng = null;
+  }
+  return MockTouristSpot(
+    placeId: p.placeId,
+    name: p.placeName ?? '이름 미상',
+    category: SpotCategory.activity,
+    categoryName: categoryName,
+    gapIndex: p.gapIndex,
+    visitVerifiable:
+        p.verificationAvailable ?? PlaceVerificationCache.get(p.placeId),
+    ingredient: null,
+    businessStatus: businessStatusFromApi(
+      operatingStatus: p.operatingStatus,
+      isOpenNow: p.isOpenNow ?? PlaceBusinessStatusCache.get(p.placeId),
+    ),
+    address: p.roadAddress ?? '주소 정보를 준비하고 있어요',
+    lat: effLat,
+    lng: effLng,
+  );
+}
+
+/// Korea's rough lat/lng envelope (Jeju/Dokdo margins included) — rejects
+/// coordinates that are non-null but obviously not in Korea, e.g. a failed
+/// geocode that resolved to some other point on Earth. See [gapPlaceToSpot].
+bool _isKoreaCoord(double? lat, double? lng) =>
+    lat != null &&
+    lng != null &&
+    lat >= 32.5 &&
+    lat <= 39.5 &&
+    lng >= 124.0 &&
+    lng <= 132.5;
 
 /// One [allSpotsWithRegion] result: a GAP spot plus the 시군구 its coordinates
 /// fall inside.
