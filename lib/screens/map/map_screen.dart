@@ -1,0 +1,1569 @@
+import 'dart:math' as math;
+import 'dart:ui' as ui show Image;
+
+import 'package:flutter/foundation.dart' show ValueListenable;
+import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
+
+import '../../data/favorites.dart';
+import '../../data/korea_crs.dart' show Epsg5179, LatLng;
+import '../../data/korea_map_geo.dart';
+import '../../data/mock_map_regions.dart';
+import '../../data/mock_region_ranking.dart' show MockTouristSpot;
+import '../../theme/app_colors.dart';
+import '../../theme/app_motion.dart';
+import '../../theme/app_radius.dart';
+import '../../theme/app_shadows.dart';
+import '../../theme/app_spacing.dart';
+import '../../theme/app_text_styles.dart';
+import '../../widgets/app_bottom_nav_bar.dart';
+import '../../widgets/drag_to_resize_handle.dart';
+import '../../widgets/favorites_list.dart';
+import '../../widgets/gap_index_info_dialog.dart';
+import '../../widgets/loading_overlay.dart';
+import '../../widgets/my_location_button.dart';
+import '../../widgets/place_search_bar.dart';
+import '../../widgets/region_lock.dart';
+import '../ranking/region_ranking_screen.dart';
+import 'place_search_screen.dart';
+
+/// `<지도>` (user_flow §6) — the whole country as a continuously zoomable
+/// vector map drawn from `assets/maps/` GeoJSON. Reached via the "지도 열기"
+/// button under the mill-home TOP 3 list and the 지도 bottom-nav tab.
+///
+/// Drill-down (tap, not zoom):
+///   - 처음 : 시도 17개만, 평균 갭지수 색으로 채움
+///   - 시도 탭 : 그 시도의 시·군·자치구로 펼침 (수원·성남·청주·창원 등
+///     여러 구를 가진 시는 하나로 묶어서 표시) + 카메라 이동
+///   - 묶인 시 탭 : 그 시의 구로 다시 펼침
+///   - 군·자치구·구 탭 : `<지역별 랭킹>` (목록 + 실제 타일 지도 반반)
+///
+/// "갭지수란?" opens the explainer; the bottom-right pill steps out one level.
+class MapScreen extends StatefulWidget {
+  const MapScreen({super.key});
+
+  @override
+  State<MapScreen> createState() => _MapScreenState();
+}
+
+class _MapScreenState extends State<MapScreen> {
+  /// "즐겨찾기" — slides a favorites list up *over* the bottom of the map and
+  /// toggles the star pins on. The map keeps its full size and position. State
+  /// lives in [Favorites.mapOverlayActive] so it carries across the vector ↔
+  /// real-map 전환 (drilling into a region and stepping back).
+  ValueNotifier<bool> get _favorites => Favorites.instance.mapOverlayActive;
+
+  /// Height of the 즐겨찾기 panel as a fraction of the body — the user drags its
+  /// grip to resize it. [_favPanelResizing] drops the slide animation so the
+  /// drag tracks the finger 1:1.
+  double _favPanelFraction = 0.52;
+  bool _favPanelResizing = false;
+
+  /// Bumped every time the 즐겨찾기 panel opens — used as the panel's `Key` so
+  /// its `FavoritesList` is torn down and rebuilt fresh each time (its
+  /// category/정렬/방문인증 filters always reset to default on reopen instead
+  /// of carrying over from the last time it was open).
+  int _favPanelOpenTick = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.appBackground,
+      appBar: AppBar(
+        automaticallyImplyLeading: false,
+        title: const Text('지도'),
+      ),
+      body: _buildVectorBody(context),
+      extendBody: true,
+      bottomNavigationBar: const AppBottomNavBar(currentIndex: 1),
+    );
+  }
+
+  /// Nationwide → 시도 → 시군구 → 구 vector drill-down. The map fills the whole
+  /// body; the chrome (검색 바 + 갭지수 범례/설명) is a **translucent overlay**
+  /// on its top, so the map stays visible behind it when dragged. "즐겨찾기"
+  /// slides a favorites list up over the map's lower half.
+  ///
+  /// [screenContext] — deliberately *not* named `context`: the `LayoutBuilder`/
+  /// `ValueListenableBuilder` builders below each introduce their own (shadowing)
+  /// `context`, which is a descendant of this `Scaffold`'s `extendBody: true`
+  /// body. Flutter zeroes `MediaQuery.viewPaddingOf` for that subtree (folding
+  /// the real bottom inset into `MediaQuery.paddingOf` instead), so
+  /// `AppBottomNavBar.scrollPadding` — which reads `viewPaddingOf` — silently
+  /// falls back to its 12px floor there instead of the device's real inset,
+  /// undercounting on phones with a large home-indicator/gesture-nav inset and
+  /// letting the 즐겨찾기 button sink into the floating nav bar. Using
+  /// this outer, pre-`Scaffold` context for that one call sidesteps the override.
+  Widget _buildVectorBody(BuildContext screenContext) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final bodyHeight = constraints.maxHeight;
+        final panelHeight = bodyHeight * _favPanelFraction;
+        return ValueListenableBuilder<bool>(
+          valueListenable: _favorites,
+          builder: (context, favoritesOpen, _) => Stack(
+            children: [
+              Positioned.fill(
+                child: _KoreaMap(
+                  favoritesActive: favoritesOpen,
+                  onToggleFavorites: () {
+                    final opening = !favoritesOpen;
+                    if (opening) _favPanelOpenTick++;
+                    _favorites.value = opening;
+                  },
+                  overlayBottomInset: favoritesOpen
+                      ? panelHeight
+                      : AppBottomNavBar.scrollPadding(
+                          screenContext,
+                          EdgeInsets.zero,
+                        ).bottom,
+                  topInset: kMapChromeInset,
+                  onEnterRegion: (code, name) => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => RegionRankingScreen(
+                        regionKey: code,
+                        regionName: name,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: _MapChrome(
+                  onSearch: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const PlaceSearchScreen(),
+                    ),
+                  ),
+                ),
+              ),
+              AnimatedPositioned(
+                duration: _favPanelResizing
+                    ? Duration.zero
+                    : AppMotion.standard,
+                curve: AppMotion.curve,
+                left: 0,
+                right: 0,
+                height: panelHeight,
+                bottom: favoritesOpen ? 0 : -panelHeight,
+                child: _FavoritesPanel(
+                  key: ValueKey(_favPanelOpenTick),
+                  onResizeStart: () => setState(() => _favPanelResizing = true),
+                  onResize: (dy) => setState(() {
+                    _favPanelFraction = (_favPanelFraction - dy / bodyHeight)
+                        .clamp(0.30, 0.80);
+                  }),
+                  onResizeEnd: () => setState(() => _favPanelResizing = false),
+                  onOpenPlace: (code, name, spot) => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => RegionRankingScreen(
+                        regionKey: code,
+                        regionName: name,
+                        initialSpot: spot,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// The search bar + 갭지수 범례/설명, laid over the top of the map like the
+/// login screen's cards over its scene: **fully transparent behind** — each
+/// control carries its own opaque surface, the map shows through the gaps.
+class _MapChrome extends StatelessWidget {
+  const _MapChrome({required this.onSearch});
+
+  final VoidCallback onSearch;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.xl,
+        AppSpacing.md,
+        AppSpacing.xl,
+        AppSpacing.md,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          PlaceSearchBar(onTap: onSearch, translucent: true),
+          const SizedBox(height: AppSpacing.md),
+          const Row(children: [_GapLegend(), Spacer(), GapIndexInfoButton()]),
+        ],
+      ),
+    );
+  }
+}
+
+/// The favorites list as a floating panel laid over the map's lower half —
+/// rounded top, top shadow, so it reads as sitting *on* the map. Its grip is
+/// draggable to resize the panel (parent owns the height).
+class _FavoritesPanel extends StatelessWidget {
+  const _FavoritesPanel({
+    super.key,
+    required this.onResizeStart,
+    required this.onResize,
+    required this.onResizeEnd,
+    required this.onOpenPlace,
+  });
+
+  final VoidCallback onResizeStart;
+  final ValueChanged<double> onResize;
+  final VoidCallback onResizeEnd;
+  final void Function(String regionCode, String regionName, MockTouristSpot spot)
+  onOpenPlace;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      decoration: const BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(AppRadius.card),
+        ),
+        border: Border(top: BorderSide(color: AppColors.border)),
+        boxShadow: AppShadows.modalOrBottomSheet,
+      ),
+      child: Column(
+        children: [
+          DragToResizeHandle(
+            bordered: false,
+            onDragStart: onResizeStart,
+            onDrag: onResize,
+            onDragEnd: onResizeEnd,
+          ),
+          Expanded(
+            child: FavoritesList(
+              onOpenPlace: onOpenPlace,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Compact "낮음 —— 높음" scale. Its own surface pill so it stays readable
+/// floating over the map.
+class _GapLegend extends StatelessWidget {
+  const _GapLegend();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.sm,
+        vertical: 5,
+      ),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        border: Border.all(color: AppColors.border),
+        borderRadius: BorderRadius.circular(AppRadius.pill),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text('낮음', style: AppTextStyles.caption),
+          const SizedBox(width: AppSpacing.sm),
+          Container(
+            width: 88,
+            height: 10,
+            decoration: BoxDecoration(
+              gradient: gapIndexGradient,
+              borderRadius: BorderRadius.circular(AppRadius.pill),
+              border: Border.all(color: AppColors.border),
+            ),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          Text('높음', style: AppTextStyles.caption),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Vector map
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Max pinch-zoom on the vector map. Needs to be well past the auto-fit zoom
+/// of the smallest 시도 (서울·대전·광주 …) so the user can still zoom into its
+/// 자치구 after focusing it.
+const double _kMaxScale = 40;
+
+/// Default nationwide zoom: how much the map is scaled past "cover" (fills the
+/// frame) at the un-drilled view. 1.0 = exactly fill; higher = bigger map, more
+/// of the coastline cropped but reachable by dragging. **This is the knob for
+/// "make the default map bigger".**
+const double kMapZoom = 1.2;
+
+/// 시도 id the map opens already drilled into, instead of the nationwide
+/// view — 서울. `null` would fall back to the nationwide home view.
+const String kInitialFocusSidoId = '11';
+
+/// Extra empty (sea) room the user can pan *past* the map's top & bottom
+/// coastline before the drag stops — so e.g. dragging down to 제주 leaves a
+/// gap between it and the bottom nav. **The knob for map top/bottom slack.**
+const double kMapPanMarginV = 44;
+
+/// Approx. height of the translucent chrome (검색 바 + 갭지수 범례) overlaid on
+/// the map's top. The nationwide view keeps this much clear at the top so the
+/// country sits below the chrome (but drags up behind it, faintly visible).
+const double kMapChromeInset = 128;
+
+/// Blank sea margin above & below the country in the nationwide view — equal
+/// breathing room at the top (under the chrome) and bottom (over the nav bar).
+const double kMapMarginV = 20;
+
+class _KoreaMap extends StatefulWidget {
+  const _KoreaMap({
+    required this.onEnterRegion,
+    required this.favoritesActive,
+    required this.onToggleFavorites,
+    this.overlayBottomInset = 0,
+    this.topInset = 0,
+  });
+
+  /// Called with a 시군구/구 code + name when the user taps a leaf region
+  /// (a 군, a 자치구, or a 구 within a drilled 시) — `MapScreen` then swaps in
+  /// the real tile map for it.
+  final void Function(String regionCode, String regionName) onEnterRegion;
+
+  /// Whether the 즐겨찾기 overlay (star pins) is on — parent-controlled so the
+  /// split favorites list stays in sync with it.
+  final bool favoritesActive;
+  final VoidCallback onToggleFavorites;
+
+  /// Lifts the bottom-corner overlay buttons this many px, so the favorites
+  /// panel sliding up over the map doesn't cover them.
+  final double overlayBottomInset;
+
+  /// Clear space at the top taken by the translucent chrome overlay — the
+  /// nationwide "home" view is nudged down by half this so the country sits
+  /// below the chrome (not hidden behind it).
+  final double topInset;
+
+  @override
+  State<_KoreaMap> createState() => _KoreaMapState();
+}
+
+class _KoreaMapState extends State<_KoreaMap>
+    with SingleTickerProviderStateMixin {
+  final TransformationController _tc = TransformationController();
+  late final AnimationController _animController;
+  Animation<Matrix4>? _matrixAnim;
+
+  final ValueNotifier<double> _scale = ValueNotifier<double>(1);
+  final ValueNotifier<Rect> _viewport = ValueNotifier<Rect>(Rect.zero);
+
+  /// Drill state: `_focusedSido` (2-digit) expands one 시도 into its units
+  /// ([_units]); `_focusedGroup` (4-digit prefix) then expands one multi-구 시
+  /// into its 구. Tapping a leaf (a 군, a 자치구, or a 구) calls `onEnterRegion`.
+  final ValueNotifier<String?> _focusedSido = ValueNotifier<String?>(null);
+  final ValueNotifier<String?> _focusedGroup = ValueNotifier<String?>(null);
+
+  KoreaGeo? _geo;
+  bool _sigunguRequested = false;
+
+  /// True between kicking off the lazy 시군구 load and it resolving — drives
+  /// the small top loading pill + blur while the drilled-into 시도 only has
+  /// its coarse outline to show.
+  bool _sigunguLoading = false;
+
+  /// Widget-space size of the map box (the viewport), from the latest layout.
+  Size _boxSize = Size.zero;
+
+  /// The drawn canvas — the whole map at "cover" scale, so one axis overflows
+  /// the viewport and the user can pan to the clipped coastline.
+  Size _sceneSize = Size.zero;
+  bool _didCentre = false;
+
+  /// Cached projected paths, rebuilt when [_boxSize] changes.
+  Size? _pathsForSize;
+  final Map<String, Path> _sidoPaths = {};
+  final Map<String, Path> _sigunguPaths = {};
+  Path _countryOutline = Path();
+  MapProjector? _projector;
+
+  /// Union of the focused 시도's 시군구 paths — its outer edge, used instead of
+  /// the coarse `sido_boundary` polygon (the two files are simplified
+  /// differently, so the 시도 outline otherwise floats off the 시군구 fills).
+  /// Keyed by `"<sidoId>@<size>"` so it rebuilds on focus or layout change.
+  Path? _focusOutline;
+  String? _focusOutlineKey;
+
+  /// The focused 시도's tappable units: each 군/자치구 on its own, each multi-구
+  /// 시 merged into one shape until drilled into. Rebuilt with [_unitsKey].
+  List<_MapUnit> _units = const [];
+  String? _unitsKey;
+
+  /// Scene-space points of every favorited located spot, kept in sync by the
+  /// layout builder when [widget.favoritesActive] — the painter draws stars.
+  final ValueNotifier<List<Offset>> _favPoints = ValueNotifier<List<Offset>>(
+    const [],
+  );
+
+  /// True while the transform is actively changing — a live pinch/pan
+  /// gesture, or the tap-to-focus fly animation. `scale`/`viewport` (both
+  /// needed so strokes/labels stay crisp and correctly culled at any zoom)
+  /// already force the painter to repaint on every single frame of either;
+  /// what actually made that feel slow was doing its two most expensive
+  /// steps — the drop shadow and every visible label's text layout — on each
+  /// of those frames, when neither is visible mid-transform anyway. Skipping
+  /// both while this is true and drawing them once more when it settles back
+  /// to false is what fixes the jank without losing either.
+  final ValueNotifier<bool> _interacting = ValueNotifier<bool>(false);
+
+  @override
+  void initState() {
+    super.initState();
+    Favorites.instance.addListener(_onFavoritesChanged);
+    ensureRegionLockImage();
+    _animController =
+        AnimationController(vsync: this, duration: AppMotion.pageTransition)
+          ..addListener(() {
+            final anim = _matrixAnim;
+            if (anim != null) _tc.value = anim.value;
+          })
+          ..addStatusListener((status) {
+            _interacting.value = status == AnimationStatus.forward;
+          });
+    _tc.addListener(_onTransform);
+    KoreaGeo.load().then((geo) {
+      if (mounted) setState(() => _geo = geo);
+    });
+    // main.dart에서 이미 시작됐을 수 있는 로드 — 끝나면(이미 끝났어도 즉시)
+    // 실 갭지수로 다시 칠하도록 한 번 더 리페인트한다.
+    loadRealRegionStats().then((_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    Favorites.instance.removeListener(_onFavoritesChanged);
+    _tc.removeListener(_onTransform);
+    _tc.dispose();
+    _animController.dispose();
+    _interacting.dispose();
+    _scale.dispose();
+    _viewport.dispose();
+    _focusedSido.dispose();
+    _focusedGroup.dispose();
+    _favPoints.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(_KoreaMap old) {
+    super.didUpdateWidget(old);
+    // Favorites list just closed — the extra bottom pan room goes away. If the
+    // user had dragged the nationwide view up (to reach 제주 etc. past the
+    // panel), ease it back to the default framing rather than leave it stranded
+    // over where the panel was. Only at the un-drilled, un-zoomed view.
+    if (old.overlayBottomInset > 0 &&
+        widget.overlayBottomInset == 0 &&
+        _focusedSido.value == null &&
+        _scale.value < 1.05) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _animateTo(_homeMatrix());
+      });
+    }
+  }
+
+  void _onFavoritesChanged() {
+    if (mounted) setState(() {}); // refresh the star pins / removals
+  }
+
+  void _onTransform() {
+    _scale.value = _tc.value.getMaxScaleOnAxis();
+    if (_boxSize != Size.zero) {
+      final topLeft = _tc.toScene(Offset.zero);
+      final bottomRight = _tc.toScene(_boxSize.bottomRight(Offset.zero));
+      _viewport.value = Rect.fromPoints(topLeft, bottomRight);
+    }
+  }
+
+  /// Kicks off the one-time lazy load of the 시군구 layer (first 시도 focus).
+  void _ensureSigungu() {
+    if (_sigunguRequested || _geo == null) return;
+    _sigunguRequested = true;
+    setState(() => _sigunguLoading = true);
+    _geo!.ensureSigungu().then((_) {
+      if (mounted) {
+        setState(() {
+          _pathsForSize = null; // force path rebuild w/ 시군구
+          _sigunguLoading = false;
+        });
+      }
+    });
+  }
+
+  void _rebuildPaths(KoreaGeo geo, Size size) {
+    if (_pathsForSize == size) return;
+    _pathsForSize = size;
+    final project = _projector = MapProjector.cover(
+      bounds: geo.bounds,
+      viewport: size,
+      overscan: kMapZoom,
+      insetTop: widget.topInset + kMapMarginV,
+      insetBottom: kMapMarginV,
+    );
+    _sceneSize = project.size;
+    // First layout — open already drilled into kInitialFocusSidoId (서울)
+    // instead of the nationwide home view, if that 시도 exists. Set directly
+    // (not via _focusSido's _animateTo) so there's no visible pan/zoom from
+    // the controller's pre-layout identity transform on first paint.
+    if (!_didCentre) {
+      _didCentre = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        final initialId = kInitialFocusSidoId;
+        GeoRegion? initial;
+        if (initialId != null) {
+          for (final r in geo.sido) {
+            if (r.id == initialId) {
+              initial = r;
+              break;
+            }
+          }
+        }
+        final target = initial;
+        if (target == null) {
+          _tc.value = _homeMatrix();
+          return;
+        }
+        setState(() {
+          _focusedSido.value = target.id;
+          _focusedGroup.value = null;
+        });
+        _ensureSigungu();
+        final b = target.bounds;
+        final rect = Rect.fromPoints(
+          project(Offset(b.left, b.top)),
+          project(Offset(b.right, b.bottom)),
+        );
+        _tc.value = _matrixForSceneRect(rect);
+      });
+    }
+
+    Path pathFor(GeoRegion r) {
+      final p = Path()..fillType = PathFillType.evenOdd;
+      for (final ring in r.rings) {
+        if (ring.length < 2) continue;
+        p.addPolygon([for (final pt in ring) project(pt)], true);
+      }
+      return p;
+    }
+
+    _sidoPaths
+      ..clear()
+      ..addEntries(geo.sido.map((r) => MapEntry(r.id, pathFor(r))));
+
+    _countryOutline = Path();
+    for (final p in _sidoPaths.values) {
+      _countryOutline.addPath(p, Offset.zero);
+    }
+
+    _sigunguPaths
+      ..clear()
+      ..addEntries(geo.sigungu.map((r) => MapEntry(r.id, pathFor(r))));
+
+    // paths changed — force the derived caches to rebuild
+    _focusOutlineKey = null;
+    _unitsKey = null;
+  }
+
+  // ── interaction ───────────────────────────────────────────────────────────
+
+  void _animateTo(Matrix4 target) {
+    _matrixAnim = Matrix4Tween(
+      begin: _tc.value,
+      end: target,
+    ).animate(CurvedAnimation(parent: _animController, curve: AppMotion.curve));
+    _animController.forward(from: 0);
+  }
+
+  /// The nationwide "home" transform — scale 1, the canvas (which already bakes
+  /// in the top/bottom sea margin) centred in the viewport.
+  Matrix4 _homeMatrix() => Matrix4.identity()
+    ..translateByDouble(
+      -(_sceneSize.width - _boxSize.width) / 2,
+      -(_sceneSize.height - _boxSize.height) / 2,
+      0,
+      1,
+    );
+
+  /// A transform that frames [rect] (scene space). [bottomInset] shrinks the
+  /// area the region is centred in — used so a favorite tapped in the slide-up
+  /// list lands in the map band still visible above the panel, not behind it.
+  Matrix4 _matrixForSceneRect(Rect rect, {double bottomInset = 0}) {
+    final w = _boxSize.width;
+    final h = math.max(_boxSize.height - bottomInset, 1.0);
+    // 12% breathing room around the region.
+    final padded = rect.inflate(math.max(rect.width, rect.height) * 0.12);
+    final scale = math
+        .min(w / padded.width, h / padded.height)
+        .clamp(1.0, _kMaxScale);
+    final tx = (w - padded.width * scale) / 2 - padded.left * scale;
+    final ty = (h - padded.height * scale) / 2 - padded.top * scale;
+    return Matrix4.identity()
+      ..translateByDouble(tx, ty, 0, 1)
+      ..scaleByDouble(scale, scale, 1, 1);
+  }
+
+  void _zoomToSceneRect(Rect sceneRect, {double bottomInset = 0}) =>
+      _animateTo(_matrixForSceneRect(sceneRect, bottomInset: bottomInset));
+
+  void _zoomToRegion(GeoRegion region) {
+    final project =
+        _projector ??
+        MapProjector.cover(
+          bounds: _geo!.bounds,
+          viewport: _boxSize,
+          overscan: kMapZoom,
+          insetTop: widget.topInset + kMapMarginV,
+          insetBottom: kMapMarginV,
+        );
+    final b = region.bounds;
+    _zoomToSceneRect(
+      Rect.fromPoints(
+        project(Offset(b.left, b.top)),
+        project(Offset(b.right, b.bottom)),
+      ),
+    );
+  }
+
+  /// Focus one 시도: expand it to units and zoom the camera to it.
+  void _focusSido(GeoRegion sido) {
+    setState(() {
+      _focusedSido.value = sido.id;
+      _focusedGroup.value = null;
+    });
+    _ensureSigungu();
+    _zoomToRegion(sido);
+  }
+
+  /// Drill into a multi-구 시: expand it to its 구 and zoom to it.
+  void _focusGroup(_MapUnit unit) {
+    setState(() => _focusedGroup.value = unit.key);
+    _zoomToSceneRect(unit.path.getBounds());
+  }
+
+  /// Step out one level: 구 → 시도, 시도 → 전국.
+  void _popFocus() {
+    if (_focusedGroup.value != null) {
+      setState(() => _focusedGroup.value = null);
+      for (final r in _geo?.sido ?? const <GeoRegion>[]) {
+        if (r.id == _focusedSido.value) {
+          _zoomToRegion(r);
+          break;
+        }
+      }
+      return;
+    }
+    setState(() => _focusedSido.value = null);
+    _animateTo(_homeMatrix());
+  }
+
+  /// (Re)builds [_units] for the focused 시도 + layout if stale. Each 군/자치구
+  /// is its own unit; the 11 multi-구 시 (수원·성남·청주·창원 …) are merged
+  /// into one shape (keyed by their 4-digit code prefix) until drilled into.
+  void _ensureUnits() {
+    final geo = _geo;
+    final proj = _projector;
+    final sido = _focusedSido.value;
+    final key = sido == null ? null : '$sido@$_boxSize';
+    if (key == _unitsKey) return;
+    _unitsKey = key;
+
+    if (sido == null || geo == null || proj == null || !geo.sigunguReady) {
+      _units = const [];
+      return;
+    }
+
+    final labelPoint = {for (final l in geo.sigunguLabels) l.id: l.point};
+    final byPrefix = <String, List<GeoRegion>>{};
+    for (final r in geo.sigungu) {
+      if (r.sidoId != sido) continue;
+      byPrefix.putIfAbsent(r.id.substring(0, 4), () => []).add(r);
+    }
+
+    final units = <_MapUnit>[];
+    byPrefix.forEach((prefix, members) {
+      if (members.length == 1) {
+        final r = members.single;
+        final path = _sigunguPaths[r.id];
+        if (path == null) return;
+        final stats = statsForRegion(r.id);
+        units.add(
+          _MapUnit(
+            key: r.id,
+            leafId: r.id,
+            title: r.title,
+            path: path,
+            labelPoint: proj(labelPoint[r.id] ?? r.bounds.center),
+            gapIndex: stats.avgGapIndex,
+            spotCount: stats.spotCount,
+            memberCount: 1,
+          ),
+        );
+        return;
+      }
+      Path? union;
+      var gapSum = 0, spotSum = 0, count = 0;
+      var lx = 0.0, ly = 0.0;
+      for (final r in members) {
+        final path = _sigunguPaths[r.id];
+        if (path == null) continue;
+        union = union == null
+            ? path
+            : Path.combine(PathOperation.union, union, path);
+        final stats = statsForRegion(r.id);
+        gapSum += stats.avgGapIndex;
+        spotSum += stats.spotCount;
+        final lp = labelPoint[r.id] ?? r.bounds.center;
+        lx += lp.dx;
+        ly += lp.dy;
+        count++;
+      }
+      if (union == null || count == 0) return;
+      units.add(
+        _MapUnit(
+          key: prefix,
+          leafId: '',
+          // member titles are "수원시 장안구" → the 시 name is the first token.
+          title: members.first.title.split(' ').first,
+          path: union,
+          labelPoint: proj(Offset(lx / count, ly / count)),
+          gapIndex: (gapSum / count).round(),
+          spotCount: spotSum,
+          memberCount: members.length,
+        ),
+      );
+    });
+    _units = units;
+  }
+
+  /// (Re)builds [_focusOutline] for the current focus + layout if stale.
+  void _ensureFocusOutline() {
+    final geo = _geo;
+    final focused = _focusedSido.value;
+    final key = focused == null ? null : '$focused@$_boxSize';
+    if (key == _focusOutlineKey) return;
+    _focusOutlineKey = key;
+
+    if (focused == null || geo == null || !geo.sigunguReady) {
+      _focusOutline = null;
+      return;
+    }
+    Path? union;
+    for (final r in geo.sigungu) {
+      if (r.sidoId != focused) continue;
+      final p = _sigunguPaths[r.id];
+      if (p == null) continue;
+      union = union == null ? p : Path.combine(PathOperation.union, union, p);
+    }
+    _focusOutline = union;
+  }
+
+  void _handleTap(Offset scenePos) {
+    final geo = _geo;
+    if (geo == null) return;
+    final sido = _focusedSido.value;
+    final group = _focusedGroup.value;
+
+    // ── Level 2: drilled into a multi-구 시 ──────────────────────────────────
+    if (group != null) {
+      for (final r in geo.sigungu) {
+        if (!r.id.startsWith(group)) continue;
+        if (_sigunguPaths[r.id]?.contains(scenePos) ?? false) {
+          widget.onEnterRegion(r.id, r.title); // a 구 → real tile map
+          return;
+        }
+      }
+      _popFocus(); // tapped outside the 시 → back to the 시도
+      return;
+    }
+
+    // ── Level 1: a 시도 is focused, showing its units ───────────────────────
+    if (sido != null) {
+      for (final u in _units) {
+        if (!(u.path.contains(scenePos))) continue;
+        if (u.isDrillable) {
+          _focusGroup(u); // 수원시 등 → show its 구
+        } else {
+          widget.onEnterRegion(u.leafId, u.title); // 군/자치구 → real tile map
+        }
+        return;
+      }
+      // Inside the 시도 but between units (edges still loading) — ignore.
+      if ((_focusOutline ?? _sidoPaths[sido])?.contains(scenePos) ?? false) {
+        return;
+      }
+    }
+
+    // ── Level 0: pick a 시도 (or re-pick / step out) ───────────────────────
+    for (final r in geo.sido) {
+      if (_sidoPaths[r.id]?.contains(scenePos) ?? false) {
+        if (isSidoLocked(r.id)) {
+          showRegionComingSoonToast(context);
+        } else if (r.id == sido) {
+          _popFocus();
+        } else {
+          _focusSido(r);
+        }
+        return;
+      }
+    }
+
+    if (sido != null) _popFocus(); // tapped the sea
+  }
+
+  // ── build ─────────────────────────────────────────────────────────────────
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      // Always intercept (rather than `canPop: _focusedSido.value == null`)
+      // so this one `PopScope` can also own the tab-root back-to-방앗간 case
+      // below — Flutter only lets a route pop once *every* `PopScope`
+      // registered on it reports `canPop: true`, so a second, independent
+      // `PopScope` here (e.g. wrapping the whole screen in
+      // `_BackToMillHome`) would fire its own handler on every drill-level
+      // step-out too, not just when actually leaving the screen.
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        if (_focusedSido.value != null) {
+          // Drilled into a 시도 (or further) — step out one level instead of
+          // leaving the screen.
+          _popFocus();
+          return;
+        }
+        if (Navigator.of(context).canPop()) {
+          // Reached via a normal push (e.g. 방앗간's "지도 열기" mini-map
+          // button) with something below to return to — pop normally. A
+          // plain `pop()` is required here, not `maybePop()`, since this
+          // `PopScope`'s own `canPop: false` would make `maybePop()` defer
+          // straight back to this same handler.
+          Navigator.of(context).pop();
+          return;
+        }
+        // Nationwide view, reached as the `<지도>` tab's root (nothing below
+        // to pop to) — back returns to 방앗간 first, same as 랭킹/기록
+        // (`app_bottom_nav_bar.dart`'s `_BackToMillHome`). The
+        // double-back-to-exit hint only applies once already on 방앗간.
+        AppBottomNavBar.goToMillHomeTab(context);
+      },
+      child: _buildMap(context, _geo),
+    );
+  }
+
+  /// Fills whatever space the parent gives it — the projection is uniform-fit
+  /// so the map keeps its shape and the overlay buttons stay pinned to the
+  /// box's corners regardless of aspect ratio.
+  Widget _buildMap(BuildContext context, KoreaGeo? geo) {
+    return LoadingOverlay(
+      loading: geo == null || _sigunguLoading,
+      child: _buildMapContent(context, geo),
+    );
+  }
+
+  Widget _buildMapContent(BuildContext context, KoreaGeo? geo) {
+    return SizedBox.expand(
+      child: geo == null
+          ? const ColoredBox(color: kMapSeaColor)
+          : LayoutBuilder(
+              builder: (context, constraints) {
+                final size = constraints.biggest;
+                _boxSize = size;
+                _rebuildPaths(geo, size);
+                _ensureFocusOutline();
+                _ensureUnits();
+                if (_viewport.value == Rect.zero) {
+                  _viewport.value = Offset.zero & size;
+                }
+                // Keep the 즐겨찾기 star pins glued to their lat/lng across
+                // layout changes.
+                final project = _projector!;
+                _favPoints.value = widget.favoritesActive
+                    ? [
+                        for (final f in Favorites.instance.locatedSpots())
+                          project(
+                            Epsg5179.fromLatLng(
+                              LatLng(f.spot.lat!, f.spot.lng!),
+                            ),
+                          ),
+                      ]
+                    : const [];
+
+                return ClipRect(
+                  child: Stack(
+                    children: [
+                      // Sea behind the land — also fills the pan slack past the
+                      // coastline so dragging never shows the cream Scaffold.
+                      const Positioned.fill(
+                        child: ColoredBox(color: kMapSeaColor),
+                      ),
+                      Positioned.fill(
+                        child: InteractiveViewer(
+                          transformationController: _tc,
+                          constrained: false,
+                          minScale: 1,
+                          maxScale: _kMaxScale,
+                          onInteractionStart: (_) => _interacting.value = true,
+                          onInteractionEnd: (_) => _interacting.value = false,
+                          // Pannable sea beyond the top & bottom coastline.
+                          // While the favorites list is up it also covers the
+                          // map's lower part — add that height to the bottom so
+                          // 전남·제주 can be dragged up clear of the panel and
+                          // still tapped. The map itself never moves/resizes;
+                          // only the allowed pan range grows.
+                          boundaryMargin: EdgeInsets.only(
+                            top: kMapPanMarginV,
+                            bottom: kMapPanMarginV + widget.overlayBottomInset,
+                          ),
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTapUp: (d) => _handleTap(d.localPosition),
+                            child: CustomPaint(
+                              size: _sceneSize,
+                              painter: _KoreaMapPainter(
+                                geo: geo,
+                                project: _projector!,
+                                sidoPaths: _sidoPaths,
+                                sigunguPaths: _sigunguPaths,
+                                countryOutline: _countryOutline,
+                                scale: _scale,
+                                viewport: _viewport,
+                                interacting: _interacting,
+                                focusedSido: _focusedSido,
+                                focusedGroup: _focusedGroup,
+                                focusOutline: _focusOutline,
+                                units: _units,
+                                lockIcon: regionLockImage,
+                                showFavorites: widget.favoritesActive,
+                                favPoints: _favPoints,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      AnimatedPositioned(
+                        duration: AppMotion.standard,
+                        curve: AppMotion.curve,
+                        left: AppSpacing.sm,
+                        bottom: AppSpacing.sm + widget.overlayBottomInset,
+                        child: MapToggleButton(
+                          icon: Symbols.star_rounded,
+                          label: '즐겨찾기',
+                          active: widget.favoritesActive,
+                          onTap: widget.onToggleFavorites,
+                        ),
+                      ),
+                      AnimatedPositioned(
+                        duration: AppMotion.standard,
+                        curve: AppMotion.curve,
+                        right: AppSpacing.sm,
+                        bottom: AppSpacing.sm + widget.overlayBottomInset,
+                        child: _ResetViewButton(
+                          scale: _scale,
+                          focusedSido: _focusedSido,
+                          focusedGroup: _focusedGroup,
+                          onTap: _popFocus,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+    );
+  }
+}
+
+/// Step-out pill, bottom-right of the map. Hidden at the nationwide view;
+/// "뒤로" while drilled into a 시, "전국 보기" while a 시도 is focused.
+class _ResetViewButton extends StatelessWidget {
+  const _ResetViewButton({
+    required this.scale,
+    required this.focusedSido,
+    required this.focusedGroup,
+    required this.onTap,
+  });
+
+  final ValueListenable<double> scale;
+  final ValueListenable<String?> focusedSido;
+  final ValueListenable<String?> focusedGroup;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: Listenable.merge([scale, focusedSido, focusedGroup]),
+      builder: (context, child) {
+        final drilled = focusedGroup.value != null;
+        final visible =
+            scale.value > 1.02 || focusedSido.value != null || drilled;
+        return AnimatedOpacity(
+          opacity: visible ? 1 : 0,
+          duration: AppMotion.standard,
+          child: IgnorePointer(
+            ignoring: !visible,
+            child: Material(
+              color: AppColors.surface,
+              elevation: 2,
+              borderRadius: BorderRadius.circular(AppRadius.pill),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(AppRadius.pill),
+                onTap: onTap,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.md,
+                    vertical: AppSpacing.xs,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        drilled
+                            ? Symbols.arrow_back_rounded
+                            : Symbols.zoom_out_map_rounded,
+                        size: 16,
+                        color: AppColors.primary,
+                      ),
+                      const SizedBox(width: AppSpacing.xs),
+                      Text(
+                        drilled ? '뒤로' : '전국 보기',
+                        style: AppTextStyles.caption.copyWith(
+                          color: AppColors.primary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// One tappable shape on the 시군구 layer: a whole 군/자치구, or a multi-구 시
+/// shown merged ([isDrillable]) until the user taps into it.
+class _MapUnit {
+  _MapUnit({
+    required this.key,
+    required this.leafId,
+    required this.title,
+    required this.path,
+    required this.labelPoint,
+    required this.gapIndex,
+    required this.spotCount,
+    required this.memberCount,
+  });
+
+  /// 4-digit 시 code prefix when [isDrillable], else the 5-digit 시군구 code.
+  final String key;
+
+  /// 5-digit code to open on the real map — only meaningful when not drillable.
+  final String leafId;
+  final String title;
+
+  /// Scene-space (projected) polygon and label anchor.
+  final Path path;
+  final Offset labelPoint;
+
+  final int gapIndex;
+
+  /// Total 관광 스팟 수 across the unit (a solo 군/자치구, or every 구 of a
+  /// merged 시) — shown as the label subtitle alongside [gapIndex].
+  final int spotCount;
+
+  final int memberCount;
+
+  bool get isDrillable => memberCount > 1;
+}
+
+/// Paints the 17 시도, then per drill level: the focused 시도's [units]
+/// (L1) or one opened 시's 구 (L2), each filled by its 갭지수 colour. Strokes
+/// / text sizes are divided by the live zoom so they keep a constant
+/// on-screen weight.
+class _KoreaMapPainter extends CustomPainter {
+  _KoreaMapPainter({
+    required this.geo,
+    required this.project,
+    required this.sidoPaths,
+    required this.sigunguPaths,
+    required this.countryOutline,
+    required this.scale,
+    required this.viewport,
+    required this.interacting,
+    required this.focusedSido,
+    required this.focusedGroup,
+    required this.focusOutline,
+    required this.units,
+    required this.lockIcon,
+    required this.showFavorites,
+    required this.favPoints,
+  }) : super(
+         repaint: Listenable.merge([
+           scale,
+           viewport,
+           interacting,
+           focusedSido,
+           focusedGroup,
+           lockIcon,
+           favPoints,
+         ]),
+       );
+
+  final KoreaGeo geo;
+
+  /// The exact projector the paths were built with (baked-in sea insets).
+  final MapProjector project;
+
+  final Map<String, Path> sidoPaths;
+  final Map<String, Path> sigunguPaths;
+  final Path countryOutline;
+  final ValueListenable<double> scale;
+  final ValueListenable<Rect> viewport;
+
+  /// See `_KoreaMapState._interacting` — while true, [paint] skips the drop
+  /// shadow and every label's text layout (the two priciest steps) since
+  /// neither is visible mid-gesture anyway.
+  final ValueListenable<bool> interacting;
+  final ValueListenable<String?> focusedSido;
+  final ValueListenable<String?> focusedGroup;
+
+  /// Union of the focused 시도's 시군구 — drawn as that province's outline so
+  /// it hugs the 시군구 fills. `null` when nothing is focused / not ready yet.
+  final Path? focusOutline;
+
+  /// The focused 시도's tappable units (see [_MapUnit]).
+  final List<_MapUnit> units;
+
+  /// Decoded `lock.png`, drawn over locked (non-서울) 시도 at the nationwide
+  /// view — `null` while still loading (그 시도는 그냥 회색으로만 남는다).
+  final ValueListenable<ui.Image?> lockIcon;
+
+  /// "즐겨찾기" — draw an amber star pin at every favorited spot.
+  final bool showFavorites;
+
+  /// Scene-space positions of every favorited located spot.
+  final ValueListenable<List<Offset>> favPoints;
+
+  /// Scene-space rects of the label cards drawn this frame — a new card that
+  /// would overlap one already placed is skipped (falls back to its bare name).
+  final List<Rect> _labelRects = [];
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final z = scale.value.clamp(1.0, _kMaxScale);
+    final view = viewport.value;
+    final focused = focusedSido.value;
+    final group = focusedGroup.value;
+    final busy = interacting.value;
+    _labelRects.clear();
+
+    // 실제 물리 그림자(drawShadow)는 복잡한 폴리곤일수록 프레임당 비용이 커서
+    // — 제스처 중 매 프레임 다시 계산해도 어차피 안 보이니(카메라가 계속
+    // 움직이는 중) 정지 상태(제스처/애니메이션이 끝난 순간)에만 그린다.
+    if (!busy) {
+      canvas.drawShadow(
+        focused != null && focusOutline != null
+            ? focusOutline!
+            : countryOutline,
+        AppColors.textPrimary.withValues(alpha: 0.5),
+        6,
+        false,
+      );
+    }
+
+    final sidoStroke = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeJoin = StrokeJoin.round
+      ..strokeWidth = 1.6 / z
+      ..color = AppColors.surface;
+    final unitStroke = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeJoin = StrokeJoin.round
+      ..strokeWidth = 0.9 / z
+      ..color = AppColors.surface.withValues(alpha: 0.85);
+
+    // 시도 fills (base layer — always). 서울 외에는 아직 실제 regionId 필터를
+    // 못 써서(`docs/backend_requirements_pending.md` 6번) 회색으로 잠가둔다.
+    for (final region in geo.sido) {
+      final path = sidoPaths[region.id];
+      if (path == null) continue;
+      if (isSidoLocked(region.id)) {
+        canvas.drawPath(path, Paint()..color = AppColors.surfaceDisabled);
+        continue;
+      }
+      final stats = statsForRegion(region.id);
+      canvas.drawPath(path, Paint()..color = gapIndexColor(stats.avgGapIndex));
+    }
+
+    if (focused != null && geo.sigunguReady) {
+      if (group == null) {
+        // Level 1 — the 시도's units (군/자치구 solo, multi-구 시 merged).
+        for (final u in units) {
+          canvas.drawPath(u.path, Paint()..color = gapIndexColor(u.gapIndex));
+          canvas.drawPath(u.path, unitStroke);
+        }
+      } else {
+        // Level 2 — one multi-구 시 opened to its 구; siblings recede.
+        for (final u in units) {
+          if (u.key == group) continue;
+          canvas.drawPath(
+            u.path,
+            Paint()..color = gapIndexColor(u.gapIndex).withValues(alpha: 0.3),
+          );
+        }
+        for (final r in geo.sigungu) {
+          if (!r.id.startsWith(group)) continue;
+          final path = sigunguPaths[r.id];
+          if (path == null) continue;
+          final stats = statsForRegion(r.id);
+          canvas.drawPath(
+            path,
+            Paint()..color = gapIndexColor(stats.avgGapIndex),
+          );
+          canvas.drawPath(path, unitStroke);
+        }
+      }
+    }
+
+    // Outlines last. `sido_boundary` and `sigungu_boundary` are generalised
+    // differently, so while a 시도 is focused only its own outline is drawn
+    // (from [focusOutline]); other provinces' coarse edges are dropped rather
+    // than left as stray white lines that miss the fills.
+    if (focused == null) {
+      for (final path in sidoPaths.values) {
+        canvas.drawPath(path, sidoStroke);
+      }
+    } else {
+      canvas.drawPath(focusOutline ?? sidoPaths[focused] ?? Path(), sidoStroke);
+      if (group != null) {
+        for (final u in units) {
+          if (u.key == group) {
+            canvas.drawPath(u.path, sidoStroke);
+            break;
+          }
+        }
+      }
+    }
+
+    // 라벨은 지역마다 TextPainter 레이아웃(+갭지수 카드가 도형 안에 들어가는지
+    // Path.contains 4회) 을 새로 계산한다 — 제스처 중에도 계속 그린다. 한때
+    // 정지 상태에서만 그리도록 건너뛴 적이 있었는데, 드래그하는 동안 텍스트가
+    // 깜빡이며 사라졌다 나타나는 게 오히려 거슬려서(가독성 문제) 되돌렸다.
+    _paintLabels(canvas, project, z, view, focused, group);
+    _paintFavorites(canvas, z);
+  }
+
+  /// Amber star pins for **every** favorited spot in the country (constant
+  /// on-screen size ÷ z, white edge), matching the star pins on the real tile
+  /// map. Not viewport-culled: whichever region the camera sits on, the other
+  /// regions' favorites stay on the canvas and a small pan brings them in.
+  void _paintFavorites(Canvas canvas, double z) {
+    if (!showFavorites) return;
+    final pts = favPoints.value;
+    if (pts.isEmpty) return;
+    final r = 7 / z;
+    final edge = Paint()..color = AppColors.surface;
+    final fill = Paint()..color = AppColors.secondaryAccent;
+    for (final p in pts) {
+      canvas.drawPath(_starPath(p, r + 2.4 / z), edge);
+      canvas.drawPath(_starPath(p, r), fill);
+    }
+  }
+
+  Path _starPath(Offset c, double rOuter) {
+    final rInner = rOuter * 0.42;
+    final path = Path();
+    for (var i = 0; i < 10; i++) {
+      final radius = i.isEven ? rOuter : rInner;
+      final a = -math.pi / 2 + i * math.pi / 5;
+      final pt = Offset(
+        c.dx + math.cos(a) * radius,
+        c.dy + math.sin(a) * radius,
+      );
+      i == 0 ? path.moveTo(pt.dx, pt.dy) : path.lineTo(pt.dx, pt.dy);
+    }
+    return path..close();
+  }
+
+  void _paintLabels(
+    Canvas canvas,
+    MapProjector project,
+    double z,
+    Rect view,
+    String? focused,
+    String? group,
+  ) {
+    // 시도 labels — every 시도 but the focused one.
+    for (final label in geo.sidoLabels) {
+      if (label.id == focused) continue;
+      final region = sidoPaths[label.id];
+      if (region == null) continue;
+      final p = project(label.point);
+      if (!view.contains(p)) continue;
+      final stats = statsForRegion(label.id);
+      final name = kSidoShortName[label.id] ?? label.title;
+
+      if (focused == null && isSidoLocked(label.id)) {
+        // 잠긴 시도는 갭지수·스팟 대신 자물쇠 + 이름만 보여준다.
+        _drawLockedSidoLabel(canvas, name: name, center: p, z: z);
+      } else if (focused == null) {
+        // Province names anchor the country view — always shown (short form);
+        // the 갭지수·스팟 카드 is added only when it actually fits.
+        _drawStatLabel(
+          canvas,
+          text: name,
+          center: p,
+          gapIndex: stats.avgGapIndex,
+          spotCount: stats.spotCount,
+          fontPx: 13 / z,
+          region: region,
+        );
+      } else {
+        // Another 시도 is focused; these are just context — fit or hide.
+        _drawLabel(
+          canvas,
+          text: name,
+          center: p,
+          gap: stats.avgGapIndex,
+          fontPx: 13 / z,
+          region: region,
+        );
+      }
+    }
+
+    if (focused == null) return;
+
+    if (group == null) {
+      // Level 1 — one label per unit (the merged 시 name, or 군/자치구 name),
+      // with the 갭지수·스팟 line added once it fits inside the unit's shape.
+      for (final u in units) {
+        if (!view.contains(u.labelPoint)) continue;
+        _drawStatLabel(
+          canvas,
+          text: u.title,
+          center: u.labelPoint,
+          gapIndex: u.gapIndex,
+          spotCount: u.spotCount,
+          fontPx: 12 / z,
+          region: u.path,
+        );
+      }
+    } else if (geo.sigunguReady) {
+      // Level 2 — 구 names within the opened 시 ("장안구", not "수원시 장안구").
+      for (final label in geo.sigunguLabels) {
+        if (!label.id.startsWith(group)) continue;
+        final region = sigunguPaths[label.id];
+        if (region == null) continue;
+        final p = project(label.point);
+        if (!view.contains(p)) continue;
+        final stats = statsForRegion(label.id);
+        _drawStatLabel(
+          canvas,
+          text: label.title.split(' ').last,
+          center: p,
+          gapIndex: stats.avgGapIndex,
+          spotCount: stats.spotCount,
+          fontPx: 12 / z,
+          region: region,
+        );
+      }
+    }
+  }
+
+  /// The "갭지수 N · 스팟 M" line when it fits inside the shape and clears the
+  /// labels already placed; otherwise the bare region name (always — it
+  /// anchors the view). The stats line appears once you zoom in enough that
+  /// the whole thing actually fits inside the region.
+  void _drawStatLabel(
+    Canvas canvas, {
+    required String text,
+    required Offset center,
+    required int gapIndex,
+    required int spotCount,
+    required double fontPx,
+    required Path region,
+  }) {
+    final drewStats = _drawLabel(
+      canvas,
+      text: text,
+      center: center,
+      gap: gapIndex,
+      spotCount: spotCount,
+      fontPx: fontPx,
+      region: region,
+    );
+    if (!drewStats) {
+      _drawLabel(
+        canvas,
+        text: text,
+        center: center,
+        gap: gapIndex,
+        fontPx: fontPx,
+        region: region,
+        enforceFit: false,
+      );
+    }
+  }
+
+  /// 잠긴(서울 외) 시도의 라벨 — 갭지수 카드 대신 자물쇠 아이콘 + 이름만,
+  /// 화면상 크기 고정(별 핀과 같은 방식으로 `/z`).
+  void _drawLockedSidoLabel(
+    Canvas canvas, {
+    required String name,
+    required Offset center,
+    required double z,
+  }) {
+    final icon = lockIcon.value;
+    final iconSize = 28 / z;
+    if (icon != null) {
+      canvas.drawImageRect(
+        icon,
+        Rect.fromLTWH(0, 0, icon.width.toDouble(), icon.height.toDouble()),
+        Rect.fromCenter(
+          center: center - Offset(0, iconSize * 0.6),
+          width: iconSize,
+          height: iconSize,
+        ),
+        Paint()..filterQuality = FilterQuality.medium,
+      );
+    }
+    final fontPx = 12 / z;
+    final tp = TextPainter(
+      text: TextSpan(
+        text: name,
+        style: TextStyle(
+          color: AppColors.textDisabled,
+          fontSize: fontPx,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+      textAlign: TextAlign.center,
+      textDirection: TextDirection.ltr,
+    )..layout();
+    final textCenter = center + Offset(0, iconSize * 0.7);
+    tp.paint(canvas, textCenter - Offset(tp.width / 2, tp.height / 2));
+  }
+
+  bool _boxInside(Path region, Rect box) =>
+      region.contains(box.topLeft) &&
+      region.contains(box.topRight) &&
+      region.contains(box.bottomLeft) &&
+      region.contains(box.bottomRight);
+
+  /// Draws [text] centred at [center] — but only if the label fits inside
+  /// [region] at the current scale and doesn't collide with a label already
+  /// placed this frame, so labels appear as you zoom in rather than piling up.
+  /// Returns whether it drew.
+  ///
+  /// Plain haloed text (no card/border — a bordered box was reading as a
+  /// jagged/flattened smear at some zooms and, once always-shown, caused
+  /// neighbouring labels to overlap). With [spotCount], the same text box
+  /// just grows a second, smaller "갭지수 N · 스팟 M" line below the name
+  /// (same colour) instead of the name-only text — since the box must still
+  /// clear [_boxInside], that line only appears once the region is zoomed in
+  /// enough for the whole two-line label to fit inside it.
+  bool _drawLabel(
+    Canvas canvas, {
+    required String text,
+    required Offset center,
+    required int gap,
+    required double fontPx,
+    required Path region,
+    int? spotCount,
+    bool enforceFit = true,
+  }) {
+    final onDark =
+        ThemeData.estimateBrightnessForColor(gapIndexColor(gap)) ==
+        Brightness.dark;
+    final fg = onDark ? AppColors.surface : AppColors.textPrimary;
+    final halo = (onDark ? Colors.black : AppColors.surface).withValues(
+      alpha: 0.6,
+    );
+    final shadows = [Shadow(color: halo, blurRadius: fontPx * 0.4)];
+    final nameStyle = TextStyle(
+      color: fg,
+      fontSize: fontPx,
+      fontWeight: FontWeight.w700,
+      // A font's own line-box padding above/below its glyphs can be thin, so
+      // 1.3 wasn't leaving a visibly clear gap between the two stacked lines
+      // at small sizes — bumped up for an unambiguous gap between them.
+      height: 1.7,
+      shadows: shadows,
+    );
+
+    final tp = TextPainter(
+      text: spotCount == null
+          ? TextSpan(text: text, style: nameStyle)
+          : TextSpan(
+              children: [
+                TextSpan(text: text, style: nameStyle),
+                TextSpan(
+                  text: '\n고요 지수 $gap · 스팟 $spotCount',
+                  style: nameStyle.copyWith(
+                    fontSize: fontPx * 0.86,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+      textAlign: TextAlign.center,
+      textDirection: TextDirection.ltr,
+    )..layout();
+
+    // The margin here (over the text's own size) is what decides how zoomed
+    // in a region needs to be before the 갭지수·스팟 line shows — smaller
+    // margin = fits (and so appears) at a lower zoom.
+    final box = Rect.fromCenter(
+      center: center,
+      width: tp.width * 0.7,
+      height: tp.height * 0.75,
+    );
+    if (enforceFit && !_boxInside(region, box)) return false;
+    // The name always shows (it anchors the view) so only the richer
+    // stats line needs to dodge already-placed labels.
+    if (spotCount != null && _labelRects.any((r) => r.overlaps(box))) {
+      return false;
+    }
+    tp.paint(canvas, center - Offset(tp.width / 2, tp.height / 2));
+    _labelRects.add(box);
+    return true;
+  }
+
+  @override
+  bool shouldRepaint(_KoreaMapPainter old) =>
+      old.geo != geo ||
+      old.project != project ||
+      old.sidoPaths != sidoPaths ||
+      old.sigunguPaths != sigunguPaths ||
+      old.countryOutline != countryOutline ||
+      old.focusedSido != focusedSido ||
+      old.focusedGroup != focusedGroup ||
+      old.focusOutline != focusOutline ||
+      old.showFavorites != showFavorites ||
+      old.favPoints != favPoints ||
+      !identical(old.units, units);
+}

@@ -1,0 +1,19 @@
+{"type":"FeatureCollection", "features": [
+{"type":"Feature","geometry":{"type":"Point","coordinates":[955119,1950420]},"properties":{"id":"11","title":"서울특별시"}},
+{"type":"Feature","geometry":{"type":"Point","coordinates":[1143556,1691983]},"properties":{"id":"21","title":"부산광역시"}},
+{"type":"Feature","geometry":{"type":"Point","coordinates":[1102659,1768723]},"properties":{"id":"22","title":"대구광역시"}},
+{"type":"Feature","geometry":{"type":"Point","coordinates":[928038,1940099]},"properties":{"id":"23","title":"인천광역시"}},
+{"type":"Feature","geometry":{"type":"Point","coordinates":[939568,1684597]},"properties":{"id":"24","title":"광주광역시"}},
+{"type":"Feature","geometry":{"type":"Point","coordinates":[990662,1816699]},"properties":{"id":"25","title":"대전광역시"}},
+{"type":"Feature","geometry":{"type":"Point","coordinates":[1157598,1730006]},"properties":{"id":"26","title":"울산광역시"}},
+{"type":"Feature","geometry":{"type":"Point","coordinates":[979201,1836702]},"properties":{"id":"29","title":"세종특별자치시"}},
+{"type":"Feature","geometry":{"type":"Point","coordinates":[994237,1935414]},"properties":{"id":"31","title":"경기도"}},
+{"type":"Feature","geometry":{"type":"Point","coordinates":[1070541,1970024]},"properties":{"id":"32","title":"강원도"}},
+{"type":"Feature","geometry":{"type":"Point","coordinates":[1018793,1870671]},"properties":{"id":"33","title":"충청북도"}},
+{"type":"Feature","geometry":{"type":"Point","coordinates":[942447,1837116]},"properties":{"id":"34","title":"충청남도"}},
+{"type":"Feature","geometry":{"type":"Point","coordinates":[949496,1651669]},"properties":{"id":"36","title":"전라남도"}},
+{"type":"Feature","geometry":{"type":"Point","coordinates":[1121088,1844562]},"properties":{"id":"37","title":"경상북도"}},
+{"type":"Feature","geometry":{"type":"Point","coordinates":[1068625,1707180]},"properties":{"id":"38","title":"경상남도"}},
+{"type":"Feature","geometry":{"type":"Point","coordinates":[912007,1488525]},"properties":{"id":"39","title":"제주특별자치도"}},
+{"type":"Feature","geometry":{"type":"Point","coordinates":[968574,1748115]},"properties":{"id":"35","title":"전라북도"}}
+]}

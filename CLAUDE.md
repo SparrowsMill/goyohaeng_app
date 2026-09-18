@@ -20,7 +20,13 @@ Core colors:
 
 Surfaces:
 
-- App background: #F8F2E8
+- App background: #FAE7C0 — always set this as the screen's base `Container`/
+  `Scaffold` background color, on every screen, regardless of whether a scene
+  image is present yet. Scene images (see `assets/illustrations/scenes/` in
+  §9) are supplied as opaque, non-transparent PNGs already painted with this
+  same color, not cutouts — so #FAE7C0 underneath is a safety net (covers any
+  edge gap, a missing/not-yet-provided image, or slow load), not the visible
+  background in the normal case.
 - Primary surface / card background: #FFFDF8
 - Secondary surface / selected light background: #EEF0DE
 - Disabled surface: #E9E3D9
@@ -256,7 +262,7 @@ Functional icons must use:
 
 - Height: 56px
 - Horizontal padding: 20px
-- Background: #F8F2E8
+- Background: #FAE7C0
 - Title: Title style, 18px, 600, centered
 - Back icon: 24px
 - No thick bottom divider
@@ -330,27 +336,83 @@ background, exported at 3x the largest on-screen display size (Flutter
 downsamples cleanly; no `2.0x`/`3.0x` variant folders needed).
 
 - `assets/branding/`
-  - `app_icon.png` — app icon source (1024x1024)
-  - `app_logo.png` — in-app logo lockup (wordmark + decorative flourish + tagline,
-    baked in as a single image)
+  - `app_icon_2.png` — app icon source (1024x1024)
+  - `app_logo_2.png` — in-app logo lockup (wordmark + decorative flourish + tagline,
+    baked in as a single image); shown small, centered just below the `start_bg`
+    scene band on the login screen (signup omits it)
   - `splash.png` — splash screen image
   - `leaf_ornament.png` — small decorative leaf/branch flourish used beside section
     headings (e.g. "로그인" / "회원가입" card titles); mirror horizontally in code
     for the opposite side instead of exporting a second file
+  - `paper_texture.png` — seamless/tileable paper-grain texture, applied app-wide
+    at very low opacity by `PaperTextureOverlay` (`lib/widgets/paper_texture_overlay.dart`),
+    wired in once via `MaterialApp.builder` in `main.dart`. No per-screen code
+    needed — every screen, dialog, and bottom sheet picks it up automatically.
+    Must tile with no visible seam; export with a transparent (not white) base
+    so only the grain shows
 - `assets/illustrations/sparrow/`
   - `sparrow_default.png`, `sparrow_{state}.png` — sparrow character per pose/emotion (e.g. `sparrow_happy.png`)
 - `assets/illustrations/rewards/`
   - `ingredient_{name}.png` — mill ingredient reward images (e.g. `ingredient_rice.png`)
   - `travel_{name}.png` — travel reward scene images (e.g. `travel_beach.png`)
-- `assets/illustrations/map/`
-  - `map_{name}.png` — decorative map storytelling elements (e.g. `map_windmill.png`)
+  - `dish/dish_{english_slug}.png` — per-item watercolor illustration for
+    `Food`/`UserFood`. Real places (`Place.imageUrl`) can't use this pattern —
+    there are 1,700+ of them, each a real business photo, so those stay
+    backend-provided.
+  - `ingredient/ingredient_{english_slug}.png` — per-item watercolor
+    illustration for `Ingredient`.
+
+  Both folders are English-named (ASCII, no spaces) so they're S3/CDN-
+  upload-safe. Since the server `name` for a dish/ingredient is Korean, each
+  folder has a Korean-name → filename map in `lib/widgets/reward_image.dart`
+  (`_dishAssetOverrides`, `_ingredientAssetOverrides`) — add a new entry there
+  whenever a new dish/ingredient asset is dropped in; a name with no entry (and
+  no exact-match file) just falls through to the server URL. All 39 foods and
+  all 27 ingredients in the content master (재료/음식 seed data — IDs
+  I01–I27, D01–D39) are mapped this way.
+
+  Both folders are read through `lib/widgets/reward_image.dart` (`RewardImage`):
+  local asset first, then server `imageUrl`/`illustrationUrl`, then an icon —
+  so a missing local file just falls through instead of erroring.
+- `assets/maps/` — GeoJSON, not art. The `<지도>` screen
+  (`lib/screens/map/map_screen.dart`) renders a live vector map from
+  `sido_boundary` / `sigungu_boundary` (+ `*_labels` inner points); parsed by
+  `lib/data/korea_map_geo.dart`, shaded by `mock_map_regions.dart`. No
+  per-region map illustration is needed for that screen.
+- `assets/illustrations/map/` — decorative map storytelling elements
+  (`map_{name}.png`, e.g. `map_windmill.png`). The mill-home mini-map is no
+  longer baked art — it renders the live `<지도>` vector map cropped to the
+  user's location (`lib/widgets/mini_korea_map.dart`).
+- `assets/illustrations/icon/`
+  - `main_{name}_icon.png` — small cutout (RGBA) decorative icons standing in for
+    what would otherwise be a functional Material Symbol, used where the design
+    calls for a more illustrated look than a line icon (e.g. mill-home's stat
+    row: `main_calendar_icon.png`, `main_collected_icon.png`, `main_verified_icon.png`;
+    and its CTA button icon `main_meal_icon.png`). Default to Material Symbols
+    (§6) unless an asset in this folder covers that specific icon.
 - `assets/illustrations/scenes/`
-  - `{name}.png` — full-screen watercolor background scenes shared across a group
-    of screens (e.g. `auth_bg.png` behind login/signup)
+  - `{name}.png` — watercolor scene for one screen or a group of related
+    screens, painted as a top-anchored header band (full screen width, its
+    own aspect ratio sets the height) sitting over the `#FAE7C0` base fill
+    that shows through everything below it — not a full-bleed image (e.g.
+    `start_bg.png` behind both the login and signup screens (login shows a
+    small centered `app_logo_2.png` just below the band; signup does not);
+    `account_bg.png` behind the account center;
+    `mill_bg.png` behind the mill-home screen, with the standalone
+    `sparrow/sparrow_default.png` character composited on top in code rather
+    than baked into the scene, so it can be reused/repositioned per screen).
+    Every screen in the app gets
+    one of these behind its content; screens that share a clear visual
+    grouping (e.g. auth flow) may share one file. Supplied as an opaque PNG
+    (no transparency/cutout) already painted with the #FAE7C0 app background
+    color, so it drops in directly over the base `#FAE7C0` `Scaffold`.
 
 Reference assets in code via `Image.asset('assets/<category>/<file>.png')`.
 Do not invent placeholder art for a missing file — if a screen needs an asset
 that isn't in these folders yet, ask for it instead of generating a stand-in.
+The user supplies each scene image; when building a new screen and no matching
+`scenes/{name}.png` exists yet, ask for it rather than shipping a flat-color
+background as a substitute.
 
 ## Important
 

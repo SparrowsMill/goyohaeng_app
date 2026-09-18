@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
+import '../../api/api.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_radius.dart';
 import '../../theme/app_spacing.dart';
@@ -11,6 +12,8 @@ import '../../widgets/app_password_field.dart';
 import '../../widgets/app_text_field.dart';
 import '../../widgets/leaf_section_header.dart';
 import 'auth_page_background.dart';
+import 'terms_content.dart';
+import 'terms_detail_screen.dart';
 
 final _idPattern = RegExp(r'^[a-zA-Z0-9]{4,20}$');
 final _passwordPattern = RegExp(r'^(?=.*[A-Za-z])(?=.*\d).{8,20}$');
@@ -33,15 +36,17 @@ class _SignupScreenState extends State<SignupScreen> {
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   final _phoneController = TextEditingController();
+  final _birthDateController = TextEditingController();
 
   String? _gender;
-  DateTime? _birthDate;
   bool _agreeTerms = false;
   bool _agreePrivacy = false;
-  bool _agreeMarketing = false;
 
   bool _idChecking = false;
   String? _idCheckedValue;
+  bool _submitting = false;
+
+  final _authService = AuthService();
 
   @override
   void initState() {
@@ -63,6 +68,7 @@ class _SignupScreenState extends State<SignupScreen> {
     _nameController.dispose();
     _emailController.dispose();
     _phoneController.dispose();
+    _birthDateController.dispose();
     super.dispose();
   }
 
@@ -124,70 +130,100 @@ class _SignupScreenState extends State<SignupScreen> {
       return;
     }
     setState(() => _idChecking = true);
-    final available = await _fakeIdAvailabilityCheck(id);
+    bool? available;
+    String message;
+    try {
+      available = await _authService.isUsernameAvailable(id);
+      message = available ? '사용 가능한 아이디입니다.' : '이미 사용 중인 아이디입니다.';
+    } on ApiException catch (e) {
+      message = e.isConflict ? '이미 사용 중인 아이디입니다.' : e.message;
+      if (e.isConflict) available = false;
+    }
     if (!mounted) return;
     setState(() {
       _idChecking = false;
-      _idCheckedValue = available ? id : null;
+      _idCheckedValue = available == true ? id : null;
     });
     _formKey.currentState?.validate();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(available ? '사용 가능한 아이디입니다.' : '이미 사용 중인 아이디입니다.'),
-      ),
-    );
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
-  // * TODO(backend): 아이디 중복확인 API 연동 필요 — 현재는 항상 사용 가능으로 응답하는 더미 구현.
-  Future<bool> _fakeIdAvailabilityCheck(String id) async {
-    await Future.delayed(const Duration(milliseconds: 400));
-    return true;
-  }
+  // 기기별로 날짜 선택 다이얼로그의 직접 입력 모드가 로케일 설정과 어긋나
+  // "mm/dd/yyyy" 형식을 요구하면서 숫자 키패드만 띄워 "/"를 입력할 수 없는
+  // 경우가 있어(달력 모드로 고정해도 일부 기기에서 재현), 달력 다이얼로그
+  // 대신 자동 하이픈 포맷팅되는 일반 텍스트 입력으로 받는다.
+  String? _validateBirthDate(String? value) {
+    final digits = (value ?? '').replaceAll('-', '');
+    if (digits.length != 8) return '생년월일 8자리를 입력해주세요 (예: 19990101)';
 
-  Future<void> _pickBirthDate() async {
-    final now = DateTime.now();
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: DateTime(now.year - 20),
-      firstDate: DateTime(1900),
-      lastDate: now,
-    );
-    if (picked != null) {
-      setState(() => _birthDate = picked);
+    final year = int.parse(digits.substring(0, 4));
+    final month = int.parse(digits.substring(4, 6));
+    final day = int.parse(digits.substring(6, 8));
+    final date = DateTime(year, month, day);
+    final isRealCalendarDate =
+        date.year == year && date.month == month && date.day == day;
+    if (!isRealCalendarDate || year < 1900 || date.isAfter(DateTime.now())) {
+      return '올바른 생년월일을 입력해주세요';
     }
+    return null;
   }
 
-  String get _birthDateText {
-    final date = _birthDate;
-    if (date == null) return '생년월일';
-    final y = date.year.toString().padLeft(4, '0');
-    final m = date.month.toString().padLeft(2, '0');
-    final d = date.day.toString().padLeft(2, '0');
-    return '$y.$m.$d';
+  void _snack(String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
-  void _handleSignup() {
+  Future<void> _handleSignup() async {
+    FocusScope.of(context).unfocus();
     final isValid = _formKey.currentState?.validate() ?? false;
     if (!isValid) return;
-    if (_birthDate == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('생년월일을 선택해주세요')),
-      );
+    if (_gender == null) {
+      _snack('성별을 선택해주세요');
       return;
     }
     if (!_agreeTerms || !_agreePrivacy) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('필수 약관에 동의해주세요')),
-      );
+      _snack('필수 약관에 동의해주세요');
       return;
     }
-    // * TODO(backend): 회원가입 API 연동 필요
+
+    final username = _idController.text.trim();
+    final password = _passwordController.text;
+
+    setState(() => _submitting = true);
+    try {
+      final result = await _authService.signup(
+        username: username,
+        password: password,
+        realName: _nameController.text.trim(),
+        email: _emailController.text.trim(),
+        phone: _phoneController.text.trim(),
+        birthDate: _birthDateController.text,
+        gender: _gender == 'male' ? 'MALE' : 'FEMALE',
+      );
+      // 가입 성공 → 자동 로그인하지 않고 로그인 화면으로 돌아가 직접 입력하게 한다.
+      // 방금 만든 아이디 + 서버 안내 메시지를 채워서 넘긴다.
+      if (!mounted) return;
+      Navigator.of(context).pop((username: username, message: result.message));
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      if (e.isConflict) {
+        setState(() => _idCheckedValue = null);
+        _formKey.currentState?.validate();
+      }
+      _snack(e.message);
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return AuthPageBackground(
-      child: SingleChildScrollView(
+      showLogo: false,
+      child: Padding(
         padding: const EdgeInsets.fromLTRB(
           AppSpacing.xl,
           AppSpacing.xl,
@@ -205,6 +241,7 @@ class _SignupScreenState extends State<SignupScreen> {
               children: [
                 const LeafSectionHeader(label: '회원가입'),
                 const SizedBox(height: AppSpacing.xxl),
+                const _RequiredLabel('아이디'),
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
@@ -252,18 +289,21 @@ class _SignupScreenState extends State<SignupScreen> {
                     ),
                   ),
                 const SizedBox(height: AppSpacing.lg),
+                const _RequiredLabel('비밀번호'),
                 AppPasswordField(
                   controller: _passwordController,
                   hintText: '비밀번호',
                   validator: _validatePassword,
                 ),
                 const SizedBox(height: AppSpacing.lg),
+                const _RequiredLabel('비밀번호 확인'),
                 AppPasswordField(
                   controller: _confirmPasswordController,
                   hintText: '비밀번호 확인',
                   validator: _validateConfirmPassword,
                 ),
                 const SizedBox(height: AppSpacing.lg),
+                const _RequiredLabel('이름'),
                 AppTextField(
                   controller: _nameController,
                   hintText: '이름',
@@ -271,6 +311,7 @@ class _SignupScreenState extends State<SignupScreen> {
                   validator: _validateName,
                 ),
                 const SizedBox(height: AppSpacing.lg),
+                const _RequiredLabel('이메일'),
                 AppTextField(
                   controller: _emailController,
                   hintText: '이메일',
@@ -279,6 +320,7 @@ class _SignupScreenState extends State<SignupScreen> {
                   validator: _validateEmail,
                 ),
                 const SizedBox(height: AppSpacing.lg),
+                const _RequiredLabel('전화번호'),
                 AppTextField(
                   controller: _phoneController,
                   hintText: '전화번호',
@@ -288,10 +330,14 @@ class _SignupScreenState extends State<SignupScreen> {
                   validator: _validatePhone,
                 ),
                 const SizedBox(height: AppSpacing.lg),
-                _BirthDateField(
-                  label: _birthDateText,
-                  isSet: _birthDate != null,
-                  onTap: _pickBirthDate,
+                const _RequiredLabel('생년월일'),
+                AppTextField(
+                  controller: _birthDateController,
+                  hintText: '생년월일 (예: 19990101)',
+                  prefixIcon: Symbols.calendar_month_rounded,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [_BirthDateFormatter()],
+                  validator: _validateBirthDate,
                 ),
                 const SizedBox(height: AppSpacing.lg),
                 Row(
@@ -302,10 +348,18 @@ class _SignupScreenState extends State<SignupScreen> {
                       color: AppColors.iconInactive,
                     ),
                     const SizedBox(width: AppSpacing.sm),
-                    Text(
-                      '성별',
-                      style: AppTextStyles.bodyLarge
-                          .copyWith(color: AppColors.textSecondary),
+                    Text.rich(
+                      TextSpan(
+                        style: AppTextStyles.bodyLarge
+                            .copyWith(color: AppColors.textSecondary),
+                        children: const [
+                          TextSpan(text: '성별'),
+                          TextSpan(
+                            text: ' *',
+                            style: TextStyle(color: AppColors.error),
+                          ),
+                        ],
+                      ),
                     ),
                     const Spacer(),
                     _GenderChip(
@@ -327,27 +381,75 @@ class _SignupScreenState extends State<SignupScreen> {
                   requiredTag: true,
                   value: _agreeTerms,
                   onChanged: (value) => setState(() => _agreeTerms = value),
+                  onViewPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const TermsDetailScreen(
+                        title: '이용약관',
+                        body: termsOfServiceText,
+                      ),
+                    ),
+                  ),
                 ),
                 _ConsentRow(
                   label: '개인정보 수집 및 이용에 동의합니다.',
                   requiredTag: true,
                   value: _agreePrivacy,
                   onChanged: (value) => setState(() => _agreePrivacy = value),
-                ),
-                _ConsentRow(
-                  label: '마케팅 정보 수신에 동의합니다.',
-                  requiredTag: false,
-                  value: _agreeMarketing,
-                  onChanged: (value) => setState(() => _agreeMarketing = value),
+                  onViewPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const TermsDetailScreen(
+                        title: '개인정보 수집 및 이용 동의',
+                        body: privacyConsentText,
+                      ),
+                    ),
+                  ),
                 ),
                 const SizedBox(height: AppSpacing.xl),
                 ElevatedButton(
-                  onPressed: _handleSignup,
-                  child: const Text('회원가입'),
+                  onPressed: (_submitting || !_agreeTerms || !_agreePrivacy)
+                      ? null
+                      : _handleSignup,
+                  child: _submitting
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: AppColors.textOnPrimaryButton,
+                          ),
+                        )
+                      : const Text('회원가입'),
                 ),
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Field label with a red "*" marking it required — every field on this
+/// form is required, so this sits above each one.
+class _RequiredLabel extends StatelessWidget {
+  const _RequiredLabel(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+      child: Text.rich(
+        TextSpan(
+          style: AppTextStyles.bodyMedium.copyWith(
+            color: AppColors.textPrimary,
+            fontWeight: FontWeight.w600,
+          ),
+          children: [
+            TextSpan(text: text),
+            const TextSpan(text: ' *', style: TextStyle(color: AppColors.error)),
+          ],
         ),
       ),
     );
@@ -382,54 +484,33 @@ class _PhoneNumberFormatter extends TextInputFormatter {
   }
 }
 
-class _BirthDateField extends StatelessWidget {
-  const _BirthDateField({
-    required this.label,
-    required this.isSet,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool isSet;
-  final VoidCallback onTap;
-
+/// Formats digits into `YYYY-MM-DD` grouping as the user types, and discards
+/// any non-digit input — same approach as [_PhoneNumberFormatter], used here
+/// instead of a date-picker dialog since some devices' keyboard-entry mode
+/// demands a locale-specific separator (e.g. "/") the numeric keypad can't
+/// type.
+class _BirthDateFormatter extends TextInputFormatter {
   @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(AppRadius.inputField),
-      child: Container(
-        height: 52,
-        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          border: Border.all(color: AppColors.border),
-          borderRadius: BorderRadius.circular(AppRadius.inputField),
-        ),
-        child: Row(
-          children: [
-            const Icon(
-              Symbols.calendar_month_rounded,
-              size: 20,
-              color: AppColors.iconInactive,
-            ),
-            const SizedBox(width: AppSpacing.sm),
-            Expanded(
-              child: Text(
-                label,
-                style: AppTextStyles.bodyLarge.copyWith(
-                  color: isSet ? AppColors.textPrimary : AppColors.textDisabled,
-                ),
-              ),
-            ),
-            const Icon(
-              Symbols.calendar_month_rounded,
-              size: 20,
-              color: AppColors.iconInactive,
-            ),
-          ],
-        ),
-      ),
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final digits = newValue.text.replaceAll(RegExp(r'\D'), '');
+    final limited = digits.length > 8 ? digits.substring(0, 8) : digits;
+
+    final buffer = StringBuffer();
+    for (var i = 0; i < limited.length; i++) {
+      buffer.write(limited[i]);
+      final isGroupBoundary = i == 3 || i == 5;
+      if (isGroupBoundary && i != limited.length - 1) {
+        buffer.write('-');
+      }
+    }
+
+    final formatted = buffer.toString();
+    return TextEditingValue(
+      text: formatted,
+      selection: TextSelection.collapsed(offset: formatted.length),
     );
   }
 }
@@ -479,12 +560,14 @@ class _ConsentRow extends StatelessWidget {
     required this.requiredTag,
     required this.value,
     required this.onChanged,
+    required this.onViewPressed,
   });
 
   final String label;
   final bool requiredTag;
   final bool value;
   final ValueChanged<bool> onChanged;
+  final VoidCallback onViewPressed;
 
   @override
   Widget build(BuildContext context) {
@@ -521,10 +604,7 @@ class _ConsentRow extends StatelessWidget {
             ),
           ),
           TextButton(
-            // * TODO(backend): 실제 약관/개인정보 문서 연결 필요 — 현재는 안내 스낵바만 표시.
-            onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('준비 중입니다.')),
-            ),
+            onPressed: onViewPressed,
             child: Text(
               '보기',
               style: AppTextStyles.bodySmall.copyWith(

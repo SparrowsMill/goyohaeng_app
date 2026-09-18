@@ -158,6 +158,20 @@ abstract final class AppTheme {
           ),
         ),
       ),
+      chipTheme: ChipThemeData(
+        backgroundColor: AppColors.surface,
+        selectedColor: AppColors.primary,
+        disabledColor: AppColors.surfaceDisabled,
+        labelStyle: AppTextStyles.bodySmall.copyWith(
+          fontWeight: FontWeight.w600,
+          color: AppColors.primaryPressed,
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        labelPadding: EdgeInsets.zero,
+        side: const BorderSide(color: AppColors.border),
+        shape: const StadiumBorder(),
+        checkmarkColor: AppColors.textOnPrimaryButton,
+      ),
       iconTheme: const IconThemeData(color: AppColors.iconPrimary, size: 20),
       pageTransitionsTheme: const PageTransitionsTheme(
         builders: {
@@ -180,9 +194,11 @@ abstract final class AppDecorations {
         boxShadow: AppShadows.card,
       );
 
+  // Slightly translucent (not fully opaque `AppColors.surface`) so it reads
+  // as a soft overlay on the auth watercolor scene rather than a flat block.
   static BoxDecoration elevatedCard({double radius = AppRadius.largeCard}) =>
       BoxDecoration(
-        color: AppColors.surface,
+        color: AppColors.surface.withValues(alpha: 0.50),
         borderRadius: BorderRadius.circular(radius),
         boxShadow: AppShadows.elevatedCard,
       );
