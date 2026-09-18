@@ -187,6 +187,23 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
     });
   }
 
+  /// Empty-result "필터 해제" button — clears category/정렬/방문인증만/즐겨찾기만
+  /// back to defaults in one tap. [_favoritesOnly] is a shared `ValueNotifier`
+  /// with `<지도>`'s toggle, so flipping it here fires [_onFavoritesChanged]
+  /// on its own. Mirrors [_onCategoryChanged]: only re-fetch from the server
+  /// when the category actually changed.
+  void _resetFilters() {
+    _favoritesOnly.value = false;
+    final categoryChanged = _category != null;
+    setState(() {
+      _category = null;
+      _descending = true;
+      _visitVerifiableOnly = false;
+      if (categoryChanged) _loading = true;
+    });
+    if (categoryChanged) _loadSpots();
+  }
+
   @override
   void dispose() {
     Favorites.instance.removeListener(_onFavoritesChanged);
@@ -372,19 +389,46 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
 
   Widget _buildCardList(List<MockTouristSpot> spots, {required bool favOnly}) {
     if (spots.isEmpty) {
-      return Center(
+      // A filter (category/즐겨찾기만/방문인증만) narrowed the region's own
+      // spots down to zero — offer a one-tap way back instead of making the
+      // user find the filter icon again. Not shown when the region itself
+      // just has nothing (no filter active), since resetting wouldn't help.
+      final filtersActive = favOnly || _visitVerifiableOnly || _category != null;
+      // Top-aligned, not vertically centered: the map above can take up to
+      // 62% of the screen (_mapFraction), which would otherwise push this
+      // message low enough to be hidden until the user drags the map/list
+      // handle up to shrink the map first.
+      return Align(
+        alignment: Alignment.topCenter,
         child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.xxl),
-          child: Text(
-            favOnly
-                ? '이 지역엔 즐겨찾기한 장소가 없어요.'
-                : _visitVerifiableOnly
-                ? '이 지역엔 방문 인증 가능한 장소가 없어요.'
-                : '해당하는 관광 스팟이 아직 없어요.',
-            textAlign: TextAlign.center,
-            style: AppTextStyles.bodyMedium.copyWith(
-              color: AppColors.textSecondary,
-            ),
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.xxl,
+            AppSpacing.xl,
+            AppSpacing.xxl,
+            AppSpacing.xxl,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                favOnly
+                    ? '이 지역엔 즐겨찾기한 장소가 없어요.'
+                    : _visitVerifiableOnly
+                    ? '이 지역엔 방문 인증 가능한 장소가 없어요.'
+                    : '해당하는 관광 스팟이 아직 없어요.',
+                textAlign: TextAlign.center,
+                style: AppTextStyles.bodyMedium.copyWith(
+                  color: AppColors.textSecondary,
+                ),
+              ),
+              if (filtersActive) ...[
+                const SizedBox(height: AppSpacing.md),
+                OutlinedButton(
+                  onPressed: _resetFilters,
+                  child: const Text('필터 해제'),
+                ),
+              ],
+            ],
           ),
         ),
       );

@@ -244,6 +244,10 @@ class _FootprintWriteScreenState extends State<FootprintWriteScreen> {
     if (_pickingPhotos || _submitting) return;
     final title = _titleController.text.trim();
     final body = _bodyController.text.trim();
+    if (title.isEmpty) {
+      _snack('제목을 입력해주세요.');
+      return;
+    }
     if (body.isEmpty) {
       _snack('짧은 글을 남겨주세요.');
       return;
@@ -415,7 +419,7 @@ class _FootprintWriteScreenState extends State<FootprintWriteScreen> {
                         ),
                       ),
                       const SizedBox(height: AppSpacing.xl),
-                      const _FieldLabel('제목'),
+                      const _FieldLabel('제목', required: true),
                       AppTextField(
                         controller: _titleController,
                         hintText: '오늘의 여행 제목',
@@ -425,7 +429,7 @@ class _FootprintWriteScreenState extends State<FootprintWriteScreen> {
                         ],
                       ),
                       const SizedBox(height: AppSpacing.xl),
-                      const _FieldLabel('짧은 글 (200자 이내)'),
+                      const _FieldLabel('짧은 글 (200자 이내)', required: true),
                       _BodyField(
                         controller: _bodyController,
                         maxLength: _bodyMaxLength,
@@ -490,18 +494,37 @@ class _Header extends StatelessWidget {
 }
 
 class _FieldLabel extends StatelessWidget {
-  const _FieldLabel(this.text, {this.bottomGap = AppSpacing.sm});
+  const _FieldLabel(
+    this.text, {
+    this.bottomGap = AppSpacing.sm,
+    this.required = false,
+  });
 
   final String text;
   final double bottomGap;
+
+  /// 필수 입력 항목이면 라벨 옆에 빨간 별표(*)를 붙인다.
+  final bool required;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: EdgeInsets.only(bottom: bottomGap),
-      child: Text(
-        text,
-        style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.w600),
+      child: RichText(
+        text: TextSpan(
+          style: AppTextStyles.bodyMedium.copyWith(
+            fontWeight: FontWeight.w600,
+            color: AppColors.textPrimary,
+          ),
+          children: [
+            TextSpan(text: text),
+            if (required)
+              const TextSpan(
+                text: ' *',
+                style: TextStyle(color: AppColors.error),
+              ),
+          ],
+        ),
       ),
     );
   }

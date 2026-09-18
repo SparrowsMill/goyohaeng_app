@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
-import '../../api/api.dart' show Category, GapPlace, GapService;
+import '../../api/api.dart' show Category, GapService;
 import '../../data/gap_spots.dart';
 import '../../data/korea_map_geo.dart';
 import '../../data/mock_map_regions.dart' show kSidoShortName;
@@ -38,9 +38,6 @@ class RankingScreen extends StatefulWidget {
 }
 
 class _RankingScreenState extends State<RankingScreen> {
-  /// 전국 GAP 랭킹이 이 페이지 수 넘게 계속 이어지진 않을 거라 보고 안전장치로
-  /// 둔 상한 — 냉동창고(cold-start) 단계 데이터 규모 기준([[gap-score-api]]).
-  static const _maxNationwidePages = 10;
   static const _nationwidePageLimit = 50;
 
   /// 진입 시 기본 지역 — 서울(11)만 실 GAP 데이터가 있어 유일하게 잠금 해제돼
@@ -67,9 +64,33 @@ class _RankingScreenState extends State<RankingScreen> {
   bool _error = false;
   int _requestId = 0;
 
+  /// 지역 필터 없음(전국)일 때만 쓰는 스크롤 기반 점진 로딩 상태 — 지역
+  /// 필터가 걸리면(`spotsInRegion`) 이미 단일 호출이라 해당 없음. 서버가 GAP
+  /// 점수 내림차순만 지원해([[gap-score-api]]) 오름차순은 마지막 페이지부터
+  /// 역순으로 페이징한다.
+  bool _nationwideActive = false;
+  int _nationwidePage = 0;
+  bool _hasMoreNationwide = false;
+  bool _loadingMoreNationwide = false;
+  final _scrollController = ScrollController();
+
+  void _onScroll() {
+    if (!_nationwideActive ||
+        _loading ||
+        _loadingMoreNationwide ||
+        !_hasMoreNationwide ||
+        !_scrollController.hasClients) {
+      return;
+    }
+    if (_scrollController.position.extentAfter < 400) {
+      _loadMoreNationwide();
+    }
+  }
+
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_onScroll);
     _loadFilterOptions();
     GapSpots.instance
         .level1Categories()
@@ -80,6 +101,12 @@ class _RankingScreenState extends State<RankingScreen> {
           /* 필터엔 "전체"만 노출 */
         });
     _load();
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadFilterOptions() async {
@@ -122,9 +149,11 @@ class _RankingScreenState extends State<RankingScreen> {
     _load();
   }
 
-  /// 정렬/방문인증 필터는 순수 클라이언트 처리(재정렬/재필터)라 실제 지연은
-  /// 없지만, 지역·카테고리 필터(서버 재조회, [_load])와 같은 로딩 피드백을 줘서
-  /// 필터 세 개가 일관되게 느껴지도록 짧게 [LoadingOverlay]를 보여준 뒤 적용한다.
+  /// 방문인증 필터는 순수 클라이언트 처리(재필터)라 실제 지연은 없지만,
+  /// 지역·카테고리 필터(서버 재조회, [_load])와 같은 로딩 피드백을 줘서 필터가
+  /// 일관되게 느껴지도록 짧게 [LoadingOverlay]를 보여준 뒤 적용한다. 적용 후
+  /// 필터로 목록이 짧아져 화면이 안 채워졌으면 [_onScroll]을 한 번 더 불러
+  /// 다음 페이지를 이어 채운다(전국 모드에서만 실제로 동작).
   Future<void> _flashLoading(VoidCallback apply) async {
     setState(() => _loading = true);
     await Future.delayed(AppMotion.standard);
@@ -133,9 +162,18 @@ class _RankingScreenState extends State<RankingScreen> {
       apply();
       _loading = false;
     });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _onScroll());
   }
 
+  /// 오름차순은 서버가 지원하지 않는 정렬이라([[gap-score-api]]) 전국 모드에서는
+  /// 이미 불러온 일부만 재정렬할 수 없고, 처음부터 다시 불러와야 한다(마지막
+  /// 페이지부터 역순 페이징). 지역 필터가 걸린 경우는 원래대로 로드된 전체를
+  /// 클라이언트에서 재정렬한다.
   Future<void> _onSortChanged(bool descending) {
+    if (_nationwideActive) {
+      setState(() => _descending = descending);
+      return _load();
+    }
     return _flashLoading(() {
       _descending = descending;
       _spots = [..._spots]
@@ -160,53 +198,136 @@ class _RankingScreenState extends State<RankingScreen> {
     setState(() {
       _loading = true;
       _error = false;
+      _spots = const [];
+      _nationwidePage = 0;
+      _hasMoreNationwide = false;
     });
 
     final regionCode = _sigunguCode ?? _sidoCode;
-    List<MockTouristSpot> spots;
-    var failed = false;
-    try {
-      spots = regionCode != null
-          ? await GapSpots.instance.spotsInRegion(
-              regionCode,
-              categoryId: _category,
-            )
-          : await _loadNationwide(_category);
-    } catch (_) {
-      spots = const [];
-      failed = true;
+    if (regionCode != null) {
+      _nationwideActive = false;
+      List<MockTouristSpot> spots;
+      var failed = false;
+      try {
+        spots = await GapSpots.instance.spotsInRegion(
+          regionCode,
+          categoryId: _category,
+        );
+      } catch (_) {
+        spots = const [];
+        failed = true;
+      }
+      if (!mounted || requestId != _requestId) return;
+      spots = [...spots]
+        ..sort(
+          (a, b) => _descending
+              ? b.gapIndex.compareTo(a.gapIndex)
+              : a.gapIndex.compareTo(b.gapIndex),
+        );
+      setState(() {
+        _spots = spots;
+        _loading = false;
+        _error = failed;
+      });
+      return;
     }
-    if (!mounted || requestId != _requestId) return;
 
-    spots = [...spots]
-      ..sort(
-        (a, b) => _descending
-            ? b.gapIndex.compareTo(a.gapIndex)
-            : a.gapIndex.compareTo(b.gapIndex),
-      );
-    setState(() {
-      _spots = spots;
-      _loading = false;
-      _error = failed;
-    });
+    _nationwideActive = true;
+    await _loadFirstNationwidePage(requestId);
   }
 
-  /// 지역 필터 없음 — `GET /places/gap/rankings`를 categoryId만 넘겨 페이지네이션.
-  Future<List<MockTouristSpot>> _loadNationwide(int? categoryId) async {
+  /// 지역 필터 없음(전국) — `GET /places/gap/rankings` 첫 페이지만 불러오고
+  /// 나머지는 스크롤에 따라 [_loadMoreNationwide]가 이어붙인다. 내림차순은
+  /// 서버 기본 정렬 그대로 1페이지부터, 오름차순은 서버가 못 주는 정렬이라
+  /// 총 페이지 수만 가벼운 호출(limit 1)로 먼저 확인한 뒤 마지막 페이지부터
+  /// 역순으로 시작한다.
+  Future<void> _loadFirstNationwidePage(int requestId) async {
     final gap = GapService();
-    final places = <GapPlace>[];
-    var page = 1;
-    while (page <= _maxNationwidePages) {
+    try {
+      if (_descending) {
+        final result = await gap.rankings(
+          categoryId: _category,
+          page: 1,
+          limit: _nationwidePageLimit,
+        );
+        final spots = await GapSpots.instance.toSpots(result.items);
+        if (!mounted || requestId != _requestId) return;
+        setState(() {
+          _spots = spots;
+          _nationwidePage = 1;
+          _hasMoreNationwide = result.hasMore;
+          _loading = false;
+        });
+      } else {
+        final probe = await gap.rankings(
+          categoryId: _category,
+          page: 1,
+          limit: 1,
+        );
+        final totalPages = probe.totalPages;
+        if (totalPages <= 0) {
+          if (!mounted || requestId != _requestId) return;
+          setState(() {
+            _spots = const [];
+            _loading = false;
+          });
+          return;
+        }
+        final result = await gap.rankings(
+          categoryId: _category,
+          page: totalPages,
+          limit: _nationwidePageLimit,
+        );
+        final spots = await GapSpots.instance.toSpots(
+          result.items.reversed.toList(),
+        );
+        if (!mounted || requestId != _requestId) return;
+        setState(() {
+          _spots = spots;
+          _nationwidePage = totalPages;
+          _hasMoreNationwide = totalPages > 1;
+          _loading = false;
+        });
+      }
+      WidgetsBinding.instance.addPostFrameCallback((_) => _onScroll());
+    } catch (_) {
+      if (!mounted || requestId != _requestId) return;
+      setState(() {
+        _loading = false;
+        _error = true;
+      });
+    }
+  }
+
+  /// 스크롤이 바닥에 가까워지면 다음(내림차순) 또는 이전(오름차순, 역순
+  /// 페이징) 페이지를 이어붙인다.
+  Future<void> _loadMoreNationwide() async {
+    final requestId = _requestId;
+    setState(() => _loadingMoreNationwide = true);
+    try {
+      final gap = GapService();
+      final nextPage = _descending ? _nationwidePage + 1 : _nationwidePage - 1;
       final result = await gap.rankings(
-        categoryId: categoryId,
-        page: page,
+        categoryId: _category,
+        page: nextPage,
         limit: _nationwidePageLimit,
       );
-      places.addAll(result.items);
-      if (!result.hasMore) break;
-      page++;
+      final items = _descending
+          ? result.items
+          : result.items.reversed.toList();
+      final spots = await GapSpots.instance.toSpots(items);
+      if (!mounted || requestId != _requestId) return;
+      setState(() {
+        _spots = [..._spots, ...spots];
+        _nationwidePage = nextPage;
+        _hasMoreNationwide = _descending ? result.hasMore : nextPage > 1;
+        _loadingMoreNationwide = false;
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) => _onScroll());
+    } catch (_) {
+      if (!mounted || requestId != _requestId) return;
+      setState(() => _loadingMoreNationwide = false);
     }
-    return GapSpots.instance.toSpots(places);
   }
 
   /// 카드 탭 — `<장소 정보>`로 바로 가는 대신 `<지역별 랭킹>`을 단일 스팟
@@ -352,7 +473,9 @@ class _RankingScreenState extends State<RankingScreen> {
         ),
       );
     }
+    final showLoadingMore = _nationwideActive && _loadingMoreNationwide;
     return ListView.separated(
+      controller: _scrollController,
       padding: AppBottomNavBar.scrollPadding(
         context,
         const EdgeInsets.fromLTRB(
@@ -362,14 +485,31 @@ class _RankingScreenState extends State<RankingScreen> {
           AppSpacing.xxl,
         ),
       ),
-      itemCount: spots.length,
+      itemCount: spots.length + (showLoadingMore ? 1 : 0),
       separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.xs),
-      itemBuilder: (_, i) => RankingCard(
-        rank: i + 1,
-        spot: spots[i],
-        onTap: () => _openSpot(spots[i]),
-        onDetail: () => _openSpot(spots[i]),
-      ),
+      itemBuilder: (_, i) {
+        if (i >= spots.length) {
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: AppSpacing.xl),
+            child: Center(
+              child: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: AppColors.primary,
+                ),
+              ),
+            ),
+          );
+        }
+        return RankingCard(
+          rank: i + 1,
+          spot: spots[i],
+          onTap: () => _openSpot(spots[i]),
+          onDetail: () => _openSpot(spots[i]),
+        );
+      },
     );
   }
 }

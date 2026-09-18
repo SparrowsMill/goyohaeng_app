@@ -20,8 +20,11 @@ import 'footprint_write_screen.dart';
 /// 누르면(또는 "⋯" 메뉴) 같은 화면을 수정 모드로 연다.
 ///
 /// `RecordService`(`GET /records`, `GET /records/calendar`, `DELETE /records/
-/// {id}`)로 실제 백엔드와 연동한다 — 목록은 최근순 페이지 1장(최대 50건),
-/// 달력은 표시 중인 달만 별도 조회한다. 로그인하지 않은 상태면 안내만 보여준다.
+/// {id}`)로 실제 백엔드와 연동한다 — 목록은 최근순으로 [_pageLimit]건씩
+/// 점진 로드(스크롤이 바닥에 가까워지면 다음 페이지 요청)하며, 한 번에
+/// 전체를 끌어오지 않는다. 달력은 표시 중인 달만 별도 조회한다. 특정 날짜를
+/// 고르면 아직 로드되지 않은 과거 기록을 찾기 위해 추가 페이지를 더 불러올
+/// 수 있다(`_ensureDayLoaded`). 로그인하지 않은 상태면 안내만 보여준다.
 class MyFootprintScreen extends StatefulWidget {
   const MyFootprintScreen({super.key});
 
@@ -30,9 +33,20 @@ class MyFootprintScreen extends StatefulWidget {
 }
 
 class _MyFootprintScreenState extends State<MyFootprintScreen> {
+  /// 한 번에 불러오는 기록 수 — 전체를 한 번에 끌어오지 않고 이 단위로
+  /// 점진 로드한다.
+  static const _pageLimit = 30;
+
+  /// 특정 날짜를 골랐을 때 아직 로드되지 않은 과거 기록을 찾기 위해 추가로
+  /// 불러올 수 있는 최대 페이지 수(안전장치).
+  static const _maxLookupPages = 20;
+
   bool _loading = true;
   String? _error;
   List<RecordDetail> _entries = [];
+  int _loadedPage = 1;
+  bool _hasMoreEntries = false;
+  bool _loadingMore = false;
   RecordCalendar? _calendar;
   DateTime? _selectedDay;
   final _scrollController = ScrollController();
@@ -41,6 +55,14 @@ class _MyFootprintScreenState extends State<MyFootprintScreen> {
   void _onScroll() {
     final show = _scrollController.hasClients && _scrollController.offset > 100;
     if (show != _showScrollToTop) setState(() => _showScrollToTop = show);
+    if (_signedIn &&
+        !_loading &&
+        !_loadingMore &&
+        _hasMoreEntries &&
+        _scrollController.hasClients &&
+        _scrollController.position.extentAfter < 400) {
+      _loadMoreEntries();
+    }
   }
 
   @override
@@ -99,21 +121,16 @@ class _MyFootprintScreenState extends State<MyFootprintScreen> {
       _error = null;
     });
     try {
-      final records = <RecordDetail>[];
-      var page = 1;
-      while (true) {
-        final list = await RecordService().list(page: page, limit: 50);
-        records.addAll(list.records);
-        if (!list.hasMore || list.records.isEmpty) break;
-        page++;
-      }
+      final list = await RecordService().list(page: 1, limit: _pageLimit);
       final cal = await RecordService().calendar(
         year: _visibleMonth.year,
         month: _visibleMonth.month,
       );
       if (!mounted) return;
       setState(() {
-        _entries = records..sort((a, b) => b.date.compareTo(a.date));
+        _entries = list.records..sort((a, b) => b.date.compareTo(a.date));
+        _loadedPage = 1;
+        _hasMoreEntries = list.hasMore;
         _calendar = cal;
         _loading = false;
       });
@@ -126,13 +143,56 @@ class _MyFootprintScreenState extends State<MyFootprintScreen> {
     }
   }
 
+  /// 스크롤이 바닥에 가까워지면 다음 페이지를 이어붙인다.
+  Future<void> _loadMoreEntries() async {
+    setState(() => _loadingMore = true);
+    try {
+      final list = await RecordService().list(
+        page: _loadedPage + 1,
+        limit: _pageLimit,
+      );
+      if (!mounted) return;
+      setState(() {
+        _entries = [..._entries, ...list.records]
+          ..sort((a, b) => b.date.compareTo(a.date));
+        _loadedPage = list.page;
+        _hasMoreEntries = list.hasMore;
+        _loadingMore = false;
+      });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _loadingMore = false);
+      _snack(e.message);
+    }
+  }
+
+  /// 고른 날짜의 기록이 아직 로드된 페이지 안에 없으면, 더 오래된 페이지를
+  /// 찾을 때까지(또는 안전 한도까지) 추가로 불러온다.
+  Future<void> _ensureDayLoaded(DateTime day) async {
+    var lookups = 0;
+    while (_hasMoreEntries &&
+        lookups < _maxLookupPages &&
+        !_entries.any((e) => _isOn(e, day)) &&
+        mounted &&
+        _selectedDay == day) {
+      await _loadMoreEntries();
+      lookups++;
+    }
+  }
+
   Future<void> _shiftMonth(int delta) async {
     final next = DateTime(_visibleMonth.year, _visibleMonth.month + delta);
+    final today = DateUtils.dateOnly(DateTime.now());
     setState(() {
       _visibleMonth = next;
-      _selectedDay = DateTime(next.year, next.month);
+      _selectedDay = (next.year == today.year && next.month == today.month)
+          ? today
+          : DateTime(next.year, next.month);
       _calendar = null;
     });
+    if (!_entries.any((e) => _isOn(e, _selectedDay!))) {
+      _ensureDayLoaded(_selectedDay!);
+    }
     if (!_signedIn) return;
     try {
       final cal = await RecordService().calendar(
@@ -151,6 +211,7 @@ class _MyFootprintScreenState extends State<MyFootprintScreen> {
   /// 달력 아래에 선택한 날짜의 기록을 표시한다.
   void _onSelectDay(DateTime day) {
     setState(() => _selectedDay = day);
+    if (!_entries.any((e) => _isOn(e, day))) _ensureDayLoaded(day);
   }
 
   /// 우하단 연필 버튼 — 새 기록 작성.
@@ -417,6 +478,20 @@ class _MyFootprintScreenState extends State<MyFootprintScreen> {
             onMenu: () => _openEntryMenu(entries[i]),
           ),
         ],
+      if (_loadingMore)
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: AppSpacing.xl),
+          child: Center(
+            child: SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: AppColors.primary,
+              ),
+            ),
+          ),
+        ),
     ];
   }
 }

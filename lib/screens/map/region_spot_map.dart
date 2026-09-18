@@ -169,6 +169,16 @@ class _RegionSpotMapState extends State<RegionSpotMap> {
           flags: InteractiveFlag.all,
           enableMultiFingerGestureRace: true,
         ),
+        // Pins that sit close together (a dense 관광단지) stack in the same
+        // `Stack` as the markers `MarkerLayer` builds — only the topmost
+        // pin's own `SpotPin.onTap` is hit-tested, so a covered pin is
+        // otherwise unreachable no matter how precisely it's tapped. This
+        // fires only when the tap misses every marker's own hit area (a
+        // normal, unambiguous pin tap is already handled by `SpotPin.onTap`
+        // and never reaches here), so it just recovers the near-miss case:
+        // find whichever located/favorite spot's screen position is nearest
+        // the tap, within a small pixel tolerance.
+        onTap: (tapPosition, _) => _handleNearMissTap(tapPosition, located),
         // 즐겨찾기 모드로 들어오면 목록은 즐겨찾기만 남아 located가 1~2곳일 수
         // 있다 — 거기에 맞추면 과하게 확대된다. 그럴 땐 지역 경계 전체가
         // 한눈에 들어오게. (스팟은 목록에서 눌러 집중.)
@@ -233,13 +243,53 @@ class _RegionSpotMapState extends State<RegionSpotMap> {
         color: gapIndexColor(spot.gapIndex),
         selected: false,
         favorite: true,
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => PlaceInfoScreen(spot: spot, placeId: spot.placeId),
-          ),
-        ),
+        onTap: () => _openFavoriteDetail(spot),
       ),
     );
+  }
+
+  void _openFavoriteDetail(MockTouristSpot spot) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => PlaceInfoScreen(spot: spot, placeId: spot.placeId),
+      ),
+    );
+  }
+
+  /// Resolves a tap that missed every marker's own hit area (see the
+  /// `onTap` wiring in [_buildMap]) to the nearest pin on screen, if any is
+  /// within [_tapHitRadius] — recovers taps aimed at a pin that's covered by
+  /// another, closely-clustered pin drawn on top of it.
+  static const _tapHitRadius = 28.0;
+
+  void _handleNearMissTap(TapPosition tapPosition, List<MockTouristSpot> located) {
+    final tap = tapPosition.relative;
+    if (tap == null) return;
+
+    final candidates = [
+      ...located,
+      if (_showFavorites) ..._otherFavorites,
+    ];
+
+    MockTouristSpot? nearest;
+    var nearestDistance = double.infinity;
+    for (final spot in candidates) {
+      final screenPoint = _map.camera.latLngToScreenOffset(
+        LatLng(spot.lat!, spot.lng!),
+      );
+      final distance = (screenPoint - tap).distance;
+      if (distance < nearestDistance) {
+        nearest = spot;
+        nearestDistance = distance;
+      }
+    }
+
+    if (nearest == null || nearestDistance > _tapHitRadius) return;
+    if (located.contains(nearest)) {
+      widget.onMarkerTap(nearest);
+    } else {
+      _openFavoriteDetail(nearest);
+    }
   }
 
   Marker _marker(MockTouristSpot spot, {required bool selected}) {

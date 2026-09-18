@@ -652,6 +652,11 @@ Future<void> _openSnsSearch(
     return;
   }
   final Uri uri;
+  // TikTok만 인앱 웹뷰로 연다 — externalApplication으로 열면 OS가 유니버설
+  // 링크로 가로채 TikTok 앱을 띄우는데, 앱이 /search 딥링크의 검색어를
+  // 무시하고 홈 피드만 보여준다. 인앱 브라우저로 열면 실제 모바일 웹
+  // 검색 결과 페이지가 그대로 렌더링된다.
+  LaunchMode mode = LaunchMode.externalApplication;
   if (platform == 'Instagram') {
     final hashtag = trimmed.replaceAll(RegExp(r'\s+'), '');
     uri = Uri.https('www.instagram.com', '/explore/tags/$hashtag/');
@@ -659,13 +664,14 @@ Future<void> _openSnsSearch(
     uri = Uri.https('www.youtube.com', '/results', {'search_query': trimmed});
   } else if (platform == 'TikTok') {
     uri = Uri.https('www.tiktok.com', '/search', {'q': trimmed});
+    mode = LaunchMode.inAppBrowserView;
   } else {
     onFallback();
     return;
   }
   bool opened;
   try {
-    opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    opened = await launchUrl(uri, mode: mode);
   } catch (_) {
     opened = false;
   }

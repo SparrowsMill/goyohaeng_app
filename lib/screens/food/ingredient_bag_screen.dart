@@ -12,6 +12,7 @@ import '../../theme/app_theme.dart';
 import '../../widgets/app_bottom_nav_bar.dart';
 import '../../widgets/loading_overlay.dart';
 import '../../widgets/reward_image.dart';
+import '../map/map_screen.dart';
 import 'food_info_screen.dart';
 import 'ingredient_detail_sheet.dart';
 
@@ -48,7 +49,7 @@ enum _Category {
 }
 
 /// 재료 가방 화면의 전체 재료 + 도감과 동일한 음식 목록
-/// (하단 "이 재료로 만들 수 있어요" 추천용).
+/// (하단 "지금 보유한 재료로 바로 만들 수 있는 음식" 추천용).
 typedef _BagData = ({UserIngredients ingredients, List<Food> foods});
 
 class _IngredientBagScreenState extends State<IngredientBagScreen> {
@@ -241,6 +242,9 @@ class _IngredientBagScreenState extends State<IngredientBagScreen> {
           totalQuantity: data.ingredients.totalQuantity,
           totalTypes: data.ingredients.totalTypes,
           recommended: recommended,
+          onTapCollectMore: () => Navigator.of(
+            context,
+          ).push(MaterialPageRoute(builder: (_) => const MapScreen())),
           onTapRecommendation: recommended == null
               ? null
               : () => Navigator.of(context).push(
@@ -264,7 +268,7 @@ class _IngredientBagScreenState extends State<IngredientBagScreen> {
           ),
         ),
         const SizedBox(height: AppSpacing.xxxl),
-        const _SectionLabel('이 재료로 만들 수 있어요'),
+        const _SectionLabel('지금 보유한 재료로 바로 만들 수 있는 음식'),
         const SizedBox(height: AppSpacing.md),
         _MakeableFoodRow(
           foods: makeable,
@@ -317,12 +321,14 @@ class _CollectedSummaryCard extends StatelessWidget {
     required this.totalTypes,
     required this.recommended,
     required this.onTapRecommendation,
+    required this.onTapCollectMore,
   });
 
   final int totalQuantity;
   final int totalTypes;
   final Food? recommended;
   final VoidCallback? onTapRecommendation;
+  final VoidCallback onTapCollectMore;
 
   @override
   Widget build(BuildContext context) {
@@ -390,13 +396,18 @@ class _CollectedSummaryCard extends StatelessWidget {
                       fontWeight: FontWeight.w600,
                     ),
                   ),
-                  if (recommended != null) ...[
-                    const SizedBox(height: AppSpacing.sm),
+                  const SizedBox(height: AppSpacing.sm),
+                  if (recommended != null)
                     _RecommendationPill(
                       label: '추천: ${recommended!.name}',
                       onTap: onTapRecommendation!,
+                    )
+                  else
+                    _RecommendationPill(
+                      icon: Symbols.map_rounded,
+                      label: '지도에서 방문지 찾아보기',
+                      onTap: onTapCollectMore,
                     ),
-                  ],
                 ],
               ),
             ),
@@ -408,8 +419,13 @@ class _CollectedSummaryCard extends StatelessWidget {
 }
 
 class _RecommendationPill extends StatelessWidget {
-  const _RecommendationPill({required this.label, required this.onTap});
+  const _RecommendationPill({
+    this.icon = Symbols.restaurant_rounded,
+    required this.label,
+    required this.onTap,
+  });
 
+  final IconData icon;
   final String label;
   final VoidCallback onTap;
 
@@ -433,11 +449,7 @@ class _RecommendationPill extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(
-                Symbols.restaurant_rounded,
-                size: 16,
-                color: AppColors.primary,
-              ),
+              Icon(icon, size: 16, color: AppColors.primary),
               const SizedBox(width: AppSpacing.xs),
               Flexible(
                 child: Text(

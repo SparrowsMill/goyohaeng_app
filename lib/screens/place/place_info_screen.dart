@@ -117,18 +117,28 @@ class _PlaceInfoScreenState extends State<PlaceInfoScreen> {
   }
 
   /// 네이버 지도 앱(`nmap://`)으로, 실패하면 네이버 지도 웹으로 장소를 연다.
+  ///
+  /// 좌표([MockTouristSpot.hasLocation])가 있으면 앱·웹 모두 좌표로 그 지점을
+  /// 바로 핀 찍어서 열고(`nmap://place`, `map.naver.com/p?lat&lng`), 이름으로
+  /// 텍스트 검색을 하지 않는다 — 검색은 동명 장소가 여럿일 때 검색 결과
+  /// 목록을 띄우기 때문에, 좌표가 있는 한 검색 경로를 타지 않는다. 좌표가
+  /// 없을 때만 이름 검색으로 폴백한다.
   void _openDirections(BuildContext context) {
     final region = _regionPrefix(spot.address);
     final query = region == null ? spot.name : '$region ${spot.name}';
     final name = Uri.encodeComponent(query);
-    final app = spot.hasLocation
-        ? Uri.parse(
-            'nmap://place?lat=${spot.lat}&lng=${spot.lng}'
-            '&name=$name&appname=com.goyohaeng',
-          )
-        : Uri.parse('nmap://search?query=$name&appname=com.goyohaeng');
+    if (spot.hasLocation) {
+      _open(context, [
+        Uri.parse(
+          'nmap://place?lat=${spot.lat}&lng=${spot.lng}'
+          '&name=$name&appname=com.goyohaeng',
+        ),
+        Uri.parse('https://map.naver.com/p?title=$name&lat=${spot.lat}&lng=${spot.lng}'),
+      ], failMessage: '${spot.name} 위치를 여는 데 실패했어요.');
+      return;
+    }
     _open(context, [
-      app,
+      Uri.parse('nmap://search?query=$name&appname=com.goyohaeng'),
       Uri.parse('https://map.naver.com/p/search/$name'),
     ], failMessage: '${spot.name} 위치를 여는 데 실패했어요.');
   }
