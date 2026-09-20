@@ -79,7 +79,6 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return AuthPageBackground(
-      showBackButton: false,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(
           AppSpacing.xl,
