@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'api/auth_store.dart';
 import 'data/mock_map_regions.dart' show loadRealRegionStats;
 import 'navigation/root_navigator.dart';
-import 'screens/auth/login_screen.dart';
+import 'screens/auth/role_select_screen.dart';
 import 'screens/mill/mill_home_screen.dart';
 import 'screens/splash/splash_screen.dart';
 import 'theme/app_motion.dart';
@@ -70,7 +70,7 @@ class _BootstrapState extends State<_Bootstrap> {
         } else {
           screen = AuthStore.instance.isSignedIn
               ? const MillHomeScreen()
-              : const LoginScreen();
+              : const RoleSelectScreen();
         }
         // 스플래시 → 다음 화면 크로스페이드 (CLAUDE.md §8, 소프트 페이드).
         return AnimatedSwitcher(

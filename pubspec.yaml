@@ -55,6 +55,7 @@ dependencies:
   # 플랫폼. 시도→시군구→구 드릴다운은 여전히 GeoJSON 벡터.
   flutter_map: ^8.3.2
   latlong2: ^0.9.1
+  webview_flutter: ^4.14.1
 
 dev_dependencies:
   flutter_test:
