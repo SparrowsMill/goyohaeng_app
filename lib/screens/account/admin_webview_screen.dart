@@ -110,48 +110,47 @@ class _AdminWebViewScreenState extends State<AdminWebViewScreen> {
       },
       child: Scaffold(
         backgroundColor: AppColors.appBackground,
-        appBar: AppBar(
-          leading: IconButton(
-            onPressed: _handleBack,
-            icon: const Icon(Symbols.arrow_back_rounded),
-          ),
-          title: const Text('관리자 모드'),
-        ),
-        body: Stack(
-          children: [
-            WebViewWidget(controller: _controller),
-            if (_loading)
-              const Center(
-                child: CircularProgressIndicator(color: AppColors.primary),
-              ),
-            if (_error != null)
-              Container(
-                color: AppColors.appBackground,
-                alignment: Alignment.center,
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(
-                      Symbols.cloud_off_rounded,
-                      size: 40,
-                      color: AppColors.iconInactive,
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      _error!,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(color: AppColors.textSecondary),
-                    ),
-                    const SizedBox(height: 16),
-                    OutlinedButton(
-                      onPressed: _reload,
-                      child: const Text('다시 시도'),
-                    ),
-                  ],
+        // 자체 상단 바(제목/뒤로가기)는 두지 않는다 — 관리자 웹 자신이
+        // 사이드바·뒤로가기 등 내비게이션을 갖추고 있어서 앱이 덧대는 건
+        // 중복이다. 화면을 나가는 길은 시스템 뒤로가기(위 PopScope)와
+        // 로그아웃(로그인 경로로 돌아오면 자동으로 나감, onUrlChange) 뿐.
+        body: SafeArea(
+          child: Stack(
+            children: [
+              WebViewWidget(controller: _controller),
+              if (_loading)
+                const Center(
+                  child: CircularProgressIndicator(color: AppColors.primary),
                 ),
-              ),
-          ],
+              if (_error != null)
+                Container(
+                  color: AppColors.appBackground,
+                  alignment: Alignment.center,
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Symbols.cloud_off_rounded,
+                        size: 40,
+                        color: AppColors.iconInactive,
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        _error!,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: AppColors.textSecondary),
+                      ),
+                      const SizedBox(height: 16),
+                      OutlinedButton(
+                        onPressed: _reload,
+                        child: const Text('다시 시도'),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );

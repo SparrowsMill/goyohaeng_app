@@ -15,16 +15,10 @@ class AuthPageBackground extends StatelessWidget {
     this.showSceneImage = true,
     this.showLogo = true,
     this.logoWidth = 140,
-    this.title,
   });
 
   final Widget child;
   final bool showBackButton;
-
-  /// When set, the back button (if any) sits in a flat `AppBar` bar above the
-  /// scene — matching `<관리자 모드>`(웹뷰) — instead of the default floating
-  /// circular chip over the scene art.
-  final String? title;
 
   /// Whether to paint the `start_bg.png` watercolor scene behind the content.
   /// When false, the flat `AppColors.appBackground` fill is used instead.
@@ -71,17 +65,6 @@ class AuthPageBackground extends StatelessWidget {
 
     return Scaffold(
       backgroundColor: AppColors.appBackground,
-      appBar: title == null
-          ? null
-          : AppBar(
-              leading: showBackButton
-                  ? IconButton(
-                      onPressed: () => Navigator.of(context).maybePop(),
-                      icon: const Icon(Symbols.arrow_back_rounded),
-                    )
-                  : null,
-              title: Text(title!),
-            ),
       body: Stack(
         fit: StackFit.expand,
         children: [
@@ -94,10 +77,8 @@ class AuthPageBackground extends StatelessWidget {
             Positioned(top: 0, left: 0, right: 0, child: _scene()),
           SafeArea(
             // The scene runs full-bleed to the very top (behind the status
-            // bar); only pad the top when there's no scene to fill it. With
-            // an `appBar` set, the Scaffold body is already below it, so the
-            // top inset is never needed either way.
-            top: title == null && !showSceneImage,
+            // bar); only pad the top when there's no scene to fill it.
+            top: !showSceneImage,
             child: SingleChildScrollView(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -128,7 +109,7 @@ class AuthPageBackground extends StatelessWidget {
               ),
             ),
           ),
-          if (showBackButton && title == null)
+          if (showBackButton)
             SafeArea(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(
