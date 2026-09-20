@@ -92,6 +92,10 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
   final GlobalKey _selectedCardKey = GlobalKey();
   bool _didAutoScroll = false;
 
+  /// [_favoritesOnly]의 직전 값 — [_onFavoritesChanged]가 "즐겨찾기만" 필터가
+  /// 실제로 뒤집혔을 때만(별 토글은 제외) 목록을 맨 위로 되돌리려고 기억한다.
+  bool _lastFavoritesOnly = false;
+
   /// Fraction of the screen height the map takes — the user drags the grip
   /// between map and list to change it (the list gets the rest). Starts
   /// larger in 단일 스팟 모드([[_isSingleSpot]], set from [initState]) since
@@ -111,6 +115,7 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
     super.initState();
     Favorites.instance.addListener(_onFavoritesChanged);
     _favoritesOnly.addListener(_onFavoritesChanged);
+    _lastFavoritesOnly = _favoritesOnly.value;
     final initial = widget.initialSpot;
     if (initial != null) {
       _allSpots = [initial];
@@ -149,6 +154,14 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
         _selected = null;
       }
     });
+    _scrollListToTop();
+  }
+
+  /// 필터가 바뀌어 목록 내용이 통째로 달라졌으니 처음부터 다시 보여준다.
+  /// [LoadingOverlay]는 리스트를 그대로 둔 채 덮기만 해서, 이전 스크롤 위치가
+  /// 남아 있으면 새(대개 더 짧은) 목록이 중간쯤에서 어중간하게 시작한다.
+  void _scrollListToTop() {
+    if (_listController.hasClients) _listController.jumpTo(0);
   }
 
   /// 카테고리 필터 변경 — 서버가 걸러주므로 다시 조회한다.
@@ -171,6 +184,7 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
       apply();
       _loading = false;
     });
+    _scrollListToTop();
   }
 
   Future<void> _onSortChanged(bool descending) {
@@ -187,7 +201,7 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
     });
   }
 
-  /// Empty-result "필터 해제" button — clears category/정렬/방문인증만/즐겨찾기만
+  /// "필터 해제" button (filter sheet) / "필터 초기화" (empty-result state) — clears category/정렬/방문인증만/즐겨찾기만
   /// back to defaults in one tap. [_favoritesOnly] is a shared `ValueNotifier`
   /// with `<지도>`'s toggle, so flipping it here fires [_onFavoritesChanged]
   /// on its own. Mirrors [_onCategoryChanged]: only re-fetch from the server
@@ -201,6 +215,7 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
       _visitVerifiableOnly = false;
       if (categoryChanged) _loading = true;
     });
+    _scrollListToTop();
     if (categoryChanged) _loadSpots();
   }
 
@@ -216,6 +231,8 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
   /// the selection if it just fell out of the filtered list.
   void _onFavoritesChanged() {
     if (!mounted) return;
+    final filterFlipped = _favoritesOnly.value != _lastFavoritesOnly;
+    _lastFavoritesOnly = _favoritesOnly.value;
     setState(() {
       final s = _selected;
       if (!_isSingleSpot &&
@@ -225,6 +242,7 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
         _selected = null;
       }
     });
+    if (filterFlipped) _scrollListToTop();
   }
 
   /// 단일 스팟 모드([[initialSpot]])에선 필터/정렬 없이 그 하나만 그대로
@@ -258,6 +276,7 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
         onCategoryChanged: _onCategoryChanged,
         onSortChanged: _onSortChanged,
         onVisitVerifiableOnlyChanged: _onVisitVerifiableOnlyChanged,
+        onReset: _resetFilters,
       ),
     );
   }
@@ -308,6 +327,10 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
       if (!mounted) return;
       final ctx = _selectedCardKey.currentContext;
       if (ctx == null) {
+        // The list is lazy: a card further than the cache extent from the
+        // viewport has no element yet, so there is nothing to ensureVisible.
+        // Jump to where it should roughly be so it gets built, then retry.
+        _jumpNearSelected();
         if (triesLeft > 0) _revealSelectedCard(triesLeft: triesLeft - 1);
         return;
       }
@@ -318,6 +341,24 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
         curve: Curves.easeOutCubic,
       );
     });
+  }
+
+  /// Scrolls the list to an estimate of the selected card's offset (its index
+  /// as a fraction of the scroll extent — cards are near-uniform height) so the
+  /// lazy list builds it. [_revealSelectedCard] then fine-tunes with
+  /// [Scrollable.ensureVisible].
+  void _jumpNearSelected() {
+    final selected = _selected;
+    if (selected == null || !_listController.hasClients) return;
+    final spots = _visibleSpots;
+    final index = spots.indexOf(selected);
+    if (index < 0 || spots.length < 2) return;
+    final pos = _listController.position;
+    final target = (pos.maxScrollExtent * index / (spots.length - 1)).clamp(
+      pos.minScrollExtent,
+      pos.maxScrollExtent,
+    );
+    if ((target - pos.pixels).abs() > 1) _listController.jumpTo(target);
   }
 
   @override
@@ -354,7 +395,7 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
                 selected: _selected,
                 onMarkerTap: (spot) {
                   _select(spot);
-                  _revealSelectedCard(triesLeft: 5);
+                  _revealSelectedCard(triesLeft: 8);
                 },
               ),
             ),
@@ -423,10 +464,7 @@ class _RegionRankingScreenState extends State<RegionRankingScreen> {
               ),
               if (filtersActive) ...[
                 const SizedBox(height: AppSpacing.md),
-                OutlinedButton(
-                  onPressed: _resetFilters,
-                  child: const Text('필터 해제'),
-                ),
+                FilterResetButton(label: '필터 초기화', onTap: _resetFilters),
               ],
             ],
           ),
@@ -526,7 +564,12 @@ class _RegionHintBar extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Expanded(child: Text(text, style: AppTextStyles.caption)),
+          Expanded(
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: FilterSummaryBox(text: text),
+            ),
+          ),
           IconButton(
             onPressed: onFilterTap,
             icon: const Icon(Symbols.tune_rounded, size: 20),
@@ -552,6 +595,7 @@ class _RegionFilterSheet extends StatefulWidget {
     required this.onCategoryChanged,
     required this.onSortChanged,
     required this.onVisitVerifiableOnlyChanged,
+    required this.onReset,
   });
 
   final List<Category> categories;
@@ -562,6 +606,9 @@ class _RegionFilterSheet extends StatefulWidget {
   final ValueChanged<bool> onSortChanged;
   final ValueChanged<bool> onVisitVerifiableOnlyChanged;
 
+  /// 부모의 `_resetFilters` — 전부 기본값으로(즐겨찾기만 포함) 되돌린다.
+  final VoidCallback onReset;
+
   @override
   State<_RegionFilterSheet> createState() => _RegionFilterSheetState();
 }
@@ -570,6 +617,18 @@ class _RegionFilterSheetState extends State<_RegionFilterSheet> {
   late int? _category = widget.initialCategory;
   late bool _descending = widget.initialDescending;
   late bool _visitVerifiableOnly = widget.initialVisitVerifiableOnly;
+
+  bool get _hasActiveFilters =>
+      _category != null || !_descending || _visitVerifiableOnly;
+
+  void _reset() {
+    setState(() {
+      _category = null;
+      _descending = true;
+      _visitVerifiableOnly = false;
+    });
+    widget.onReset();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -621,12 +680,23 @@ class _RegionFilterSheetState extends State<_RegionFilterSheet> {
               ],
             ),
             const SizedBox(height: AppSpacing.md),
-            VisitVerifiableFilterChip(
-              active: _visitVerifiableOnly,
-              onTap: () {
-                setState(() => _visitVerifiableOnly = !_visitVerifiableOnly);
-                widget.onVisitVerifiableOnlyChanged(_visitVerifiableOnly);
-              },
+            Row(
+              children: [
+                VisitVerifiableFilterChip(
+                  active: _visitVerifiableOnly,
+                  onTap: () {
+                    setState(
+                      () => _visitVerifiableOnly = !_visitVerifiableOnly,
+                    );
+                    widget.onVisitVerifiableOnlyChanged(_visitVerifiableOnly);
+                  },
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                FilterResetButton(
+                  onTap: _reset,
+                  enabled: _hasActiveFilters,
+                ),
+              ],
             ),
           ],
         ),

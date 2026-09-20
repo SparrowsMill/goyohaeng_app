@@ -1,7 +1,9 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
-import '../../api/api.dart' show Category, GapService;
+import '../../api/api.dart' show Category, GapPlace, GapService;
 import '../../data/gap_spots.dart';
 import '../../data/korea_map_geo.dart';
 import '../../data/mock_map_regions.dart' show kSidoShortName;
@@ -12,6 +14,7 @@ import '../../theme/app_spacing.dart';
 import '../../theme/app_text_styles.dart';
 import '../../widgets/app_bottom_nav_bar.dart';
 import '../../widgets/loading_overlay.dart';
+import '../../widgets/pagination_bar.dart';
 import '../../widgets/place_search_bar.dart';
 import '../../widgets/ranking_card.dart';
 import '../../widgets/region_lock.dart';
@@ -26,6 +29,9 @@ import 'region_ranking_screen.dart';
 /// category, and sort/방문 인증 필터; the top of the body itself is a search
 /// bar (`<지도>`와 같은 컴포넌트).
 ///
+/// 목록은 [_pageSize]개씩 끊어 보여주고, 리스트 맨 아래 [PaginationBar]로
+/// 페이지를 넘긴다(필터가 바뀌면 1페이지로 돌아간다).
+///
 /// 필터는 저장되지 않는다 — 이 탭을 나갔다가 다시 들어오면(바텀 네비게이션이
 /// 매번 새 인스턴스를 만든다) 항상 기본값(서울·전체 카테고리·고요 지수
 /// 높은순)으로 초기화된다. 현재 선택된 필터는 검색 바 아래 한 줄 문구로
@@ -38,7 +44,8 @@ class RankingScreen extends StatefulWidget {
 }
 
 class _RankingScreenState extends State<RankingScreen> {
-  static const _nationwidePageLimit = 50;
+  /// 한 페이지에 보여줄 스팟 수.
+  static const _pageSize = 15;
 
   /// 진입 시 기본 지역 — 서울(11)만 실 GAP 데이터가 있어 유일하게 잠금 해제돼
   /// 있다([[region_lock]]). "전체 시/도"(전국)가 아니라 서울이 기본값.
@@ -64,33 +71,27 @@ class _RankingScreenState extends State<RankingScreen> {
   bool _error = false;
   int _requestId = 0;
 
-  /// 지역 필터 없음(전국)일 때만 쓰는 스크롤 기반 점진 로딩 상태 — 지역
-  /// 필터가 걸리면(`spotsInRegion`) 이미 단일 호출이라 해당 없음. 서버가 GAP
-  /// 점수 내림차순만 지원해([[gap-score-api]]) 오름차순은 마지막 페이지부터
-  /// 역순으로 페이징한다.
+  /// 현재 페이지(1부터). 하단 [PaginationBar]로 바꾼다.
+  ///
+  /// 지역 필터가 걸리면(`spotsInRegion`) 전체 목록을 한 번에 받아 [_spots]에
+  /// 두고 클라이언트에서 [_pageSize]개씩 잘라 보여준다. 지역 필터 없음(전국,
+  /// [_nationwideActive])일 때는 [_spots]가 현재 페이지분뿐이고 페이지를 넘길
+  /// 때마다 서버에서 그 페이지만 받는다. 서버가 GAP 점수 내림차순만 지원해
+  /// ([[gap-score-api]]) 오름차순은 마지막 페이지부터 역순으로 대응시킨다.
+  int _page = 1;
   bool _nationwideActive = false;
-  int _nationwidePage = 0;
-  bool _hasMoreNationwide = false;
-  bool _loadingMoreNationwide = false;
-  final _scrollController = ScrollController();
+  int _nationwideTotal = 0;
+  int _nationwideTotalPages = 1;
 
-  void _onScroll() {
-    if (!_nationwideActive ||
-        _loading ||
-        _loadingMoreNationwide ||
-        !_hasMoreNationwide ||
-        !_scrollController.hasClients) {
-      return;
-    }
-    if (_scrollController.position.extentAfter < 400) {
-      _loadMoreNationwide();
-    }
-  }
+  /// 현재 전국 페이지 첫 항목 앞에 있는 항목 수 — 순위 번호(`offset + i + 1`)용.
+  /// 오름차순은 첫 페이지가 [_pageSize]보다 짧을 수 있어 `(page - 1) * size`로
+  /// 계산할 수 없다.
+  int _nationwideRankOffset = 0;
+  final _scrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
-    _scrollController.addListener(_onScroll);
     _loadFilterOptions();
     GapSpots.instance
         .level1Categories()
@@ -152,22 +153,21 @@ class _RankingScreenState extends State<RankingScreen> {
   /// 방문인증 필터는 순수 클라이언트 처리(재필터)라 실제 지연은 없지만,
   /// 지역·카테고리 필터(서버 재조회, [_load])와 같은 로딩 피드백을 줘서 필터가
   /// 일관되게 느껴지도록 짧게 [LoadingOverlay]를 보여준 뒤 적용한다. 적용 후
-  /// 필터로 목록이 짧아져 화면이 안 채워졌으면 [_onScroll]을 한 번 더 불러
-  /// 다음 페이지를 이어 채운다(전국 모드에서만 실제로 동작).
+  /// 지역 모드에선 목록 길이가 바뀌므로 첫 페이지로 돌아간다.
   Future<void> _flashLoading(VoidCallback apply) async {
     setState(() => _loading = true);
     await Future.delayed(AppMotion.standard);
     if (!mounted) return;
     setState(() {
       apply();
+      if (!_nationwideActive) _page = 1;
       _loading = false;
     });
-    WidgetsBinding.instance.addPostFrameCallback((_) => _onScroll());
   }
 
   /// 오름차순은 서버가 지원하지 않는 정렬이라([[gap-score-api]]) 전국 모드에서는
   /// 이미 불러온 일부만 재정렬할 수 없고, 처음부터 다시 불러와야 한다(마지막
-  /// 페이지부터 역순 페이징). 지역 필터가 걸린 경우는 원래대로 로드된 전체를
+  /// 페이지부터 역순 대응). 지역 필터가 걸린 경우는 원래대로 로드된 전체를
   /// 클라이언트에서 재정렬한다.
   Future<void> _onSortChanged(bool descending) {
     if (_nationwideActive) {
@@ -189,9 +189,67 @@ class _RankingScreenState extends State<RankingScreen> {
     return _flashLoading(() => _visitVerifiableOnly = value);
   }
 
+  /// 진입 기본값(서울·전체 시군구·전체 카테고리·높은순·방문 인증 필터 꺼짐)과
+  /// 다른 필터가 하나라도 걸려 있는지.
+  bool get _hasActiveFilters =>
+      _sidoCode != _kDefaultSidoCode ||
+      _sigunguCode != null ||
+      _category != null ||
+      !_descending ||
+      _visitVerifiableOnly;
+
+  /// "필터 해제"(필터 시트) / "필터 초기화"(빈 결과 화면) — 전부 진입 기본값으로 되돌린다. 방문 인증 필터만 켜져 있었다면
+  /// 서버 재조회 없이 [_flashLoading]으로, 지역·카테고리·정렬이 바뀌었으면
+  /// [_load]로 다시 불러온다.
+  void _resetFilters() {
+    final needsReload =
+        _sidoCode != _kDefaultSidoCode ||
+        _sigunguCode != null ||
+        _category != null ||
+        !_descending;
+    if (!needsReload) {
+      _flashLoading(() => _visitVerifiableOnly = false);
+      return;
+    }
+    final sidoChanged = _sidoCode != _kDefaultSidoCode;
+    setState(() {
+      _sidoCode = _kDefaultSidoCode;
+      _sigunguCode = null;
+      _category = null;
+      _descending = true;
+      _visitVerifiableOnly = false;
+      if (sidoChanged) _sigunguOptions = const [];
+    });
+    if (sidoChanged) _loadFilterOptions();
+    _load();
+  }
+
   List<MockTouristSpot> get _visibleSpots => _visitVerifiableOnly
       ? _spots.where((s) => s.visitVerifiable == true).toList()
       : _spots;
+
+  int get _totalPages => _nationwideActive
+      ? _nationwideTotalPages
+      : math.max(1, (_visibleSpots.length + _pageSize - 1) ~/ _pageSize);
+
+  /// 현재 페이지에 그릴 (순위, 스팟) 목록. 지역 모드는 필터된 전체 목록에서
+  /// [_page]번째 조각을 자르고 순위는 그 목록 안의 위치다. 전국 모드는 [_spots]
+  /// 자체가 이미 현재 페이지분이라 자르지 않고, 방문 인증 필터로 빠진 항목이
+  /// 있어도 순위는 서버 순서 그대로 둔다.
+  List<(int, MockTouristSpot)> get _pageEntries {
+    if (_nationwideActive) {
+      return [
+        for (var i = 0; i < _spots.length; i++)
+          if (!_visitVerifiableOnly || _spots[i].visitVerifiable == true)
+            (_nationwideRankOffset + i + 1, _spots[i]),
+      ];
+    }
+    final offset = (_page - 1) * _pageSize;
+    return [
+      for (final (i, spot) in _visibleSpots.skip(offset).take(_pageSize).indexed)
+        (offset + i + 1, spot),
+    ];
+  }
 
   Future<void> _load() async {
     final requestId = ++_requestId;
@@ -199,9 +257,20 @@ class _RankingScreenState extends State<RankingScreen> {
       _loading = true;
       _error = false;
       _spots = const [];
-      _nationwidePage = 0;
-      _hasMoreNationwide = false;
+      _page = 1;
+      _nationwideTotal = 0;
+      _nationwideTotalPages = 1;
+      _nationwideRankOffset = 0;
     });
+
+    // Let the [LoadingOverlay] actually fade in before any work starts. Once
+    // the metadata/place caches are warm, the fetch below resolves in
+    // microtasks and its polygon filtering runs synchronously on the UI
+    // thread, so without this the overlay never gets a frame and the list just
+    // pops in after a freeze. Same beat [_flashLoading] gives the client-side
+    // filters.
+    await Future.delayed(AppMotion.standard);
+    if (!mounted || requestId != _requestId) return;
 
     final regionCode = _sigunguCode ?? _sidoCode;
     if (regionCode != null) {
@@ -233,100 +302,104 @@ class _RankingScreenState extends State<RankingScreen> {
     }
 
     _nationwideActive = true;
-    await _loadFirstNationwidePage(requestId);
+    await _fetchNationwidePage(1, requestId);
   }
 
-  /// 지역 필터 없음(전국) — `GET /places/gap/rankings` 첫 페이지만 불러오고
-  /// 나머지는 스크롤에 따라 [_loadMoreNationwide]가 이어붙인다. 내림차순은
-  /// 서버 기본 정렬 그대로 1페이지부터, 오름차순은 서버가 못 주는 정렬이라
-  /// 총 페이지 수만 가벼운 호출(limit 1)로 먼저 확인한 뒤 마지막 페이지부터
-  /// 역순으로 시작한다.
-  Future<void> _loadFirstNationwidePage(int requestId) async {
+  /// 페이지 번호 탭 — 지역 모드는 이미 가진 목록에서 다른 조각을 보여주기만
+  /// 하면 되고, 전국 모드는 그 페이지를 서버에서 받아온다.
+  Future<void> _goToPage(int page) async {
+    if (page == _page || page < 1 || page > _totalPages) return;
+    if (!_nationwideActive) {
+      setState(() => _page = page);
+      if (_scrollController.hasClients) _scrollController.jumpTo(0);
+      return;
+    }
+    final requestId = ++_requestId;
+    setState(() => _loading = true);
+    await _fetchNationwidePage(page, requestId);
+  }
+
+  /// 지역 필터 없음(전국) — `GET /places/gap/rankings`에서 [page] 한 페이지만
+  /// 받아 [_spots]를 교체한다. 내림차순은 서버 정렬 그대로 같은 번호의
+  /// 페이지를 받는다. 오름차순은 서버가 못 주는 정렬이라 뒤에서부터 센다:
+  /// 화면 1페이지 = 서버 마지막 페이지(뒤집어서), 총 개수/페이지 수는 1페이지를
+  /// 열 때 가벼운 호출(limit 1)로 먼저 확인한다.
+  ///
+  /// 실패했을 때 보여줄 목록이 아직 없으면(첫 로드) [_error]를 세우고, 페이지를
+  /// 넘기다 실패한 경우엔 보던 페이지를 그대로 두고 안내만 띄운다.
+  Future<void> _fetchNationwidePage(int page, int requestId) async {
     final gap = GapService();
     try {
+      final int total;
+      final int totalPages;
+      final int rankOffset;
+      final List<GapPlace> items;
       if (_descending) {
         final result = await gap.rankings(
           categoryId: _category,
-          page: 1,
-          limit: _nationwidePageLimit,
+          page: page,
+          limit: _pageSize,
         );
-        final spots = await GapSpots.instance.toSpots(result.items);
-        if (!mounted || requestId != _requestId) return;
-        setState(() {
-          _spots = spots;
-          _nationwidePage = 1;
-          _hasMoreNationwide = result.hasMore;
-          _loading = false;
-        });
+        total = result.total;
+        totalPages = result.totalPages;
+        rankOffset = (page - 1) * _pageSize;
+        items = result.items;
       } else {
-        final probe = await gap.rankings(
-          categoryId: _category,
-          page: 1,
-          limit: 1,
-        );
-        final totalPages = probe.totalPages;
-        if (totalPages <= 0) {
+        var knownTotal = _nationwideTotal;
+        if (page == 1) {
+          final probe = await gap.rankings(
+            categoryId: _category,
+            page: 1,
+            limit: 1,
+          );
+          knownTotal = probe.total;
+        }
+        total = knownTotal;
+        totalPages = (total + _pageSize - 1) ~/ _pageSize;
+        if (total == 0) {
           if (!mounted || requestId != _requestId) return;
           setState(() {
             _spots = const [];
+            _page = 1;
+            _nationwideTotal = 0;
+            _nationwideTotalPages = 1;
+            _nationwideRankOffset = 0;
             _loading = false;
           });
           return;
         }
+        final serverPage = totalPages - page + 1;
         final result = await gap.rankings(
           categoryId: _category,
-          page: totalPages,
-          limit: _nationwidePageLimit,
+          page: serverPage,
+          limit: _pageSize,
         );
-        final spots = await GapSpots.instance.toSpots(
-          result.items.reversed.toList(),
-        );
-        if (!mounted || requestId != _requestId) return;
-        setState(() {
-          _spots = spots;
-          _nationwidePage = totalPages;
-          _hasMoreNationwide = totalPages > 1;
-          _loading = false;
-        });
+        rankOffset = total - (serverPage - 1) * _pageSize - result.items.length;
+        items = result.items.reversed.toList();
       }
-      WidgetsBinding.instance.addPostFrameCallback((_) => _onScroll());
-    } catch (_) {
-      if (!mounted || requestId != _requestId) return;
-      setState(() {
-        _loading = false;
-        _error = true;
-      });
-    }
-  }
-
-  /// 스크롤이 바닥에 가까워지면 다음(내림차순) 또는 이전(오름차순, 역순
-  /// 페이징) 페이지를 이어붙인다.
-  Future<void> _loadMoreNationwide() async {
-    final requestId = _requestId;
-    setState(() => _loadingMoreNationwide = true);
-    try {
-      final gap = GapService();
-      final nextPage = _descending ? _nationwidePage + 1 : _nationwidePage - 1;
-      final result = await gap.rankings(
-        categoryId: _category,
-        page: nextPage,
-        limit: _nationwidePageLimit,
-      );
-      final items = _descending
-          ? result.items
-          : result.items.reversed.toList();
       final spots = await GapSpots.instance.toSpots(items);
       if (!mounted || requestId != _requestId) return;
       setState(() {
-        _spots = [..._spots, ...spots];
-        _nationwidePage = nextPage;
-        _hasMoreNationwide = _descending ? result.hasMore : nextPage > 1;
-        _loadingMoreNationwide = false;
+        _spots = spots;
+        _page = page;
+        _nationwideTotal = total;
+        _nationwideTotalPages = math.max(1, totalPages);
+        _nationwideRankOffset = rankOffset;
+        _loading = false;
       });
-      WidgetsBinding.instance.addPostFrameCallback((_) => _onScroll());
+      if (_scrollController.hasClients) _scrollController.jumpTo(0);
     } catch (_) {
       if (!mounted || requestId != _requestId) return;
-      setState(() => _loadingMoreNationwide = false);
+      final hasList = _spots.isNotEmpty;
+      setState(() {
+        _loading = false;
+        _error = !hasList;
+      });
+      if (hasList) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('페이지를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.')),
+        );
+      }
     }
   }
 
@@ -364,6 +437,7 @@ class _RankingScreenState extends State<RankingScreen> {
         onCategoryChanged: _onCategoryChanged,
         onSortChanged: _onSortChanged,
         onVisitVerifiableOnlyChanged: _onVisitVerifiableOnlyChanged,
+        onReset: _resetFilters,
         currentSigunguOptions: () => _sigunguOptions,
       ),
     );
@@ -437,7 +511,10 @@ class _RankingScreenState extends State<RankingScreen> {
               AppSpacing.xl,
               AppSpacing.sm,
             ),
-            child: Text(_filterSummary, style: AppTextStyles.caption),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: FilterSummaryBox(text: _filterSummary),
+            ),
           ),
           Expanded(
             child: LoadingOverlay(loading: _loading, child: _buildBody()),
@@ -451,29 +528,54 @@ class _RankingScreenState extends State<RankingScreen> {
 
   Widget _buildBody() {
     if (_loading) {
-      // The Expanded-level LoadingOverlay already shows the loading pill.
-      return const SizedBox.shrink();
+      // The Expanded-level LoadingOverlay already shows the loading pill. Must
+      // fill the area rather than shrink: the overlay is a Stack sized by this
+      // non-positioned child, and the Column hands it loose width, so a
+      // zero-size child collapses the whole overlay to 0 wide (blank screen,
+      // no pill).
+      return const SizedBox.expand();
     }
-    final spots = _visibleSpots;
-    if (spots.isEmpty) {
-      return Center(
+    final entries = _pageEntries;
+    final totalPages = _totalPages;
+    // 전국 모드에서 방문 인증 필터로 한 페이지가 통째로 비어도 페이지 바는
+    // 남겨, 다른 페이지로 넘어갈 수 있게 한다.
+    if (entries.isEmpty && totalPages <= 1) {
+      // Top-aligned, not vertically centered — centered, the message sat
+      // mid-screen and read as detached from the filter summary above it.
+      return Align(
+        alignment: Alignment.topCenter,
         child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.xxl),
-          child: Text(
-            _error
-                ? '랭킹을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.'
-                : _visitVerifiableOnly
-                ? '방문 인증 가능한 장소가 아직 없어요.'
-                : '해당하는 관광 스팟이 아직 없어요.',
-            textAlign: TextAlign.center,
-            style: AppTextStyles.bodyMedium.copyWith(
-              color: AppColors.textSecondary,
-            ),
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.xxl,
+            AppSpacing.xl,
+            AppSpacing.xxl,
+            AppSpacing.xxl,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                _error
+                    ? '랭킹을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.'
+                    : _visitVerifiableOnly
+                    ? '방문 인증 가능한 장소가 아직 없어요.'
+                    : '해당하는 관광 스팟이 아직 없어요.',
+                textAlign: TextAlign.center,
+                style: AppTextStyles.bodyMedium.copyWith(
+                  color: AppColors.textSecondary,
+                ),
+              ),
+              // 필터 때문에 비었을 때만 — 필터 없이 비었거나 로드 실패면
+              // 초기화해도 소용없다.
+              if (!_error && _hasActiveFilters) ...[
+                const SizedBox(height: AppSpacing.md),
+                FilterResetButton(label: '필터 초기화', onTap: _resetFilters),
+              ],
+            ],
           ),
         ),
       );
     }
-    final showLoadingMore = _nationwideActive && _loadingMoreNationwide;
     return ListView.separated(
       controller: _scrollController,
       padding: AppBottomNavBar.scrollPadding(
@@ -485,29 +587,26 @@ class _RankingScreenState extends State<RankingScreen> {
           AppSpacing.xxl,
         ),
       ),
-      itemCount: spots.length + (showLoadingMore ? 1 : 0),
+      // 마지막 칸은 페이지 이동 바(페이지가 하나뿐이면 스스로 아무것도 안 그림).
+      itemCount: entries.length + 1,
       separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.xs),
       itemBuilder: (_, i) {
-        if (i >= spots.length) {
-          return const Padding(
-            padding: EdgeInsets.symmetric(vertical: AppSpacing.xl),
-            child: Center(
-              child: SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: AppColors.primary,
-                ),
-              ),
+        if (i == entries.length) {
+          return Padding(
+            padding: const EdgeInsets.only(top: AppSpacing.lg),
+            child: PaginationBar(
+              page: _page,
+              totalPages: totalPages,
+              onPageChanged: _goToPage,
             ),
           );
         }
+        final (rank, spot) = entries[i];
         return RankingCard(
-          rank: i + 1,
-          spot: spots[i],
-          onTap: () => _openSpot(spots[i]),
-          onDetail: () => _openSpot(spots[i]),
+          rank: rank,
+          spot: spot,
+          onTap: () => _openSpot(spot),
+          onDetail: () => _openSpot(spot),
         );
       },
     );
@@ -588,6 +687,7 @@ class _RankingFilterSheet extends StatefulWidget {
     required this.onCategoryChanged,
     required this.onSortChanged,
     required this.onVisitVerifiableOnlyChanged,
+    required this.onReset,
     required this.currentSigunguOptions,
   });
 
@@ -609,6 +709,10 @@ class _RankingFilterSheet extends StatefulWidget {
   final ValueChanged<bool> onSortChanged;
   final ValueChanged<bool> onVisitVerifiableOnlyChanged;
 
+  /// `_RankingScreenState._resetFilters` — 전부 진입 기본값으로 되돌리고 다시
+  /// 불러온다.
+  final VoidCallback onReset;
+
   /// Reads `_RankingScreenState._sigunguOptions` after [onSidoChanged]
   /// finishes loading the new 시도's 시군구 list.
   final List<GeoRegion> Function() currentSigunguOptions;
@@ -624,6 +728,24 @@ class _RankingFilterSheetState extends State<_RankingFilterSheet> {
   late int? _category = widget.initialCategory;
   late bool _descending = widget.initialDescending;
   late bool _visitVerifiableOnly = widget.initialVisitVerifiableOnly;
+
+  bool get _hasActiveFilters =>
+      _sidoCode != _RankingScreenState._kDefaultSidoCode ||
+      _sigunguCode != null ||
+      _category != null ||
+      !_descending ||
+      _visitVerifiableOnly;
+
+  void _reset() {
+    setState(() {
+      _sidoCode = _RankingScreenState._kDefaultSidoCode;
+      _sigunguCode = null;
+      _category = null;
+      _descending = true;
+      _visitVerifiableOnly = false;
+    });
+    widget.onReset();
+  }
 
   Future<void> _onSido(String? code) async {
     if (code != null && isSidoLocked(code)) {
@@ -713,9 +835,18 @@ class _RankingFilterSheetState extends State<_RankingFilterSheet> {
               ],
             ),
             const SizedBox(height: AppSpacing.md),
-            VisitVerifiableFilterChip(
-              active: _visitVerifiableOnly,
-              onTap: () => _onVisitVerifiableOnly(!_visitVerifiableOnly),
+            Row(
+              children: [
+                VisitVerifiableFilterChip(
+                  active: _visitVerifiableOnly,
+                  onTap: () => _onVisitVerifiableOnly(!_visitVerifiableOnly),
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                FilterResetButton(
+                  onTap: _reset,
+                  enabled: _hasActiveFilters,
+                ),
+              ],
             ),
           ],
         ),

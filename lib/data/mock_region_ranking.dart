@@ -143,6 +143,27 @@ class MockTouristSpot {
 
   final String address;
 
+  /// [address]의 시/도 다음 토큰(들)만 뽑은 "군/구" 단위 지역명.
+  /// 예: "전라남도 담양군 담양읍 …" → "담양군", "전라북도 전주시 완산구 …" →
+  /// "전주시 완산구". 형식에 안 맞으면(주소 미확보 등) `null`.
+  String? get regionPrefix {
+    final parts = address.trim().split(RegExp(r'\s+'));
+    if (parts.length < 2) return null;
+    final second = parts[1];
+    if (!RegExp(r'(시|군|구)$').hasMatch(second)) return null;
+    if (second.endsWith('시') && parts.length > 2 && parts[2].endsWith('구')) {
+      return '$second ${parts[2]}';
+    }
+    return second;
+  }
+
+  /// "지역 + 장소명" 외부 검색어(길찾기·TikTok 검색 공용). 지역을 못 뽑으면
+  /// 장소명만.
+  String get regionSearchQuery {
+    final region = regionPrefix;
+    return region == null ? name : '$region $name';
+  }
+
   /// 운영시간 — 줄 단위. (예: 성수기/비수기 구분, 입장 마감 안내)
   final List<String> hours;
 

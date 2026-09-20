@@ -142,9 +142,18 @@ class _NavTab extends StatelessWidget {
 /// top of it (e.g. `<지역별 랭킹>`, `<장소 정보>`) it lands back on that tab's
 /// own root screen, same as any other tab switch.
 class AppBottomNavBar extends StatelessWidget {
-  const AppBottomNavBar({super.key, required this.currentIndex});
+  const AppBottomNavBar({
+    super.key,
+    required this.currentIndex,
+    this.confirmLeave,
+  });
 
   final int currentIndex;
+
+  /// Set by screens holding unsaved input (e.g. `<발자국 남기기>`). Tab taps
+  /// clear the whole stack without going through `PopScope`, so this is the
+  /// only chance to ask first — navigation proceeds only if it resolves `true`.
+  final Future<bool> Function()? confirmLeave;
 
   static const double barHeight = 64;
   static const double topMargin = 8;
@@ -173,7 +182,10 @@ class AppBottomNavBar extends StatelessWidget {
     );
   }
 
-  void _onDestinationSelected(BuildContext context, int index) {
+  Future<void> _onDestinationSelected(BuildContext context, int index) async {
+    final confirm = confirmLeave;
+    if (confirm != null && !await confirm()) return;
+    if (!context.mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(builder: (_) => _tabRootScreen(index)),
       (route) => false,

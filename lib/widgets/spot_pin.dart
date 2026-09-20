@@ -64,6 +64,9 @@ class SpotPin extends StatelessWidget {
       onTap: onTap,
       child: Column(
         mainAxisSize: MainAxisSize.min,
+        // The marker box is tight-sized (taller than the pin); anchor the pin's
+        // tip to the box's bottom edge, which sits on the geo point.
+        mainAxisAlignment: MainAxisAlignment.end,
         children: [
           if (selected) ...[
             Container(

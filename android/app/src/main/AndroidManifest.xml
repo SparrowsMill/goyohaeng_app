@@ -58,5 +58,10 @@
             <action android:name="android.intent.action.VIEW"/>
             <data android:scheme="nmap"/>
         </intent>
+        <!-- url_launcher: TikTok 앱 설치 확인(canLaunchUrl) + 검색 딥링크 -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="snssdk1233"/>
+        </intent>
     </queries>
 </manifest>

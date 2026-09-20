@@ -200,6 +200,90 @@ class PillDropdown<T> extends StatelessWidget {
   }
 }
 
+/// The one-line current-filter readout ("서울/전체/전체/고요 지수 높은순")
+/// shown above a ranking list, in a translucent-white filled box with a light
+/// white outline so it reads as its own element against the cream page. Shared by `<전체 랭킹>` and
+/// `<지역별 랭킹>`.
+class FilterSummaryBox extends StatelessWidget {
+  const FilterSummaryBox({super.key, required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.xs + 2,
+      ),
+      decoration: BoxDecoration(
+        // Translucent white fill + a slightly stronger white outline, so the
+        // cream page shows through a little instead of a flat opaque card.
+        color: const Color(0xFFFFFFFF).withValues(alpha: 0.45),
+        border: Border.all(
+          color: const Color(0xFFFFFFFF).withValues(alpha: 0.85),
+        ),
+        borderRadius: BorderRadius.circular(AppRadius.smallButton),
+      ),
+      child: Text(text, style: AppTextStyles.caption),
+    );
+  }
+}
+
+/// Small outlined "필터 해제" / "필터 초기화" button (Small Button, CLAUDE.md §7:
+/// 36px tall, 12px padding/radius, outlined) — sits beside the 방문 인증 가능만
+/// chip in the filter sheets and under the empty-result message.
+class FilterResetButton extends StatelessWidget {
+  const FilterResetButton({
+    super.key,
+    required this.onTap,
+    this.label = '필터 해제',
+    this.enabled = true,
+  });
+
+  final VoidCallback onTap;
+  final String label;
+
+  /// `false` (nothing to reset) greys the button out and ignores taps — it
+  /// stays visible so the user can see where the reset lives.
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = enabled ? AppColors.primaryPressed : AppColors.textDisabled;
+    return Material(
+      color: enabled ? AppColors.surface : AppColors.surfaceDisabled,
+      borderRadius: BorderRadius.circular(AppRadius.smallButton),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AppRadius.smallButton),
+        onTap: enabled ? onTap : null,
+        child: Container(
+          height: 36,
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(AppRadius.smallButton),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Symbols.restart_alt_rounded, size: 16, color: color),
+              const SizedBox(width: 4),
+              Text(
+                label,
+                style: AppTextStyles.bodySmall.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: color,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// One ranked GAP 스팟 row — rank badge, name, 즐겨찾기 별, 갭지수, category/
 /// ingredient/방문·영업 tags, and (when [selected]) a "자세히 보기" button.
 /// Shared by `<지역별 랭킹>` and `<전체 랭킹>`.

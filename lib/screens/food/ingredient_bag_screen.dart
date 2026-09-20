@@ -396,6 +396,15 @@ class _CollectedSummaryCard extends StatelessWidget {
                       fontWeight: FontWeight.w600,
                     ),
                   ),
+                  if (recommended == null) ...[
+                    const SizedBox(height: AppSpacing.xs),
+                    Text(
+                      '지도에서 방문지를 찾아\n재료를 모아보세요',
+                      style: AppTextStyles.caption.copyWith(
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: AppSpacing.sm),
                   if (recommended != null)
                     _RecommendationPill(
@@ -405,7 +414,7 @@ class _CollectedSummaryCard extends StatelessWidget {
                   else
                     _RecommendationPill(
                       icon: Symbols.map_rounded,
-                      label: '지도에서 방문지 찾아보기',
+                      label: '지도 열기',
                       onTap: onTapCollectMore,
                     ),
                 ],
@@ -704,11 +713,18 @@ class _SectionLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 제목이 길거나 화면이 좁고 글자 크기가 커져도 잘리거나 넘치지 않게
+    // Expanded로 남는 폭만 쓰고, 넘치면 다음 줄로 넘긴다. 잎 장식은 첫 줄에
+    // 맞춘다(h3 line-height 30px 기준으로 16px 잎을 가운데 정렬).
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _Leaf(flip: false),
+        const Padding(
+          padding: EdgeInsets.only(top: 7),
+          child: _Leaf(flip: false),
+        ),
         const SizedBox(width: AppSpacing.xs),
-        Text(label, style: AppTextStyles.h3),
+        Expanded(child: Text(label, style: AppTextStyles.h3)),
       ],
     );
   }

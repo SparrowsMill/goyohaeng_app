@@ -335,10 +335,58 @@ class _FootprintWriteScreenState extends State<FootprintWriteScreen> {
     }
   }
 
+  /// 작성·수정 중 화면을 벗어나기 전에 "내용이 사라진다"고 알리고 확인을
+  /// 받는다 — 확인(`true`)일 때만 나간다. 저장 성공 후의 `Navigator.pop(true)`는
+  /// `PopScope`를 거치지 않으므로 이 확인이 뜨지 않는다.
+  Future<bool> _confirmLeave() async {
+    final leave = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadius.modal),
+        ),
+        title: const Text('페이지를 나갈까요?'),
+        content: Text(
+          widget.editing
+              ? '나가면 수정 중인 내용이 사라져요.'
+              : '나가면 작성 중인 내용이 사라져요.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('취소'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('확인'),
+          ),
+        ],
+      ),
+    );
+    return leave == true;
+  }
+
+  Future<void> _leaveAfterConfirm() async {
+    final leave = await _confirmLeave();
+    if (!leave || !mounted) return;
+    Navigator.of(context).pop();
+  }
+
   @override
   Widget build(BuildContext context) {
     final bgHeight = MediaQuery.sizeOf(context).width / (1587 / 991);
     final fadeHeight = bgHeight * 0.3;
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _leaveAfterConfirm();
+      },
+      child: _buildScaffold(bgHeight, fadeHeight),
+    );
+  }
+
+  Widget _buildScaffold(double bgHeight, double fadeHeight) {
     return Scaffold(
       backgroundColor: AppColors.appBackground,
       appBar: AppBar(
@@ -466,7 +514,10 @@ class _FootprintWriteScreenState extends State<FootprintWriteScreen> {
         ],
       ),
       extendBody: true,
-      bottomNavigationBar: const AppBottomNavBar(currentIndex: 3),
+      bottomNavigationBar: AppBottomNavBar(
+        currentIndex: 3,
+        confirmLeave: _confirmLeave,
+      ),
     );
   }
 }

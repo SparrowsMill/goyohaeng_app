@@ -237,7 +237,7 @@ class _RegionSpotMapState extends State<RegionSpotMap> {
       point: LatLng(spot.lat!, spot.lng!),
       width: 170,
       height: 34,
-      alignment: Alignment.bottomCenter,
+      alignment: Alignment.topCenter,
       child: SpotPin(
         label: spot.name,
         color: gapIndexColor(spot.gapIndex),
@@ -297,8 +297,12 @@ class _RegionSpotMapState extends State<RegionSpotMap> {
       point: LatLng(spot.lat!, spot.lng!),
       width: 170,
       height: selected ? 84 : 34,
-      // The pin's tip sits on the geo point; name/label grow upward.
-      alignment: Alignment.bottomCenter,
+      // The pin's tip sits on the geo point; name/label grow upward. flutter_map's
+      // `topCenter` puts the whole marker box *above* the point ([SpotPin] pins
+      // its content to the box's bottom) — `bottomCenter` would hang it below,
+      // and the taller selected box would then land its pin far off the
+      // unselected one's spot.
+      alignment: Alignment.topCenter,
       child: SpotPin(
         label: spot.name,
         color: gapIndexColor(spot.gapIndex),

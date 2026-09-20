@@ -102,20 +102,6 @@ class _PlaceInfoScreenState extends State<PlaceInfoScreen> {
     if (context.mounted) _snack(context, failMessage);
   }
 
-  /// [address]의 시/도 다음 토큰(들)만 뽑아 "군/구" 단위 지역명을 만든다.
-  /// 예: "전라남도 담양군 담양읍 …" → "담양군", "전라북도 전주시 완산구 …" →
-  /// "전주시 완산구". 형식에 안 맞으면(주소 미확보 등) `null`.
-  String? _regionPrefix(String address) {
-    final parts = address.trim().split(RegExp(r'\s+'));
-    if (parts.length < 2) return null;
-    final second = parts[1];
-    if (!RegExp(r'(시|군|구)$').hasMatch(second)) return null;
-    if (second.endsWith('시') && parts.length > 2 && parts[2].endsWith('구')) {
-      return '$second ${parts[2]}';
-    }
-    return second;
-  }
-
   /// 네이버 지도 앱(`nmap://`)으로, 실패하면 네이버 지도 웹으로 장소를 연다.
   ///
   /// 좌표([MockTouristSpot.hasLocation])가 있으면 앱·웹 모두 좌표로 그 지점을
@@ -124,9 +110,7 @@ class _PlaceInfoScreenState extends State<PlaceInfoScreen> {
   /// 목록을 띄우기 때문에, 좌표가 있는 한 검색 경로를 타지 않는다. 좌표가
   /// 없을 때만 이름 검색으로 폴백한다.
   void _openDirections(BuildContext context) {
-    final region = _regionPrefix(spot.address);
-    final query = region == null ? spot.name : '$region ${spot.name}';
-    final name = Uri.encodeComponent(query);
+    final name = Uri.encodeComponent(spot.regionSearchQuery);
     if (spot.hasLocation) {
       _open(context, [
         Uri.parse(
@@ -241,7 +225,15 @@ class _TitleMedia extends StatefulWidget {
 }
 
 class _TitleMediaState extends State<_TitleMedia> {
+  /// 너무 세로로 긴 사진이 화면을 다 차지하지 않도록 하는 비율(가로/세로) 하한.
+  /// 이보다 세로로 긴 사진은 이 비율로 잘라(cover) 보여준다.
+  static const double _minAspect = 0.75;
+
   String? _photoUrl;
+  double? _aspect;
+  bool _failed = false;
+  ImageStream? _stream;
+  ImageStreamListener? _listener;
 
   @override
   void initState() {
@@ -252,12 +244,41 @@ class _TitleMediaState extends State<_TitleMedia> {
           .detail(id)
           .then((place) {
             final url = place.images.isEmpty ? null : place.images.first.url;
-            if (mounted && url != null) setState(() => _photoUrl = url);
+            if (mounted && url != null) _resolvePhoto(url);
           })
           .catchError((_) {
             /* 카테고리 일러스트 유지 */
           });
     }
+  }
+
+  /// API가 사진 크기를 주지 않으므로 이미지를 디코딩해 실제 비율을 읽는다.
+  /// 같은 [NetworkImage]가 이미지 캐시에 남아 있어 `Image`가 다시 받지 않는다.
+  void _resolvePhoto(String url) {
+    final stream = NetworkImage(url).resolve(ImageConfiguration.empty);
+    final listener = ImageStreamListener(
+      (info, _) {
+        if (!mounted) return;
+        setState(() {
+          _photoUrl = url;
+          _aspect = info.image.width / info.image.height;
+        });
+      },
+      onError: (_, _) {
+        if (mounted) setState(() => _failed = true);
+      },
+    );
+    _stream = stream;
+    _listener = listener;
+    stream.addListener(listener);
+    setState(() => _photoUrl = url);
+  }
+
+  @override
+  void dispose() {
+    final listener = _listener;
+    if (listener != null) _stream?.removeListener(listener);
+    super.dispose();
   }
 
   Widget _categoryIcon() =>
@@ -266,37 +287,34 @@ class _TitleMediaState extends State<_TitleMedia> {
   @override
   Widget build(BuildContext context) {
     final url = _photoUrl;
-    if (url == null) return _categoryIcon();
+    if (url == null || _failed) return _categoryIcon();
+    final aspect = _aspect;
     return ClipRRect(
       borderRadius: BorderRadius.circular(AppRadius.card),
-      child: Image.network(
-        url,
-        width: 200,
-        height: 200,
-        fit: BoxFit.cover,
-        errorBuilder: (context, error, stackTrace) => _categoryIcon(),
-        loadingBuilder: (context, child, progress) =>
-            progress == null
-                ? child
-                : SizedBox(
-                    width: 200,
-                    height: 200,
-                    child: Center(
-                      child: SizedBox(
-                        width: 24,
-                        height: 24,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: AppColors.primary,
-                          value: progress.expectedTotalBytes == null
-                              ? null
-                              : progress.cumulativeBytesLoaded /
-                                  progress.expectedTotalBytes!,
-                        ),
-                      ),
-                    ),
+      child: aspect == null
+          ? const SizedBox(
+              width: double.infinity,
+              height: 200,
+              child: Center(
+                child: SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: AppColors.primary,
                   ),
-      ),
+                ),
+              ),
+            )
+          : AspectRatio(
+              aspectRatio: aspect < _minAspect ? _minAspect : aspect,
+              child: Image.network(
+                url,
+                width: double.infinity,
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) => _categoryIcon(),
+              ),
+            ),
     );
   }
 }

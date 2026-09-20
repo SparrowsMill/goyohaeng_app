@@ -227,7 +227,9 @@ class _TrendSummaryScreenState extends State<TrendSummaryScreen> {
             onSearch: (platform) => _openSnsSearch(
               context,
               platform,
-              _searchQuery,
+              // TikTok은 길찾기와 같은 "지역 + 장소명" — 트렌드 검색어(장소명 +
+              // 대표 키워드)는 TikTok에서 결과가 너무 좁아진다.
+              platform == 'TikTok' ? spot.regionSearchQuery : _searchQuery,
               () => _todo(context, '$platform 검색을 여는 데 실패했어요.'),
             ),
           ),
@@ -636,8 +638,13 @@ Future<void> _openNaverBlogSearch(
   }
 }
 
+/// TikTok 앱 URL 스킴 — 글로벌/아시아판 앱이 모두 등록한다. Android
+/// `<queries>`와 iOS `LSApplicationQueriesSchemes`에도 선언돼 있어야
+/// `canLaunchUrl`이 동작한다.
+const _kTikTokScheme = 'snssdk1233';
+
 /// [platform]("Instagram"/"YouTube"/"TikTok")의 [query] 검색 결과를 연다.
-/// Instagram은 키워드 검색 URL이 없어 해시태그 페이지로 대체한다(공백 제거) —
+/// TikTok은 앱 딥링크로만 열고(앱이 없으면 안내만), Instagram은 키워드 검색 URL이 없어 해시태그 페이지로 대체한다(공백 제거) —
 /// 비로그인 상태에선 결과가 제한되거나 로그인 유도가 뜰 수 있다. [query]가
 /// 비어 있으면(실 검색어도 목업도 없는 극단적 경우) [onFallback]으로 대체한다.
 Future<void> _openSnsSearch(
@@ -652,26 +659,56 @@ Future<void> _openSnsSearch(
     return;
   }
   final Uri uri;
-  // TikTok만 인앱 웹뷰로 연다 — externalApplication으로 열면 OS가 유니버설
-  // 링크로 가로채 TikTok 앱을 띄우는데, 앱이 /search 딥링크의 검색어를
-  // 무시하고 홈 피드만 보여준다. 인앱 브라우저로 열면 실제 모바일 웹
-  // 검색 결과 페이지가 그대로 렌더링된다.
-  LaunchMode mode = LaunchMode.externalApplication;
+  if (platform == 'TikTok') {
+    // 웹 링크(www.tiktok.com/search)는 로그인 없이는 결과가 안 나오고, 유니버설
+    // 링크(https)로 앱을 띄우면 검색어가 무시된다. 그래서 앱 커스텀 스킴
+    // (snssdk1233 — 글로벌/아시아판 TikTok 모두 등록)으로 검색 화면을 직접 연다.
+    // 앱이 없으면 웹으로 넘기지 않고 안내만 한다.
+    // 공백은 '+'가 아니라 %20으로 — TikTok 앱이 '+'를 공백으로 풀지 않을 수 있다.
+    final appUri = Uri.parse(
+      '$_kTikTokScheme://search?keyword=${Uri.encodeComponent(trimmed)}',
+    );
+    bool installed;
+    try {
+      installed = await canLaunchUrl(Uri.parse('$_kTikTokScheme://'));
+    } catch (_) {
+      installed = false;
+    }
+    if (!installed) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            const SnackBar(content: Text('TikTok 앱이 설치되어 있지 않아요.')),
+          );
+      }
+      return;
+    }
+    bool opened;
+    try {
+      opened = await launchUrl(appUri, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      opened = false;
+    }
+    if (!opened && context.mounted) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(content: Text('TikTok 검색을 여는 데 실패했어요.')));
+    }
+    return;
+  }
   if (platform == 'Instagram') {
     final hashtag = trimmed.replaceAll(RegExp(r'\s+'), '');
     uri = Uri.https('www.instagram.com', '/explore/tags/$hashtag/');
   } else if (platform == 'YouTube') {
     uri = Uri.https('www.youtube.com', '/results', {'search_query': trimmed});
-  } else if (platform == 'TikTok') {
-    uri = Uri.https('www.tiktok.com', '/search', {'q': trimmed});
-    mode = LaunchMode.inAppBrowserView;
   } else {
     onFallback();
     return;
   }
   bool opened;
   try {
-    opened = await launchUrl(uri, mode: mode);
+    opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
   } catch (_) {
     opened = false;
   }

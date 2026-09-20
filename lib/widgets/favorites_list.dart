@@ -14,7 +14,12 @@ import 'favorite_star_button.dart';
 import 'app_bottom_nav_bar.dart';
 import 'loading_overlay.dart';
 import 'ranking_card.dart'
-    show PillDropdown, VisitVerifiableFilterChip, businessStatusChip;
+    show
+        FilterResetButton,
+        FilterSummaryBox,
+        PillDropdown,
+        VisitVerifiableFilterChip,
+        businessStatusChip;
 
 /// The favorites list body — a "즐겨찾기 N곳" header, a filter icon, then a
 /// row per favorited place (each keeps its star for in-place removal). Sized by
@@ -90,6 +95,19 @@ class _FavoritesListState extends State<FavoritesList> {
     return _visitVerifiableOnly ? '$summary · 방문 인증 가능만' : summary;
   }
 
+  bool get _hasActiveFilters =>
+      _category != null || !_descending || _visitVerifiableOnly;
+
+  /// "필터 해제"(시트) / "필터 초기화"(빈 결과) — 카테고리·정렬·방문 인증 가능만을
+  /// 전부 기본값으로.
+  void _resetFilters() {
+    _flashLoading(() {
+      _category = null;
+      _descending = true;
+      _visitVerifiableOnly = false;
+    });
+  }
+
   void _openFilterSheet() {
     showModalBottomSheet(
       context: context,
@@ -103,6 +121,7 @@ class _FavoritesListState extends State<FavoritesList> {
         onSortChanged: (value) => _flashLoading(() => _descending = value),
         onVisitVerifiableOnlyChanged: (value) =>
             _flashLoading(() => _visitVerifiableOnly = value),
+        onReset: _resetFilters,
       ),
     );
   }
@@ -177,22 +196,38 @@ class _FavoritesListState extends State<FavoritesList> {
                   AppSpacing.xl,
                   AppSpacing.sm,
                 ),
-                child: Text(
-                  _filterSummary(selectedCategoryName),
-                  style: AppTextStyles.caption,
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: FilterSummaryBox(
+                    text: _filterSummary(selectedCategoryName),
+                  ),
                 ),
               ),
               const Divider(height: 1, color: AppColors.border),
               Expanded(
                 child: entries.isEmpty
                     ? Center(
-                        child: Text(
-                          all.isEmpty
-                              ? '아직 즐겨찾기한 장소가 없어요.'
-                              : '조건에 맞는 즐겨찾기 장소가 없어요.',
-                          style: AppTextStyles.bodyMedium.copyWith(
-                            color: AppColors.textSecondary,
-                          ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              all.isEmpty
+                                  ? '아직 즐겨찾기한 장소가 없어요.'
+                                  : '조건에 맞는 즐겨찾기 장소가 없어요.',
+                              style: AppTextStyles.bodyMedium.copyWith(
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                            // 필터 때문에 비었을 때만 — 즐겨찾기가 원래 없으면
+                            // 초기화해도 소용없다.
+                            if (all.isNotEmpty && _hasActiveFilters) ...[
+                              const SizedBox(height: AppSpacing.md),
+                              FilterResetButton(
+                                label: '필터 초기화',
+                                onTap: _resetFilters,
+                              ),
+                            ],
+                          ],
                         ),
                       )
                     : ListView.separated(
@@ -247,6 +282,7 @@ class _FavoritesFilterSheet extends StatefulWidget {
     required this.onCategoryChanged,
     required this.onSortChanged,
     required this.onVisitVerifiableOnlyChanged,
+    required this.onReset,
   });
 
   final List<Category> categories;
@@ -257,6 +293,9 @@ class _FavoritesFilterSheet extends StatefulWidget {
   final ValueChanged<bool> onSortChanged;
   final ValueChanged<bool> onVisitVerifiableOnlyChanged;
 
+  /// 부모의 `_resetFilters` — 세 필터를 전부 기본값으로.
+  final VoidCallback onReset;
+
   @override
   State<_FavoritesFilterSheet> createState() => _FavoritesFilterSheetState();
 }
@@ -265,6 +304,18 @@ class _FavoritesFilterSheetState extends State<_FavoritesFilterSheet> {
   late int? _category = widget.initialCategory;
   late bool _descending = widget.initialDescending;
   late bool _visitVerifiableOnly = widget.initialVisitVerifiableOnly;
+
+  bool get _hasActiveFilters =>
+      _category != null || !_descending || _visitVerifiableOnly;
+
+  void _reset() {
+    setState(() {
+      _category = null;
+      _descending = true;
+      _visitVerifiableOnly = false;
+    });
+    widget.onReset();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -316,12 +367,23 @@ class _FavoritesFilterSheetState extends State<_FavoritesFilterSheet> {
               ],
             ),
             const SizedBox(height: AppSpacing.md),
-            VisitVerifiableFilterChip(
-              active: _visitVerifiableOnly,
-              onTap: () {
-                setState(() => _visitVerifiableOnly = !_visitVerifiableOnly);
-                widget.onVisitVerifiableOnlyChanged(_visitVerifiableOnly);
-              },
+            Row(
+              children: [
+                VisitVerifiableFilterChip(
+                  active: _visitVerifiableOnly,
+                  onTap: () {
+                    setState(
+                      () => _visitVerifiableOnly = !_visitVerifiableOnly,
+                    );
+                    widget.onVisitVerifiableOnlyChanged(_visitVerifiableOnly);
+                  },
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                FilterResetButton(
+                  onTap: _reset,
+                  enabled: _hasActiveFilters,
+                ),
+              ],
             ),
           ],
         ),
